@@ -105,6 +105,16 @@
     <div id="settings-dropdown">
       <label for="tile-select">Map type</label>
       <select id="tile-select"></select>
+      <label for="line-width" style="margin-top:10px;">Line width</label>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <input type="range" id="line-width" min="1" max="10" step="0.5" value="4" style="flex:1;">
+        <span id="line-width-value" style="font-size:13px; color:#fff; min-width:28px; text-align:right;">4</span>
+      </div>
+      <label for="line-alpha" style="margin-top:10px;">Line opacity</label>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <input type="range" id="line-alpha" min="0" max="1" step="0.05" value="0.85" style="flex:1;">
+        <span id="line-alpha-value" style="font-size:13px; color:#fff; min-width:28px; text-align:right;">0.85</span>
+      </div>
     </div>
   </div>
 </div>
@@ -167,6 +177,20 @@ document.addEventListener('click', (e) => {
   }
 });
 
+const lineWidthSlider = document.getElementById('line-width');
+const lineWidthValue = document.getElementById('line-width-value');
+lineWidthSlider.addEventListener('input', () => {
+  lineWidthValue.textContent = lineWidthSlider.value;
+  if (trackLayer) trackLayer.setStyle({ weight: parseFloat(lineWidthSlider.value) });
+});
+
+const lineAlphaSlider = document.getElementById('line-alpha');
+const lineAlphaValue = document.getElementById('line-alpha-value');
+lineAlphaSlider.addEventListener('input', () => {
+  lineAlphaValue.textContent = lineAlphaSlider.value;
+  if (trackLayer) trackLayer.setStyle({ opacity: parseFloat(lineAlphaSlider.value) });
+});
+
 let trackLayer = null;
 let markerStart = null;
 let markerEnd = null;
@@ -210,7 +234,7 @@ function parseGPX(xmlStr) {
 
   // Draw track
   const latlngs = points.map(p => [p.lat, p.lon]);
-  trackLayer = L.polyline(latlngs, { color: '#e94560', weight: 4, opacity: 0.85 }).addTo(map);
+  trackLayer = L.polyline(latlngs, { color: '#e94560', weight: parseFloat(lineWidthSlider.value), opacity: parseFloat(lineAlphaSlider.value) }).addTo(map);
   map.fitBounds(trackLayer.getBounds(), { padding: [30, 30] });
 
   // Start / End markers
