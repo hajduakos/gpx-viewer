@@ -119,6 +119,10 @@
         <label for="show-elevation" style="margin:0;">Elevation chart</label>
         <input type="checkbox" id="show-elevation" checked style="margin-left:auto;">
       </div>
+      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+        <label for="show-zoom" style="margin:0;">Zoom controls</label>
+        <input type="checkbox" id="show-zoom" style="margin-left:auto;">
+      </div>
     </div>
   </div>
 </div>
@@ -149,7 +153,8 @@ const tileLayers = {
   'Esri World Imagery': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, attr: '&copy; Esri' },
 };
 
-const map = L.map('map').setView([47.5, 19.0], 6);
+const map = L.map('map', { zoomControl: false }).setView([47.5, 19.0], 6);
+map.zoomControl = L.control.zoom();
 let currentTile = null;
 
 const select = document.getElementById('tile-select');
@@ -203,6 +208,15 @@ showElevation.addEventListener('change', () => {
     drawElevationChart(lastElevationData.points, lastElevationData.distances);
   } else {
     chart.style.display = 'none';
+  }
+});
+
+const showZoom = document.getElementById('show-zoom');
+showZoom.addEventListener('change', () => {
+  if (showZoom.checked) {
+    map.addControl(map.zoomControl);
+  } else {
+    map.removeControl(map.zoomControl);
   }
 });
 
