@@ -140,6 +140,10 @@
         <label for="show-end-marker" style="margin:0;">End marker</label>
         <input type="checkbox" id="show-end-marker" checked style="margin-left:auto;">
       </div>
+      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+        <label for="show-highest" style="margin:0;">Highest point</label>
+        <input type="checkbox" id="show-highest" style="margin-left:auto;">
+      </div>
     </div>
   </div>
 </div>
@@ -256,12 +260,20 @@ showEndMarker.addEventListener('change', () => {
   else map.removeLayer(markerEnd);
 });
 
+const showHighest = document.getElementById('show-highest');
+showHighest.addEventListener('change', () => {
+  if (!markerHighest) return;
+  if (showHighest.checked) markerHighest.addTo(map);
+  else map.removeLayer(markerHighest);
+});
+
 let trackLayer = null;
 let markerStart = null;
 let markerEnd = null;
 let rawPoints = null;
 let trackType = 'Unknown';
 let trackName = 'Unnamed';
+let markerHighest = null;
 
 const smoothingSlider = document.getElementById('smoothing');
 const smoothingValue = document.getElementById('smoothing-value');
@@ -329,6 +341,7 @@ function renderTrack(rawPts, name, type) {
   if (trackLayer) map.removeLayer(trackLayer);
   if (markerStart) map.removeLayer(markerStart);
   if (markerEnd) map.removeLayer(markerEnd);
+  if (markerHighest) map.removeLayer(markerHighest);
 
   document.getElementById('track-name').textContent = name;
 
@@ -346,6 +359,18 @@ function renderTrack(rawPts, name, type) {
   if (showStartMarker.checked) markerStart.addTo(map);
   markerEnd = L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).bindPopup('End');
   if (showEndMarker.checked) markerEnd.addTo(map);
+
+  // Highest point marker
+  let highestIdx = -1, highestEle = -Infinity;
+  for (let i = 0; i < points.length; i++) {
+    if (points[i].ele != null && points[i].ele > highestEle) { highestEle = points[i].ele; highestIdx = i; }
+  }
+  if (highestIdx >= 0) {
+    // CSS border trick: a 0x0 div with transparent left/right borders and a colored bottom border renders as an upward-pointing triangle
+    const highIcon = L.divIcon({ className: '', html: '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid #2196f3;filter:drop-shadow(0 0 2px rgba(0,0,0,0.5));"></div>', iconSize: [16,14], iconAnchor: [8,14] });
+    markerHighest = L.marker([points[highestIdx].lat, points[highestIdx].lon], { icon: highIcon }).bindPopup('Highest: ' + Math.round(highestEle) + ' m');
+    if (showHighest.checked) markerHighest.addTo(map);
+  }
 
   // Compute stats
   let totalDist = 0;
