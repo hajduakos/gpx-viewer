@@ -33,8 +33,28 @@
     padding: 4px 12px; border-radius: 4px; cursor: pointer;
     margin-right: 8px; font-size: 13px;
   }
+  #settings-wrapper {
+    position: relative; margin-left: auto;
+  }
+  #settings-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border: 1px solid #555; border-radius: 6px;
+    background: transparent; color: #fff; font-size: 13px; cursor: pointer;
+  }
+  #settings-btn:hover { background: rgba(255,255,255,0.1); }
+  #settings-dropdown {
+    display: none; position: absolute; top: calc(100% + 8px); right: 0;
+    min-width: 200px; padding: 12px;
+    background: rgba(51, 51, 51, 0.85); backdrop-filter: blur(6px);
+    border: 1px solid #555; border-radius: 8px; z-index: 1001;
+  }
+  #settings-dropdown.open { display: block; }
+  #settings-dropdown label {
+    display: block; font-size: 11px; text-transform: uppercase;
+    color: #fff; margin-bottom: 6px; letter-spacing: 0.5px;
+  }
   #tile-select {
-    padding: 6px 10px; border: 1px solid #555; border-radius: 6px;
+    width: 100%; padding: 6px 10px; border: 1px solid #555; border-radius: 6px;
     background: #333; color: #e0e0e0; font-size: 13px; cursor: pointer;
   }
   #track-name { font-size: 20px; font-weight: 600; color: #fff; }
@@ -78,9 +98,14 @@
   <h1>GPX Viewer</h1>
   <input type="file" id="file-input" accept=".gpx">
   <span id="track-name"></span>
-  <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
-    <label for="tile-select" style="font-size:13px; color:#fff;">Map:</label>
-    <select id="tile-select"></select>
+  <div id="settings-wrapper">
+    <button id="settings-btn">
+      Settings
+    </button>
+    <div id="settings-dropdown">
+      <label for="tile-select">Map type</label>
+      <select id="tile-select"></select>
+    </div>
   </div>
 </div>
 
@@ -129,6 +154,18 @@ function setTileLayer(name) {
 
 select.addEventListener('change', () => setTileLayer(select.value));
 setTileLayer(select.value);
+
+const settingsBtn = document.getElementById('settings-btn');
+const settingsDropdown = document.getElementById('settings-dropdown');
+settingsBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  settingsDropdown.classList.toggle('open');
+});
+document.addEventListener('click', (e) => {
+  if (!settingsDropdown.contains(e.target) && e.target !== settingsBtn) {
+    settingsDropdown.classList.remove('open');
+  }
+});
 
 let trackLayer = null;
 let markerStart = null;
