@@ -119,6 +119,11 @@
         <input type="range" id="line-alpha" min="0" max="1" step="0.05" value="0.85" style="flex:1;">
         <span id="line-alpha-value" style="font-size:13px; color:#fff; min-width:28px; text-align:right;">0.85</span>
       </div>
+      <label for="smoothing" style="margin-top:10px;">Smoothing</label>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <input type="range" id="smoothing" min="0" max="50" step="1" value="5" style="flex:1;">
+        <span id="smoothing-value" style="font-size:13px; color:#fff; min-width:28px; text-align:right;">5</span>
+      </div>
       <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
         <label for="show-elevation" style="margin:0;">Elevation chart</label>
         <input type="checkbox" id="show-elevation" checked style="margin-left:auto;">
@@ -254,6 +259,16 @@ showEndMarker.addEventListener('change', () => {
 let trackLayer = null;
 let markerStart = null;
 let markerEnd = null;
+let rawPoints = null;
+let trackType = 'Unknown';
+let trackName = 'Unnamed';
+
+const smoothingSlider = document.getElementById('smoothing');
+const smoothingValue = document.getElementById('smoothing-value');
+smoothingSlider.addEventListener('input', () => {
+  smoothingValue.textContent = smoothingSlider.value;
+  if (rawPoints) renderTrack(rawPoints, trackName, trackType);
+});
 
 document.getElementById('file-input').addEventListener('change', e => {
   const file = e.target.files[0];
@@ -267,30 +282,57 @@ function parseGPX(xmlStr) {
   const parser = new DOMParser();
   const doc = parser.parseFromString(xmlStr, 'application/xml');
 
-  // Clear previous
-  if (trackLayer) map.removeLayer(trackLayer);
-  if (markerStart) map.removeLayer(markerStart);
-  if (markerEnd) map.removeLayer(markerEnd);
-
   const trk = doc.querySelector('trk');
-  const name = trk?.querySelector('name')?.textContent || 'Unnamed';
-  const type = trk?.querySelector('type')?.textContent || 'Unknown';
-  document.getElementById('track-name').textContent = name;
+  trackName = trk?.querySelector('name')?.textContent || 'Unnamed';
+  trackType = trk?.querySelector('type')?.textContent || 'Unknown';
 
-  const points = [];
+  rawPoints = [];
   doc.querySelectorAll('trkpt').forEach(pt => {
     const lat = parseFloat(pt.getAttribute('lat'));
     const lon = parseFloat(pt.getAttribute('lon'));
     const eleEl = pt.querySelector('ele');
     const timeEl = pt.querySelector('time');
-    points.push({
+    rawPoints.push({
       lat, lon,
       ele: eleEl ? parseFloat(eleEl.textContent) : null,
       time: timeEl ? new Date(timeEl.textContent) : null,
     });
   });
 
-  if (points.length === 0) return;
+  if (rawPoints.length === 0) return;
+  renderTrack(rawPoints, trackName, trackType);
+}
+
+function smoothPoints(points, window) {
+  if (window <= 0) return points;
+  const half = Math.floor(window / 2);
+  return points.map((p, i) => {
+    const start = Math.max(0, i - half);
+    const end = Math.min(points.length - 1, i + half);
+    let lat = 0, lon = 0, ele = 0, eleCount = 0;
+    for (let j = start; j <= end; j++) {
+      lat += points[j].lat;
+      lon += points[j].lon;
+      if (points[j].ele != null) { ele += points[j].ele; eleCount++; }
+    }
+    const n = end - start + 1;
+    return {
+      lat: lat / n, lon: lon / n,
+      ele: eleCount > 0 ? ele / eleCount : p.ele,
+      time: p.time,
+    };
+  });
+}
+
+function renderTrack(rawPts, name, type) {
+  // Clear previous
+  if (trackLayer) map.removeLayer(trackLayer);
+  if (markerStart) map.removeLayer(markerStart);
+  if (markerEnd) map.removeLayer(markerEnd);
+
+  document.getElementById('track-name').textContent = name;
+
+  const points = smoothPoints(rawPts, parseInt(smoothingSlider.value));
 
   // Draw track
   const latlngs = points.map(p => [p.lat, p.lon]);
