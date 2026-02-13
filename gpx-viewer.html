@@ -115,6 +115,10 @@
         <input type="range" id="line-alpha" min="0" max="1" step="0.05" value="0.85" style="flex:1;">
         <span id="line-alpha-value" style="font-size:13px; color:#fff; min-width:28px; text-align:right;">0.85</span>
       </div>
+      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
+        <label for="show-elevation" style="margin:0;">Elevation chart</label>
+        <input type="checkbox" id="show-elevation" checked style="margin-left:auto;">
+      </div>
     </div>
   </div>
 </div>
@@ -189,6 +193,17 @@ const lineAlphaValue = document.getElementById('line-alpha-value');
 lineAlphaSlider.addEventListener('input', () => {
   lineAlphaValue.textContent = lineAlphaSlider.value;
   if (trackLayer) trackLayer.setStyle({ opacity: parseFloat(lineAlphaSlider.value) });
+});
+
+const showElevation = document.getElementById('show-elevation');
+showElevation.addEventListener('change', () => {
+  const chart = document.getElementById('elevation-chart');
+  if (showElevation.checked && lastElevationData) {
+    chart.style.display = 'block';
+    drawElevationChart(lastElevationData.points, lastElevationData.distances);
+  } else {
+    chart.style.display = 'none';
+  }
 });
 
 let trackLayer = null;
@@ -343,7 +358,7 @@ function drawElevationChart(points, distances) {
   const container = document.getElementById('elevation-chart');
   const canvas = document.getElementById('elevation-canvas');
   const hasEle = points.some(p => p.ele != null);
-  if (!hasEle) { container.style.display = 'none'; return; }
+  if (!hasEle || !document.getElementById('show-elevation').checked) { container.style.display = 'none'; return; }
 
   container.style.display = 'block';
   const ctx = canvas.getContext('2d');
