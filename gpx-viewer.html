@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPX Viewer</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex; flex-direction: column; height: 100vh;
+    background: #333; color: #e0e0e0;
+  }
+
+  #header {
+    display: flex; align-items: center; gap: 16px;
+    padding: 12px 20px; background: #333;
+    border-bottom: 1px solid #555;
+  }
+  #header h1 { font-size: 18px; color: #fff; white-space: nowrap; }
+  #file-input {
+    max-width: 200px; padding: 4px 8px;
+    border: 1px solid #555; border-radius: 6px;
+    background: #333; color: #e0e0e0; font-size: 12px;
+    cursor: pointer;
+  }
+  #file-input::file-selector-button {
+    background: #fff; color: #222; border: none;
+    padding: 4px 12px; border-radius: 4px; cursor: pointer;
+    margin-right: 8px; font-size: 13px;
+  }
+  #tile-select {
+    padding: 6px 10px; border: 1px solid #555; border-radius: 6px;
+    background: #333; color: #e0e0e0; font-size: 13px; cursor: pointer;
+  }
+  #track-name { font-size: 20px; font-weight: 600; color: #fff; }
+
+  #map { flex: 1; min-height: 0; }
+
+  #stats {
+    display: none; padding: 14px 20px;
+    background: #333; border-top: 1px solid #555;
+  }
+  #stats-grid {
+    display: flex; flex-wrap: wrap; gap: 8px 32px;
+    justify-content: center;
+  }
+  .stat {
+    display: flex; flex-direction: column; align-items: center;
+    min-width: 120px;
+  }
+  .stat-label { font-size: 11px; text-transform: uppercase; color: #7a7aa0; letter-spacing: 0.5px; }
+  .stat-value { font-size: 20px; font-weight: 600; color: #fff; }
+  .stat-unit { font-size: 12px; color: #7a7aa0; }
+
+  #elevation-chart {
+    display: none; height: 100px; padding: 8px 20px 4px;
+    background: #333; border-top: 1px solid #555;
+  }
+  #elevation-canvas { width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>GPX Viewer</h1>
+  <input type="file" id="file-input" accept=".gpx">
+  <span id="track-name"></span>
+  <div style="margin-left:auto; display:flex; align-items:center; gap:6px;">
+    <label for="tile-select" style="font-size:13px; color:#a0a0c0;">Map:</label>
+    <select id="tile-select"></select>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<div id="elevation-chart">
+  <canvas id="elevation-canvas"></canvas>
+</div>
+
+<div id="stats">
+  <div id="stats-grid"></div>
+</div>
+
+<script>
+const tileLayers = {
+  'OpenTopoMap': { url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', maxZoom: 17, attr: '&copy; OpenTopoMap' },
+  'OpenStreetMap': { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19, attr: '&copy; OpenStreetMap contributors' },
+  'OSM Hot': { url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', maxZoom: 19, attr: '&copy; OpenStreetMap contributors, HOT style' },
+  'CyclOSM': { url: 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', maxZoom: 20, attr: '&copy; CyclOSM / OpenStreetMap' },
+  'CartoDB Positron': { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', maxZoom: 20, attr: '&copy; CARTO, OSM' },
+  'CartoDB Dark Matter': { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', maxZoom: 20, attr: '&copy; CARTO, OSM' },
+  'CartoDB Voyager': { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', maxZoom: 20, attr: '&copy; CARTO, OSM' },
+  'Esri World Street Map': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, attr: '&copy; Esri' },
+  'Esri World Topo': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, attr: '&copy; Esri' },
+  'Esri World Imagery': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, attr: '&copy; Esri' },
+};
+
+const map = L.map('map').setView([47.5, 19.0], 6);
+let currentTile = null;
+
+const select = document.getElementById('tile-select');
+Object.keys(tileLayers).forEach(name => {
+  const opt = document.createElement('option');
+  opt.value = name;
+  opt.textContent = name;
+  select.appendChild(opt);
+});
+
+function setTileLayer(name) {
+  const t = tileLayers[name];
+  if (currentTile) map.removeLayer(currentTile);
+  currentTile = L.tileLayer(t.url, { maxZoom: t.maxZoom, attribution: t.attr }).addTo(map);
+}
+
+select.addEventListener('change', () => setTileLayer(select.value));
+setTileLayer(select.value);
+
+let trackLayer = null;
+let markerStart = null;
+let markerEnd = null;
+
+document.getElementById('file-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => parseGPX(ev.target.result);
+  reader.readAsText(file);
+});
+
+function parseGPX(xmlStr) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xmlStr, 'application/xml');
+
+  // Clear previous
+  if (trackLayer) map.removeLayer(trackLayer);
+  if (markerStart) map.removeLayer(markerStart);
+  if (markerEnd) map.removeLayer(markerEnd);
+
+  const trk = doc.querySelector('trk');
+  const name = trk?.querySelector('name')?.textContent || 'Unnamed';
+  const type = trk?.querySelector('type')?.textContent || 'Unknown';
+  document.getElementById('track-name').textContent = name;
+
+  const points = [];
+  doc.querySelectorAll('trkpt').forEach(pt => {
+    const lat = parseFloat(pt.getAttribute('lat'));
+    const lon = parseFloat(pt.getAttribute('lon'));
+    const eleEl = pt.querySelector('ele');
+    const timeEl = pt.querySelector('time');
+    points.push({
+      lat, lon,
+      ele: eleEl ? parseFloat(eleEl.textContent) : null,
+      time: timeEl ? new Date(timeEl.textContent) : null,
+    });
+  });
+
+  if (points.length === 0) return;
+
+  // Draw track
+  const latlngs = points.map(p => [p.lat, p.lon]);
+  trackLayer = L.polyline(latlngs, { color: '#e94560', weight: 4, opacity: 0.85 }).addTo(map);
+  map.fitBounds(trackLayer.getBounds(), { padding: [30, 30] });
+
+  // Start / End markers
+  const startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#00c853;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
+  const endIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#e94560;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
+  markerStart = L.marker(latlngs[0], { icon: startIcon }).addTo(map).bindPopup('Start');
+  markerEnd = L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).addTo(map).bindPopup('End');
+
+  // Compute stats
+  let totalDist = 0;
+  let elevGain = 0;
+
+  let minEle = Infinity, maxEle = -Infinity;
+  const distances = [0]; // cumulative distance per point
+
+  for (let i = 1; i < points.length; i++) {
+    const d = haversine(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
+    totalDist += d;
+    distances.push(totalDist);
+    if (points[i].ele != null && points[i - 1].ele != null) {
+      const diff = points[i].ele - points[i - 1].ele;
+      if (diff > 0) elevGain += diff;
+    }
+    if (points[i].ele != null) {
+      if (points[i].ele < minEle) minEle = points[i].ele;
+      if (points[i].ele > maxEle) maxEle = points[i].ele;
+    }
+  }
+  if (points[0].ele != null) {
+    if (points[0].ele < minEle) minEle = points[0].ele;
+    if (points[0].ele > maxEle) maxEle = points[0].ele;
+  }
+
+  const startTime = points[0].time;
+  const endTime = points[points.length - 1].time;
+  const totalSec = (startTime && endTime) ? (endTime - startTime) / 1000 : null;
+
+  const dateStr = startTime ? startTime.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  const distKm = totalDist / 1000;
+  const timeStr = totalSec ? formatDuration(totalSec) : '—';
+  const avgSpeed = totalSec ? (distKm / (totalSec / 3600)).toFixed(1) : '—';
+  const movingData = computeMovingTime(points);
+  const movingTimeStr = movingData ? formatDuration(movingData.movingSec) : '—';
+  const movingAvg = (movingData && movingData.movingSec > 0) ? (distKm / (movingData.movingSec / 3600)).toFixed(1) : '—';
+
+  const stats = [
+    { label: 'Activity', value: type.charAt(0).toUpperCase() + type.slice(1), unit: '' },
+    { label: 'Date', value: dateStr, unit: '' },
+    { label: 'Distance', value: distKm.toFixed(2), unit: 'km' },
+    { label: 'Elapsed Time', value: timeStr, unit: '' },
+    { label: 'Moving Time', value: movingTimeStr, unit: '' },
+    { label: 'Elev. Gain', value: Math.round(elevGain), unit: 'm' },
+    { label: 'Min / Max Elev.', value: Math.round(minEle) + ' / ' + Math.round(maxEle), unit: 'm' },
+    { label: 'Avg Speed', value: avgSpeed, unit: 'km/h' },
+    { label: 'Moving Avg', value: movingAvg, unit: 'km/h' },
+  ];
+
+  const grid = document.getElementById('stats-grid');
+  grid.innerHTML = '';
+  stats.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'stat';
+    div.innerHTML = `<span class="stat-label">${s.label}</span><span class="stat-value">${s.value} <span class="stat-unit">${s.unit}</span></span>`;
+    grid.appendChild(div);
+  });
+  document.getElementById('stats').style.display = 'block';
+
+  // Elevation profile
+  drawElevationChart(points, distances);
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const toRad = x => x * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDuration(sec) {
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  const s = Math.floor(sec % 60);
+  return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
+}
+
+function computeMovingTime(points) {
+  if (!points[0].time) return null;
+  let movingSec = 0;
+  const speedThreshold = 0.2; // m/s — below this is "stopped"
+  for (let i = 1; i < points.length; i++) {
+    if (!points[i].time || !points[i - 1].time) continue;
+    const dt = (points[i].time - points[i - 1].time) / 1000;
+    if (dt <= 0) continue;
+    const d = haversine(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
+    if (d / dt >= speedThreshold) movingSec += dt;
+  }
+  return { movingSec };
+}
+
+function drawElevationChart(points, distances) {
+  const container = document.getElementById('elevation-chart');
+  const canvas = document.getElementById('elevation-canvas');
+  const hasEle = points.some(p => p.ele != null);
+  if (!hasEle) { container.style.display = 'none'; return; }
+
+  container.style.display = 'block';
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const eles = points.map(p => p.ele ?? 0);
+  const maxD = distances[distances.length - 1];
+  const minE = Math.min(...eles) - 20;
+  const maxE = Math.max(...eles) + 20;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Fill
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (let i = 0; i < points.length; i++) {
+    const x = (distances[i] / maxD) * W;
+    const y = H - ((eles[i] - minE) / (maxE - minE)) * H;
+    ctx.lineTo(x, y);
+  }
+  ctx.lineTo(W, H);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, 'rgba(255,255,255,0.4)');
+  grad.addColorStop(1, 'rgba(255,255,255,0.05)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.beginPath();
+  for (let i = 0; i < points.length; i++) {
+    const x = (distances[i] / maxD) * W;
+    const y = H - ((eles[i] - minE) / (maxE - minE)) * H;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Axis labels
+  ctx.fillStyle = '#7a7aa0';
+  ctx.font = '10px sans-serif';
+  ctx.fillText(Math.round(maxE) + ' m', 4, 12);
+  ctx.fillText(Math.round(minE) + ' m', 4, H - 4);
+  ctx.fillText((maxD / 1000).toFixed(1) + ' km', W - 50, H - 4);
+}
+</script>
+</body>
+</html>
