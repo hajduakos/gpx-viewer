@@ -275,7 +275,10 @@ function computeMovingTime(points) {
   return { movingSec };
 }
 
+let lastElevationData = null;
+
 function drawElevationChart(points, distances) {
+  lastElevationData = { points, distances };
   const container = document.getElementById('elevation-chart');
   const canvas = document.getElementById('elevation-canvas');
   const hasEle = points.some(p => p.ele != null);
@@ -331,6 +334,10 @@ function drawElevationChart(points, distances) {
   ctx.fillText(Math.round(minE) + ' m', 4, H - 4);
   ctx.fillText((maxD / 1000).toFixed(1) + ' km', W - 50, H - 4);
 }
+
+window.addEventListener('resize', () => {
+  if (lastElevationData) drawElevationChart(lastElevationData.points, lastElevationData.distances);
+});
 </script>
 </body>
 </html>
