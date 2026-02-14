@@ -37,12 +37,12 @@
     position: relative; margin-left: auto;
     display: flex; align-items: center; gap: 8px;
   }
-  #settings-btn {
+  .header-btn {
     display: flex; align-items: center; gap: 6px;
     padding: 6px 12px; border: 1px solid #555; border-radius: 6px;
     background: transparent; color: #fff; font-size: 13px; cursor: pointer;
   }
-  #settings-btn:hover { background: rgba(255,255,255,0.1); }
+  .header-btn:hover { background: rgba(255,255,255,0.1); }
   #settings-dropdown {
     display: none; position: absolute; top: calc(100% + 8px); right: 0;
     min-width: 200px; padding: 12px;
@@ -92,12 +92,6 @@
   }
   #elevation-canvas { width: 100%; height: 100%; }
 
-  #tracks-btn {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 12px; border: 1px solid #555; border-radius: 6px;
-    background: transparent; color: #fff; font-size: 13px; cursor: pointer;
-  }
-  #tracks-btn:hover { background: rgba(255,255,255,0.1); }
 
   #tracks-panel {
     display: none; position: absolute; right: 0;
@@ -147,8 +141,8 @@
   <input type="file" id="file-input" accept=".gpx" multiple>
   <span id="track-name"></span>
   <div id="settings-wrapper">
-    <button id="tracks-btn">Tracks</button>
-    <button id="settings-btn">
+    <button id="tracks-btn" class="header-btn">Tracks</button>
+    <button id="settings-btn" class="header-btn">
       Settings
     </button>
     <div id="settings-dropdown">
@@ -576,17 +570,15 @@ function renderAllTracks() {
 
   let dateStr = '—';
   if (earliestDate) {
-    const fmtFull = d => d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-    const fmtShort = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     if (allTracks.length === 1) {
-      dateStr = fmtFull(earliestDate);
+      dateStr = formatDateFull(earliestDate);
     } else {
-      const d1 = fmtFull(earliestDate);
-      const d2 = fmtFull(latestDate);
+      const d1 = formatDateFull(earliestDate);
+      const d2 = formatDateFull(latestDate);
       if (d1 === d2) {
         dateStr = d1;
       } else if (earliestDate.getFullYear() === latestDate.getFullYear()) {
-        dateStr = fmtShort(earliestDate) + ' — ' + fmtFull(latestDate);
+        dateStr = formatDateShort(earliestDate) + ' — ' + formatDateFull(latestDate);
       } else {
         dateStr = d1 + ' — ' + d2;
       }
@@ -621,7 +613,6 @@ function renderAllTracks() {
   statsEl.style.display = 'block';
 
   // Tracks table
-  const fmtDate = d => d ? d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
   const showType = types.size > 1;
   let tableHtml = '<table id="tracks-table"><thead><tr>' +
     '<th>Name</th>' + (showType ? '<th>Type</th>' : '') + '<th>Date</th><th>Distance</th><th>Elapsed</th><th>Moving</th><th>Gain</th><th>Max Elev.</th>' +
@@ -634,7 +625,7 @@ function renderAllTracks() {
     const gn = Math.round(s.elevGain);
     const mx = s.maxEle != null ? Math.round(s.maxEle) + ' m' : '—';
     const tp = t.type.charAt(0).toUpperCase() + t.type.slice(1);
-    tableHtml += `<tr data-track-idx="${idx}"><td>${t.name}</td>${showType ? '<td>' + tp + '</td>' : ''}<td>${fmtDate(s.date)}</td><td>${dk} km</td><td>${el}</td><td>${mv}</td><td>${gn} m</td><td>${mx}</td></tr>`;
+    tableHtml += `<tr data-track-idx="${idx}"><td>${t.name}</td>${showType ? '<td>' + tp + '</td>' : ''}<td>${s.date ? formatDateFull(s.date) : '—'}</td><td>${dk} km</td><td>${el}</td><td>${mv}</td><td>${gn} m</td><td>${mx}</td></tr>`;
   });
   tableHtml += '</tbody></table>';
   tracksPanel.innerHTML = tableHtml;
@@ -675,6 +666,14 @@ function formatDuration(sec) {
   const m = Math.floor((sec % 3600) / 60);
   const s = Math.floor(sec % 60);
   return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`;
+}
+
+function formatDateFull(d) {
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatDateShort(d) {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 function computeMovingTime(points) {
@@ -736,19 +735,18 @@ function drawElevationChart(segments) {
   segments.forEach((seg, segIdx) => {
     const segMaxD = seg.distances[seg.distances.length - 1];
     const segW = totalSegDist > 0 ? (segMaxD / totalSegDist) * usableW : 0;
-    const eles = seg.points.map(p => p.ele ?? 0);
+
+    // Precompute coordinates
+    const coords = seg.points.map((p, i) => ({
+      x: cumPxOffset + (segMaxD > 0 ? (seg.distances[i] / segMaxD) * segW : 0),
+      y: H - (((p.ele ?? 0) - minE) / (maxE - minE)) * H,
+    }));
 
     // Fill
     ctx.beginPath();
-    const x0 = cumPxOffset;
-    ctx.moveTo(x0, H);
-    for (let i = 0; i < seg.points.length; i++) {
-      const x = cumPxOffset + (segMaxD > 0 ? (seg.distances[i] / segMaxD) * segW : 0);
-      const y = H - ((eles[i] - minE) / (maxE - minE)) * H;
-      ctx.lineTo(x, y);
-    }
-    const xEnd = cumPxOffset + segW;
-    ctx.lineTo(xEnd, H);
+    ctx.moveTo(cumPxOffset, H);
+    coords.forEach(c => ctx.lineTo(c.x, c.y));
+    ctx.lineTo(cumPxOffset + segW, H);
     ctx.closePath();
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, 'rgba(255,255,255,0.4)');
@@ -758,11 +756,7 @@ function drawElevationChart(segments) {
 
     // Line
     ctx.beginPath();
-    for (let i = 0; i < seg.points.length; i++) {
-      const x = cumPxOffset + (segMaxD > 0 ? (seg.distances[i] / segMaxD) * segW : 0);
-      const y = H - ((eles[i] - minE) / (maxE - minE)) * H;
-      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-    }
+    coords.forEach((c, i) => i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y));
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.5;
     ctx.stroke();
