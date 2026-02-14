@@ -101,7 +101,7 @@
 
   #tracks-panel {
     display: none; position: absolute; right: 0;
-    width: 50%; z-index: 999; overflow-y: auto;
+    max-width: 50%; z-index: 999; overflow-y: auto;
     background: rgba(51, 51, 51, 0.65); backdrop-filter: blur(3px);
     padding: 16px;
   }
@@ -113,7 +113,7 @@
   #tracks-table th {
     text-align: left; padding: 6px 8px;
     font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
-    color: #aaa; border-bottom: 1px solid #555;
+    color: #fff; border-bottom: 1px solid #555;
     white-space: nowrap;
   }
   #tracks-table td {
@@ -259,7 +259,8 @@ function updateTracksPanelPosition() {
   const headerH = document.getElementById('header').offsetHeight;
   const overlayH = document.getElementById('overlay').offsetHeight;
   tracksPanel.style.top = (headerH - 1) + 'px';
-  tracksPanel.style.bottom = (overlayH - 1) + 'px';
+  tracksPanel.style.bottom = '';
+  tracksPanel.style.maxHeight = (window.innerHeight - headerH - overlayH + 2) + 'px';
 }
 tracksBtn.addEventListener('click', (e) => {
   e.stopPropagation();
