@@ -480,13 +480,20 @@ function renderAllTracks() {
 
   let dateStr = '—';
   if (earliestDate) {
-    const fmt = d => d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    const fmtFull = d => d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    const fmtShort = d => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     if (allTracks.length === 1) {
-      dateStr = fmt(earliestDate);
+      dateStr = fmtFull(earliestDate);
     } else {
-      const d1 = fmt(earliestDate);
-      const d2 = fmt(latestDate);
-      dateStr = d1 === d2 ? d1 : d1 + ' — ' + d2;
+      const d1 = fmtFull(earliestDate);
+      const d2 = fmtFull(latestDate);
+      if (d1 === d2) {
+        dateStr = d1;
+      } else if (earliestDate.getFullYear() === latestDate.getFullYear()) {
+        dateStr = fmtShort(earliestDate) + ' — ' + fmtFull(latestDate);
+      } else {
+        dateStr = d1 + ' — ' + d2;
+      }
     }
   }
 
