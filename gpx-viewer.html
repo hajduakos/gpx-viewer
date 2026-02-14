@@ -285,6 +285,21 @@ tracksBtn.addEventListener('click', (e) => {
   }
 });
 
+let allTracks = [];
+let markerHighest = null;
+
+function clearAllTracks() {
+  allTracks.forEach(t => {
+    if (t.trackLayer) map.removeLayer(t.trackLayer);
+    if (t.markerStart) map.removeLayer(t.markerStart);
+    if (t.markerEnd) map.removeLayer(t.markerEnd);
+    t.trackLayer = null;
+    t.markerStart = null;
+    t.markerEnd = null;
+  });
+  if (markerHighest) { map.removeLayer(markerHighest); markerHighest = null; }
+}
+
 const mapBrightnessSlider = document.getElementById('map-brightness');
 const mapBrightnessValue = document.getElementById('map-brightness-value');
 mapBrightnessSlider.addEventListener('input', () => {
@@ -309,6 +324,13 @@ const lineAlphaValue = document.getElementById('line-alpha-value');
 lineAlphaSlider.addEventListener('input', () => {
   lineAlphaValue.textContent = lineAlphaSlider.value;
   allTracks.forEach(t => { if (t.trackLayer) t.trackLayer.setStyle({ opacity: parseFloat(lineAlphaSlider.value) }); });
+});
+
+const smoothingSlider = document.getElementById('smoothing');
+const smoothingValue = document.getElementById('smoothing-value');
+smoothingSlider.addEventListener('input', () => {
+  smoothingValue.textContent = smoothingSlider.value;
+  if (allTracks.length > 0) renderAllTracks();
 });
 
 const showElevation = document.getElementById('show-elevation');
@@ -353,28 +375,6 @@ showHighest.addEventListener('change', () => {
   if (!markerHighest) return;
   if (showHighest.checked) markerHighest.addTo(map);
   else map.removeLayer(markerHighest);
-});
-
-let allTracks = [];
-let markerHighest = null;
-
-function clearAllTracks() {
-  allTracks.forEach(t => {
-    if (t.trackLayer) map.removeLayer(t.trackLayer);
-    if (t.markerStart) map.removeLayer(t.markerStart);
-    if (t.markerEnd) map.removeLayer(t.markerEnd);
-    t.trackLayer = null;
-    t.markerStart = null;
-    t.markerEnd = null;
-  });
-  if (markerHighest) { map.removeLayer(markerHighest); markerHighest = null; }
-}
-
-const smoothingSlider = document.getElementById('smoothing');
-const smoothingValue = document.getElementById('smoothing-value');
-smoothingSlider.addEventListener('input', () => {
-  smoothingValue.textContent = smoothingSlider.value;
-  if (allTracks.length > 0) renderAllTracks();
 });
 
 document.getElementById('file-input').addEventListener('change', e => {
