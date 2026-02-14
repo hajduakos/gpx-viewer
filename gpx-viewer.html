@@ -359,6 +359,13 @@ document.getElementById('file-input').addEventListener('change', e => {
       parsed[idx] = parseGPX(ev.target.result);
       loaded++;
       if (loaded === files.length) {
+        // Clear old tracks from map
+        allTracks.forEach(t => {
+          if (t.trackLayer) map.removeLayer(t.trackLayer);
+          if (t.markerStart) map.removeLayer(t.markerStart);
+          if (t.markerEnd) map.removeLayer(t.markerEnd);
+        });
+        if (markerHighest) { map.removeLayer(markerHighest); markerHighest = null; }
         allTracks = parsed.filter(t => t !== null);
         if (allTracks.length > 0) renderAllTracks();
       }
