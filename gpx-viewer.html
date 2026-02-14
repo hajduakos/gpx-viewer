@@ -279,14 +279,13 @@ showEndMarker.addEventListener('change', () => {
 
 const showHighest = document.getElementById('show-highest');
 showHighest.addEventListener('change', () => {
-  allTracks.forEach(t => {
-    if (!t.markerHighest) return;
-    if (showHighest.checked) t.markerHighest.addTo(map);
-    else map.removeLayer(t.markerHighest);
-  });
+  if (!markerHighest) return;
+  if (showHighest.checked) markerHighest.addTo(map);
+  else map.removeLayer(markerHighest);
 });
 
 let allTracks = [];
+let markerHighest = null;
 
 const smoothingSlider = document.getElementById('smoothing');
 const smoothingValue = document.getElementById('smoothing-value');
@@ -337,7 +336,7 @@ function parseGPX(xmlStr) {
   });
 
   if (rawPoints.length === 0) return null;
-  return { rawPoints, name, type, trackLayer: null, markerStart: null, markerEnd: null, markerHighest: null };
+  return { rawPoints, name, type, trackLayer: null, markerStart: null, markerEnd: null };
 }
 
 function smoothPoints(points, window) {
@@ -367,12 +366,11 @@ function renderAllTracks() {
     if (t.trackLayer) map.removeLayer(t.trackLayer);
     if (t.markerStart) map.removeLayer(t.markerStart);
     if (t.markerEnd) map.removeLayer(t.markerEnd);
-    if (t.markerHighest) map.removeLayer(t.markerHighest);
     t.trackLayer = null;
     t.markerStart = null;
     t.markerEnd = null;
-    t.markerHighest = null;
   });
+  if (markerHighest) { map.removeLayer(markerHighest); markerHighest = null; }
 
   // Track name
   if (allTracks.length === 1) {
@@ -392,6 +390,7 @@ function renderAllTracks() {
   let totalMovingSec = 0, hasMoving = false;
   let earliestDate = null, latestDate = null;
   const types = new Set();
+  let globalHighestEle = -Infinity, globalHighestLat = null, globalHighestLon = null;
 
   allTracks.forEach(track => {
     const points = smoothPoints(track.rawPoints, smoothWindow);
@@ -413,15 +412,13 @@ function renderAllTracks() {
     track.markerEnd = L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).bindPopup('End');
     if (showEndMarker.checked) track.markerEnd.addTo(map);
 
-    // Highest point marker
-    let highestIdx = -1, highestEle = -Infinity;
+    // Track global highest point
     for (let i = 0; i < points.length; i++) {
-      if (points[i].ele != null && points[i].ele > highestEle) { highestEle = points[i].ele; highestIdx = i; }
-    }
-    if (highestIdx >= 0) {
-      const highIcon = L.divIcon({ className: '', html: '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid #2196f3;filter:drop-shadow(0 0 2px rgba(0,0,0,0.5));"></div>', iconSize: [16,14], iconAnchor: [8,14] });
-      track.markerHighest = L.marker([points[highestIdx].lat, points[highestIdx].lon], { icon: highIcon }).bindPopup('Highest: ' + Math.round(highestEle) + ' m');
-      if (showHighest.checked) track.markerHighest.addTo(map);
+      if (points[i].ele != null && points[i].ele > globalHighestEle) {
+        globalHighestEle = points[i].ele;
+        globalHighestLat = points[i].lat;
+        globalHighestLon = points[i].lon;
+      }
     }
 
     // Per-track stats
@@ -470,6 +467,13 @@ function renderAllTracks() {
     types.add(track.type);
     elevationSegments.push({ points, distances });
   });
+
+  // Global highest point marker
+  if (globalHighestLat != null) {
+    const highIcon = L.divIcon({ className: '', html: '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid #2196f3;filter:drop-shadow(0 0 2px rgba(0,0,0,0.5));"></div>', iconSize: [16,14], iconAnchor: [8,14] });
+    markerHighest = L.marker([globalHighestLat, globalHighestLon], { icon: highIcon }).bindPopup('Highest: ' + Math.round(globalHighestEle) + ' m');
+    if (showHighest.checked) markerHighest.addTo(map);
+  }
 
   map.fitBounds(allBounds, { padding: [30, 30] });
 
