@@ -246,13 +246,6 @@ function setTileLayer(name) {
 select.addEventListener('change', () => setTileLayer(select.value));
 setTileLayer(select.value);
 
-const mapBrightnessSlider = document.getElementById('map-brightness');
-const mapBrightnessValue = document.getElementById('map-brightness-value');
-mapBrightnessSlider.addEventListener('input', () => {
-  mapBrightnessValue.textContent = mapBrightnessSlider.value;
-  map.getPane('tilePane').style.filter = 'brightness(' + mapBrightnessSlider.value + ')';
-});
-
 const settingsBtn = document.getElementById('settings-btn');
 const settingsDropdown = document.getElementById('settings-dropdown');
 settingsBtn.addEventListener('click', (e) => {
@@ -290,6 +283,13 @@ tracksBtn.addEventListener('click', (e) => {
   } else {
     tracksBtn.style.background = '';
   }
+});
+
+const mapBrightnessSlider = document.getElementById('map-brightness');
+const mapBrightnessValue = document.getElementById('map-brightness-value');
+mapBrightnessSlider.addEventListener('input', () => {
+  mapBrightnessValue.textContent = mapBrightnessSlider.value;
+  map.getPane('tilePane').style.filter = 'brightness(' + mapBrightnessSlider.value + ')';
 });
 
 const lineWidthSlider = document.getElementById('line-width');
