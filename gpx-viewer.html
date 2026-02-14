@@ -598,7 +598,7 @@ function renderAllTracks() {
   let tableHtml = '<table id="tracks-table"><thead><tr>' +
     '<th>Name</th>' + (showType ? '<th>Type</th>' : '') + '<th>Date</th><th>Distance</th><th>Elapsed</th><th>Moving</th><th>Gain</th><th>Max Elev.</th>' +
     '</tr></thead><tbody>';
-  allTracks.forEach(t => {
+  allTracks.forEach((t, idx) => {
     const s = t._stats;
     const dk = (s.dist / 1000).toFixed(2);
     const el = s.elapsedSec != null ? formatDuration(s.elapsedSec) : '—';
@@ -606,10 +606,26 @@ function renderAllTracks() {
     const gn = Math.round(s.elevGain);
     const mx = s.maxEle != null ? Math.round(s.maxEle) + ' m' : '—';
     const tp = t.type.charAt(0).toUpperCase() + t.type.slice(1);
-    tableHtml += `<tr><td>${t.name}</td>${showType ? '<td>' + tp + '</td>' : ''}<td>${fmtDate(s.date)}</td><td>${dk} km</td><td>${el}</td><td>${mv}</td><td>${gn} m</td><td>${mx}</td></tr>`;
+    tableHtml += `<tr data-track-idx="${idx}"><td>${t.name}</td>${showType ? '<td>' + tp + '</td>' : ''}<td>${fmtDate(s.date)}</td><td>${dk} km</td><td>${el}</td><td>${mv}</td><td>${gn} m</td><td>${mx}</td></tr>`;
   });
   tableHtml += '</tbody></table>';
   tracksPanel.innerHTML = tableHtml;
+
+  // Highlight track on hover
+  const baseOpacity = parseFloat(lineAlphaSlider.value);
+  tracksPanel.querySelectorAll('tr[data-track-idx]').forEach(row => {
+    row.addEventListener('mouseenter', () => {
+      const i = parseInt(row.dataset.trackIdx);
+      allTracks.forEach((t, j) => {
+        if (t.trackLayer) t.trackLayer.setStyle({ opacity: j === i ? baseOpacity : baseOpacity * 0.5 });
+      });
+    });
+    row.addEventListener('mouseleave', () => {
+      allTracks.forEach(t => {
+        if (t.trackLayer) t.trackLayer.setStyle({ opacity: baseOpacity });
+      });
+    });
+  });
 
   // Elevation chart
   drawElevationChart(elevationSegments);
