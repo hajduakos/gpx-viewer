@@ -121,6 +121,23 @@
     white-space: nowrap;
   }
   #tracks-table tr:hover td { background: rgba(255,255,255,0.05); }
+
+  .settings-row {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .settings-row-spaced { margin-top: 10px; }
+  .settings-label-inline { margin: 0; }
+  .settings-label-spaced { margin-top: 10px; }
+  .slider-value {
+    font-size: 13px; color: #fff; min-width: 28px; text-align: right;
+  }
+  .settings-checkbox { margin-left: auto; }
+  .color-picker {
+    margin-left: auto; width: 48px; height: 28px;
+    border: 1px solid #555; border-radius: 4px;
+    background: transparent; cursor: pointer; padding: 0;
+  }
+  .slider { flex: 1; }
 </style>
 </head>
 <body>
@@ -137,49 +154,49 @@
     <div id="settings-dropdown">
       <label for="tile-select">Map type</label>
       <select id="tile-select"></select>
-      <label for="map-brightness" style="margin-top:10px;">Map brightness</label>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <input type="range" id="map-brightness" min="0" max="1" step="0.05" value="1" style="flex:1;">
-        <span id="map-brightness-value" style="font-size:13px; color:#fff; min-width:28px; text-align:right;">1</span>
+      <label for="map-brightness" class="settings-label-spaced">Map brightness</label>
+      <div class="settings-row">
+        <input type="range" id="map-brightness" min="0" max="1" step="0.05" value="1" class="slider">
+        <span id="map-brightness-value" class="slider-value">1</span>
       </div>
-      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-        <label for="line-color" style="margin:0;">Line color</label>
-        <input type="color" id="line-color" value="#e94560" style="margin-left:auto; width:48px; height:28px; border:1px solid #555; border-radius:4px; background:transparent; cursor:pointer; padding:0;">
+      <div class="settings-row settings-row-spaced">
+        <label for="line-color" class="settings-label-inline">Line color</label>
+        <input type="color" id="line-color" value="#e94560" class="color-picker">
       </div>
-      <label for="line-width" style="margin-top:10px;">Line width</label>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <input type="range" id="line-width" min="1" max="10" step="0.5" value="4" style="flex:1;">
-        <span id="line-width-value" style="font-size:13px; color:#fff; min-width:28px; text-align:right;">4</span>
+      <label for="line-width" class="settings-label-spaced">Line width</label>
+      <div class="settings-row">
+        <input type="range" id="line-width" min="1" max="10" step="0.5" value="4" class="slider">
+        <span id="line-width-value" class="slider-value">4</span>
       </div>
-      <label for="line-alpha" style="margin-top:10px;">Line opacity</label>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <input type="range" id="line-alpha" min="0" max="1" step="0.05" value="0.85" style="flex:1;">
-        <span id="line-alpha-value" style="font-size:13px; color:#fff; min-width:28px; text-align:right;">0.85</span>
+      <label for="line-alpha" class="settings-label-spaced">Line opacity</label>
+      <div class="settings-row">
+        <input type="range" id="line-alpha" min="0" max="1" step="0.05" value="0.85" class="slider">
+        <span id="line-alpha-value" class="slider-value">0.85</span>
       </div>
-      <label for="smoothing" style="margin-top:10px;">Smoothing</label>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <input type="range" id="smoothing" min="0" max="50" step="1" value="5" style="flex:1;">
-        <span id="smoothing-value" style="font-size:13px; color:#fff; min-width:28px; text-align:right;">5</span>
+      <label for="smoothing" class="settings-label-spaced">Smoothing</label>
+      <div class="settings-row">
+        <input type="range" id="smoothing" min="0" max="50" step="1" value="5" class="slider">
+        <span id="smoothing-value" class="slider-value">5</span>
       </div>
-      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-        <label for="show-elevation" style="margin:0;">Elevation chart</label>
-        <input type="checkbox" id="show-elevation" checked style="margin-left:auto;">
+      <div class="settings-row settings-row-spaced">
+        <label for="show-elevation" class="settings-label-inline">Elevation chart</label>
+        <input type="checkbox" id="show-elevation" checked class="settings-checkbox">
       </div>
-      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-        <label for="show-zoom" style="margin:0;">Zoom controls</label>
-        <input type="checkbox" id="show-zoom" style="margin-left:auto;">
+      <div class="settings-row settings-row-spaced">
+        <label for="show-zoom" class="settings-label-inline">Zoom controls</label>
+        <input type="checkbox" id="show-zoom" class="settings-checkbox">
       </div>
-      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-        <label for="show-start-marker" style="margin:0;">Start marker</label>
-        <input type="checkbox" id="show-start-marker" checked style="margin-left:auto;">
+      <div class="settings-row settings-row-spaced">
+        <label for="show-start-marker" class="settings-label-inline">Start marker</label>
+        <input type="checkbox" id="show-start-marker" checked class="settings-checkbox">
       </div>
-      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-        <label for="show-end-marker" style="margin:0;">End marker</label>
-        <input type="checkbox" id="show-end-marker" checked style="margin-left:auto;">
+      <div class="settings-row settings-row-spaced">
+        <label for="show-end-marker" class="settings-label-inline">End marker</label>
+        <input type="checkbox" id="show-end-marker" checked class="settings-checkbox">
       </div>
-      <div style="display:flex; align-items:center; gap:8px; margin-top:10px;">
-        <label for="show-highest" style="margin:0;">Highest point</label>
-        <input type="checkbox" id="show-highest" style="margin-left:auto;">
+      <div class="settings-row settings-row-spaced">
+        <label for="show-highest" class="settings-label-inline">Highest point</label>
+        <input type="checkbox" id="show-highest" class="settings-checkbox">
       </div>
     </div>
   </div>
