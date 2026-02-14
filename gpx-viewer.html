@@ -448,11 +448,9 @@ function renderAllTracks() {
   clearAllTracks();
 
   // Track name
-  if (allTracks.length === 1) {
-    trackNameEl.textContent = allTracks[0].name;
-  } else {
-    trackNameEl.textContent = allTracks.length + ' tracks';
-  }
+  trackNameEl.textContent = allTracks.length === 1
+    ? allTracks[0].name
+    : allTracks.length + ' tracks';
 
   const smoothWindow = parseInt(smoothingSlider.value);
   const allBounds = L.latLngBounds();
@@ -602,13 +600,12 @@ function renderAllTracks() {
     { label: 'Moving Avg', value: movingAvg, unit: 'km/h' },
   ];
 
-  const grid = statsGrid;
-  grid.innerHTML = '';
+  statsGrid.innerHTML = '';
   stats.forEach(s => {
     const div = document.createElement('div');
     div.className = 'stat';
     div.innerHTML = `<span class="stat-label">${s.label}</span><span class="stat-value">${s.value} <span class="stat-unit">${s.unit}</span></span>`;
-    grid.appendChild(div);
+    statsGrid.appendChild(div);
   });
   statsEl.style.display = 'block';
 
@@ -652,9 +649,10 @@ function renderAllTracks() {
   if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
 }
 
+const toRad = x => x * Math.PI / 180;
+
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371000;
-  const toRad = x => x * Math.PI / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
   const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
