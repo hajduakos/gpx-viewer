@@ -35,6 +35,7 @@
   }
   #settings-wrapper {
     position: relative; margin-left: auto;
+    display: flex; align-items: center; gap: 8px;
   }
   #settings-btn {
     display: flex; align-items: center; gap: 6px;
@@ -90,6 +91,36 @@
     background: rgba(51, 51, 51, 0.65); backdrop-filter: blur(3px);
   }
   #elevation-canvas { width: 100%; height: 100%; }
+
+  #tracks-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border: 1px solid #555; border-radius: 6px;
+    background: transparent; color: #fff; font-size: 13px; cursor: pointer;
+  }
+  #tracks-btn:hover { background: rgba(255,255,255,0.1); }
+
+  #tracks-panel {
+    display: none; position: absolute; right: 0;
+    width: 50%; z-index: 999; overflow-y: auto;
+    background: rgba(51, 51, 51, 0.65); backdrop-filter: blur(3px);
+    padding: 16px;
+  }
+  #tracks-panel.open { display: block; }
+
+  #tracks-table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+  }
+  #tracks-table th {
+    text-align: left; padding: 6px 8px;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: #aaa; border-bottom: 1px solid #555;
+    white-space: nowrap;
+  }
+  #tracks-table td {
+    padding: 6px 8px; color: #e0e0e0; border-bottom: 1px solid rgba(255,255,255,0.08);
+    white-space: nowrap;
+  }
+  #tracks-table tr:hover td { background: rgba(255,255,255,0.05); }
 </style>
 </head>
 <body>
@@ -99,6 +130,7 @@
   <input type="file" id="file-input" accept=".gpx" multiple>
   <span id="track-name"></span>
   <div id="settings-wrapper">
+    <button id="tracks-btn">Tracks</button>
     <button id="settings-btn">
       Settings
     </button>
@@ -155,6 +187,7 @@
 
 <div id="map-wrapper">
   <div id="map"></div>
+  <div id="tracks-panel"></div>
   <div id="overlay">
     <div id="elevation-chart">
       <canvas id="elevation-canvas"></canvas>
@@ -217,6 +250,25 @@ settingsBtn.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   if (!settingsDropdown.contains(e.target) && e.target !== settingsBtn) {
     settingsDropdown.classList.remove('open');
+  }
+});
+
+const tracksBtn = document.getElementById('tracks-btn');
+const tracksPanel = document.getElementById('tracks-panel');
+function updateTracksPanelPosition() {
+  const headerH = document.getElementById('header').offsetHeight;
+  const overlayH = document.getElementById('overlay').offsetHeight;
+  tracksPanel.style.top = (headerH - 1) + 'px';
+  tracksPanel.style.bottom = (overlayH - 1) + 'px';
+}
+tracksBtn.addEventListener('click', (e) => {
+  e.stopPropagation();
+  tracksPanel.classList.toggle('open');
+  if (tracksPanel.classList.contains('open')) {
+    tracksBtn.style.background = 'rgba(255,255,255,0.15)';
+    updateTracksPanelPosition();
+  } else {
+    tracksBtn.style.background = '';
   }
 });
 
@@ -466,6 +518,17 @@ function renderAllTracks() {
 
     types.add(track.type);
     elevationSegments.push({ points, distances });
+
+    // Store per-track stats for table
+    track._stats = {
+      dist: trackDist,
+      elevGain,
+      minEle: minEle === Infinity ? null : minEle,
+      maxEle: maxEle === -Infinity ? null : maxEle,
+      elapsedSec: (startTime && endTime) ? (endTime - startTime) / 1000 : null,
+      movingSec: movingData ? movingData.movingSec : null,
+      date: startTime,
+    };
   });
 
   // Global highest point marker
@@ -528,8 +591,28 @@ function renderAllTracks() {
   });
   document.getElementById('stats').style.display = 'block';
 
+  // Tracks table
+  const fmtDate = d => d ? d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+  let tableHtml = '<table id="tracks-table"><thead><tr>' +
+    '<th>Name</th><th>Type</th><th>Date</th><th>Distance</th><th>Elapsed</th><th>Moving</th><th>Gain</th><th>Max Elev.</th>' +
+    '</tr></thead><tbody>';
+  allTracks.forEach(t => {
+    const s = t._stats;
+    const dk = (s.dist / 1000).toFixed(2);
+    const el = s.elapsedSec != null ? formatDuration(s.elapsedSec) : '—';
+    const mv = s.movingSec != null ? formatDuration(s.movingSec) : '—';
+    const gn = Math.round(s.elevGain);
+    const mx = s.maxEle != null ? Math.round(s.maxEle) + ' m' : '—';
+    const tp = t.type.charAt(0).toUpperCase() + t.type.slice(1);
+    tableHtml += `<tr><td>${t.name}</td><td>${tp}</td><td>${fmtDate(s.date)}</td><td>${dk} km</td><td>${el}</td><td>${mv}</td><td>${gn} m</td><td>${mx}</td></tr>`;
+  });
+  tableHtml += '</tbody></table>';
+  tracksPanel.innerHTML = tableHtml;
+
   // Elevation chart
   drawElevationChart(elevationSegments);
+
+  if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
 }
 
 function haversine(lat1, lon1, lat2, lon2) {
@@ -654,6 +737,7 @@ function drawElevationChart(segments) {
 
 window.addEventListener('resize', () => {
   if (lastElevationData) drawElevationChart(lastElevationData);
+  if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
 });
 </script>
 </body>
