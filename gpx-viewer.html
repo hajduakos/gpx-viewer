@@ -273,9 +273,16 @@ document.addEventListener('click', (e) => {
 
 const tracksBtn = document.getElementById('tracks-btn');
 const tracksPanel = document.getElementById('tracks-panel');
+const headerEl = document.getElementById('header');
+const overlayEl = document.getElementById('overlay');
+const elevationChart = document.getElementById('elevation-chart');
+const elevationCanvas = document.getElementById('elevation-canvas');
+const trackNameEl = document.getElementById('track-name');
+const statsEl = document.getElementById('stats');
+const statsGrid = document.getElementById('stats-grid');
 function updateTracksPanelPosition() {
-  const headerH = document.getElementById('header').offsetHeight;
-  const overlayH = document.getElementById('overlay').offsetHeight;
+  const headerH = headerEl.offsetHeight;
+  const overlayH = overlayEl.offsetHeight;
   tracksPanel.style.top = (headerH - 1) + 'px';
   tracksPanel.style.bottom = '';
   tracksPanel.style.maxHeight = (window.innerHeight - headerH - overlayH + 2) + 'px';
@@ -312,12 +319,11 @@ lineAlphaSlider.addEventListener('input', () => {
 
 const showElevation = document.getElementById('show-elevation');
 showElevation.addEventListener('change', () => {
-  const chart = document.getElementById('elevation-chart');
   if (showElevation.checked && lastElevationData) {
-    chart.style.display = 'block';
+    elevationChart.style.display = 'block';
     drawElevationChart(lastElevationData);
   } else {
-    chart.style.display = 'none';
+    elevationChart.style.display = 'none';
   }
 });
 
@@ -358,6 +364,18 @@ showHighest.addEventListener('change', () => {
 let allTracks = [];
 let markerHighest = null;
 
+function clearAllTracks() {
+  allTracks.forEach(t => {
+    if (t.trackLayer) map.removeLayer(t.trackLayer);
+    if (t.markerStart) map.removeLayer(t.markerStart);
+    if (t.markerEnd) map.removeLayer(t.markerEnd);
+    t.trackLayer = null;
+    t.markerStart = null;
+    t.markerEnd = null;
+  });
+  if (markerHighest) { map.removeLayer(markerHighest); markerHighest = null; }
+}
+
 const smoothingSlider = document.getElementById('smoothing');
 const smoothingValue = document.getElementById('smoothing-value');
 smoothingSlider.addEventListener('input', () => {
@@ -377,13 +395,7 @@ document.getElementById('file-input').addEventListener('change', e => {
       parsed[idx] = parseGPX(ev.target.result);
       loaded++;
       if (loaded === files.length) {
-        // Clear old tracks from map
-        allTracks.forEach(t => {
-          if (t.trackLayer) map.removeLayer(t.trackLayer);
-          if (t.markerStart) map.removeLayer(t.markerStart);
-          if (t.markerEnd) map.removeLayer(t.markerEnd);
-        });
-        if (markerHighest) { map.removeLayer(markerHighest); markerHighest = null; }
+        clearAllTracks();
         allTracks = parsed.filter(t => t !== null);
         if (allTracks.length > 0) renderAllTracks();
       }
@@ -439,22 +451,13 @@ function smoothPoints(points, windowSize) {
 }
 
 function renderAllTracks() {
-  // Clear all existing layers/markers
-  allTracks.forEach(t => {
-    if (t.trackLayer) map.removeLayer(t.trackLayer);
-    if (t.markerStart) map.removeLayer(t.markerStart);
-    if (t.markerEnd) map.removeLayer(t.markerEnd);
-    t.trackLayer = null;
-    t.markerStart = null;
-    t.markerEnd = null;
-  });
-  if (markerHighest) { map.removeLayer(markerHighest); markerHighest = null; }
+  clearAllTracks();
 
   // Track name
   if (allTracks.length === 1) {
-    document.getElementById('track-name').textContent = allTracks[0].name;
+    trackNameEl.textContent = allTracks[0].name;
   } else {
-    document.getElementById('track-name').textContent = allTracks.length + ' tracks';
+    trackNameEl.textContent = allTracks.length + ' tracks';
   }
 
   const smoothWindow = parseInt(smoothingSlider.value);
@@ -607,7 +610,7 @@ function renderAllTracks() {
     { label: 'Moving Avg', value: movingAvg, unit: 'km/h' },
   ];
 
-  const grid = document.getElementById('stats-grid');
+  const grid = statsGrid;
   grid.innerHTML = '';
   stats.forEach(s => {
     const div = document.createElement('div');
@@ -615,7 +618,7 @@ function renderAllTracks() {
     div.innerHTML = `<span class="stat-label">${s.label}</span><span class="stat-value">${s.value} <span class="stat-unit">${s.unit}</span></span>`;
     grid.appendChild(div);
   });
-  document.getElementById('stats').style.display = 'block';
+  statsEl.style.display = 'block';
 
   // Tracks table
   const fmtDate = d => d ? d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '—';
@@ -692,18 +695,16 @@ let lastElevationData = null;
 
 function drawElevationChart(segments) {
   lastElevationData = segments;
-  const container = document.getElementById('elevation-chart');
-  const canvas = document.getElementById('elevation-canvas');
 
   const hasEle = segments.some(seg => seg.points.some(p => p.ele != null));
-  if (!hasEle || !document.getElementById('show-elevation').checked) { container.style.display = 'none'; return; }
+  if (!hasEle || !showElevation.checked) { elevationChart.style.display = 'none'; return; }
 
-  container.style.display = 'block';
-  const ctx = canvas.getContext('2d');
+  elevationChart.style.display = 'block';
+  const ctx = elevationCanvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  const rect = elevationCanvas.getBoundingClientRect();
+  elevationCanvas.width = rect.width * dpr;
+  elevationCanvas.height = rect.height * dpr;
   ctx.scale(dpr, dpr);
   const W = rect.width, H = rect.height;
 
@@ -732,7 +733,6 @@ function drawElevationChart(segments) {
   ctx.clearRect(0, 0, W, H);
 
   let cumPxOffset = 0;
-  let cumDistOffset = 0;
   segments.forEach((seg, segIdx) => {
     const segMaxD = seg.distances[seg.distances.length - 1];
     const segW = totalSegDist > 0 ? (segMaxD / totalSegDist) * usableW : 0;
