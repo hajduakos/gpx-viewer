@@ -400,9 +400,9 @@ function parseGPX(xmlStr) {
   return { rawPoints, name, type, trackLayer: null, markerStart: null, markerEnd: null };
 }
 
-function smoothPoints(points, window) {
-  if (window <= 0) return points;
-  const half = Math.floor(window / 2);
+function smoothPoints(points, windowSize) {
+  if (windowSize <= 0) return points;
+  const half = Math.floor(windowSize / 2);
   return points.map((p, i) => {
     const start = Math.max(0, i - half);
     const end = Math.min(points.length - 1, i + half);
