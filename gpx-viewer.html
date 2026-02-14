@@ -55,7 +55,7 @@
     color: #fff; margin-bottom: 6px; letter-spacing: 0.5px;
   }
   #tile-select {
-    width: 100%; padding: 6px 10px; border: 1px solid #555; border-radius: 6px;
+    flex: 1; padding: 6px 10px; border: 1px solid #555; border-radius: 6px;
     background: #333; color: #e0e0e0; font-size: 13px; cursor: pointer;
   }
   #track-name { font-size: 20px; font-weight: 600; color: #fff; }
@@ -119,9 +119,11 @@
   .settings-row {
     display: flex; align-items: center; gap: 8px;
   }
-  .settings-row-spaced { margin-top: 10px; }
-  .settings-label-inline { margin: 0; }
-  .settings-label-spaced { margin-top: 10px; }
+  .settings-row-spaced { margin-top: 4px; }
+  .settings-divider {
+    border: none; border-top: 1px solid #555; margin: 8px 0;
+  }
+  .settings-label-inline { margin: 0; white-space: nowrap; }
   .slider-value {
     font-size: 13px; color: #fff; min-width: 28px; text-align: right;
   }
@@ -131,7 +133,7 @@
     border: 1px solid #555; border-radius: 4px;
     background: transparent; cursor: pointer; padding: 0;
   }
-  .slider { flex: 1; }
+  .slider { width: 150px; margin-left: auto; }
 </style>
 </head>
 <body>
@@ -146,10 +148,18 @@
       Settings
     </button>
     <div id="settings-dropdown">
-      <label for="tile-select">Map type</label>
-      <select id="tile-select"></select>
-      <label for="map-brightness" class="settings-label-spaced">Map brightness</label>
       <div class="settings-row">
+        <label for="smoothing" class="settings-label-inline">Track smoothing</label>
+        <input type="range" id="smoothing" min="0" max="50" step="1" value="5" class="slider">
+        <span id="smoothing-value" class="slider-value">5</span>
+      </div>
+      <hr class="settings-divider">
+      <div class="settings-row settings-row-spaced">
+        <label for="tile-select" class="settings-label-inline">Map type</label>
+        <select id="tile-select"></select>
+      </div>
+      <div class="settings-row settings-row-spaced">
+        <label for="map-brightness" class="settings-label-inline">Map brightness</label>
         <input type="range" id="map-brightness" min="0" max="1" step="0.05" value="1" class="slider">
         <span id="map-brightness-value" class="slider-value">1</span>
       </div>
@@ -157,21 +167,17 @@
         <label for="line-color" class="settings-label-inline">Line color</label>
         <input type="color" id="line-color" value="#e94560" class="color-picker">
       </div>
-      <label for="line-width" class="settings-label-spaced">Line width</label>
-      <div class="settings-row">
+      <div class="settings-row settings-row-spaced">
+        <label for="line-width" class="settings-label-inline">Line width</label>
         <input type="range" id="line-width" min="1" max="10" step="0.5" value="4" class="slider">
         <span id="line-width-value" class="slider-value">4</span>
       </div>
-      <label for="line-alpha" class="settings-label-spaced">Line opacity</label>
-      <div class="settings-row">
+      <div class="settings-row settings-row-spaced">
+        <label for="line-alpha" class="settings-label-inline">Line opacity</label>
         <input type="range" id="line-alpha" min="0" max="1" step="0.05" value="0.85" class="slider">
         <span id="line-alpha-value" class="slider-value">0.85</span>
       </div>
-      <label for="smoothing" class="settings-label-spaced">Smoothing</label>
-      <div class="settings-row">
-        <input type="range" id="smoothing" min="0" max="50" step="1" value="5" class="slider">
-        <span id="smoothing-value" class="slider-value">5</span>
-      </div>
+      <hr class="settings-divider">
       <div class="settings-row settings-row-spaced">
         <label for="show-elevation" class="settings-label-inline">Elevation chart</label>
         <input type="checkbox" id="show-elevation" checked class="settings-checkbox">
