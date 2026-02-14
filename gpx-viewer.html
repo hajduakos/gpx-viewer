@@ -97,7 +97,7 @@
 
 <div id="header">
   <h1>GPX Viewer</h1>
-  <input type="file" id="file-input" accept=".gpx">
+  <input type="file" id="file-input" accept=".gpx" multiple>
   <span id="track-name"></span>
   <div id="settings-wrapper">
     <button id="settings-btn">
@@ -225,19 +225,19 @@ const lineWidthSlider = document.getElementById('line-width');
 const lineWidthValue = document.getElementById('line-width-value');
 const lineColorPicker = document.getElementById('line-color');
 lineColorPicker.addEventListener('input', () => {
-  if (trackLayer) trackLayer.setStyle({ color: lineColorPicker.value });
+  allTracks.forEach(t => { if (t.trackLayer) t.trackLayer.setStyle({ color: lineColorPicker.value }); });
 });
 
 lineWidthSlider.addEventListener('input', () => {
   lineWidthValue.textContent = lineWidthSlider.value;
-  if (trackLayer) trackLayer.setStyle({ weight: parseFloat(lineWidthSlider.value) });
+  allTracks.forEach(t => { if (t.trackLayer) t.trackLayer.setStyle({ weight: parseFloat(lineWidthSlider.value) }); });
 });
 
 const lineAlphaSlider = document.getElementById('line-alpha');
 const lineAlphaValue = document.getElementById('line-alpha-value');
 lineAlphaSlider.addEventListener('input', () => {
   lineAlphaValue.textContent = lineAlphaSlider.value;
-  if (trackLayer) trackLayer.setStyle({ opacity: parseFloat(lineAlphaSlider.value) });
+  allTracks.forEach(t => { if (t.trackLayer) t.trackLayer.setStyle({ opacity: parseFloat(lineAlphaSlider.value) }); });
 });
 
 const showElevation = document.getElementById('show-elevation');
@@ -245,7 +245,7 @@ showElevation.addEventListener('change', () => {
   const chart = document.getElementById('elevation-chart');
   if (showElevation.checked && lastElevationData) {
     chart.style.display = 'block';
-    drawElevationChart(lastElevationData.points, lastElevationData.distances);
+    drawElevationChart(lastElevationData);
   } else {
     chart.style.display = 'none';
   }
@@ -262,46 +262,58 @@ showZoom.addEventListener('change', () => {
 
 const showStartMarker = document.getElementById('show-start-marker');
 showStartMarker.addEventListener('change', () => {
-  if (!markerStart) return;
-  if (showStartMarker.checked) markerStart.addTo(map);
-  else map.removeLayer(markerStart);
+  allTracks.forEach(t => {
+    if (!t.markerStart) return;
+    if (showStartMarker.checked) t.markerStart.addTo(map);
+    else map.removeLayer(t.markerStart);
+  });
 });
 
 const showEndMarker = document.getElementById('show-end-marker');
 showEndMarker.addEventListener('change', () => {
-  if (!markerEnd) return;
-  if (showEndMarker.checked) markerEnd.addTo(map);
-  else map.removeLayer(markerEnd);
+  allTracks.forEach(t => {
+    if (!t.markerEnd) return;
+    if (showEndMarker.checked) t.markerEnd.addTo(map);
+    else map.removeLayer(t.markerEnd);
+  });
 });
 
 const showHighest = document.getElementById('show-highest');
 showHighest.addEventListener('change', () => {
-  if (!markerHighest) return;
-  if (showHighest.checked) markerHighest.addTo(map);
-  else map.removeLayer(markerHighest);
+  allTracks.forEach(t => {
+    if (!t.markerHighest) return;
+    if (showHighest.checked) t.markerHighest.addTo(map);
+    else map.removeLayer(t.markerHighest);
+  });
 });
 
-let trackLayer = null;
-let markerStart = null;
-let markerEnd = null;
-let rawPoints = null;
-let trackType = 'Unknown';
-let trackName = 'Unnamed';
-let markerHighest = null;
+let allTracks = [];
 
 const smoothingSlider = document.getElementById('smoothing');
 const smoothingValue = document.getElementById('smoothing-value');
 smoothingSlider.addEventListener('input', () => {
   smoothingValue.textContent = smoothingSlider.value;
-  if (rawPoints) renderTrack(rawPoints, trackName, trackType);
+  if (allTracks.length > 0) renderAllTracks();
 });
 
 document.getElementById('file-input').addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = ev => parseGPX(ev.target.result);
-  reader.readAsText(file);
+  const files = Array.from(e.target.files);
+  if (files.length === 0) return;
+  files.sort((a, b) => a.name.localeCompare(b.name));
+  let loaded = 0;
+  const parsed = new Array(files.length);
+  files.forEach((file, idx) => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      parsed[idx] = parseGPX(ev.target.result);
+      loaded++;
+      if (loaded === files.length) {
+        allTracks = parsed.filter(t => t !== null);
+        if (allTracks.length > 0) renderAllTracks();
+      }
+    };
+    reader.readAsText(file);
+  });
 });
 
 function parseGPX(xmlStr) {
@@ -309,10 +321,10 @@ function parseGPX(xmlStr) {
   const doc = parser.parseFromString(xmlStr, 'application/xml');
 
   const trk = doc.querySelector('trk');
-  trackName = trk?.querySelector('name')?.textContent || 'Unnamed';
-  trackType = trk?.querySelector('type')?.textContent || 'Unknown';
+  const name = trk?.querySelector('name')?.textContent || 'Unnamed';
+  const type = trk?.querySelector('type')?.textContent || 'Unknown';
 
-  rawPoints = [];
+  const rawPoints = [];
   doc.querySelectorAll('trkpt').forEach(pt => {
     const lat = parseFloat(pt.getAttribute('lat'));
     const lon = parseFloat(pt.getAttribute('lon'));
@@ -325,8 +337,8 @@ function parseGPX(xmlStr) {
     });
   });
 
-  if (rawPoints.length === 0) return;
-  renderTrack(rawPoints, trackName, trackType);
+  if (rawPoints.length === 0) return null;
+  return { rawPoints, name, type, trackLayer: null, markerStart: null, markerEnd: null, markerHighest: null };
 }
 
 function smoothPoints(points, window) {
@@ -350,87 +362,148 @@ function smoothPoints(points, window) {
   });
 }
 
-function renderTrack(rawPts, name, type) {
-  // Clear previous
-  if (trackLayer) map.removeLayer(trackLayer);
-  if (markerStart) map.removeLayer(markerStart);
-  if (markerEnd) map.removeLayer(markerEnd);
-  if (markerHighest) map.removeLayer(markerHighest);
+function renderAllTracks() {
+  // Clear all existing layers/markers
+  allTracks.forEach(t => {
+    if (t.trackLayer) map.removeLayer(t.trackLayer);
+    if (t.markerStart) map.removeLayer(t.markerStart);
+    if (t.markerEnd) map.removeLayer(t.markerEnd);
+    if (t.markerHighest) map.removeLayer(t.markerHighest);
+    t.trackLayer = null;
+    t.markerStart = null;
+    t.markerEnd = null;
+    t.markerHighest = null;
+  });
 
-  document.getElementById('track-name').textContent = name;
-
-  const points = smoothPoints(rawPts, parseInt(smoothingSlider.value));
-
-  // Draw track
-  const latlngs = points.map(p => [p.lat, p.lon]);
-  trackLayer = L.polyline(latlngs, { color: lineColorPicker.value, weight: parseFloat(lineWidthSlider.value), opacity: parseFloat(lineAlphaSlider.value) }).addTo(map);
-  map.fitBounds(trackLayer.getBounds(), { padding: [30, 30] });
-
-  // Start / End markers
-  const startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#00c853;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
-  const endIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#e94560;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
-  markerStart = L.marker(latlngs[0], { icon: startIcon }).bindPopup('Start');
-  if (showStartMarker.checked) markerStart.addTo(map);
-  markerEnd = L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).bindPopup('End');
-  if (showEndMarker.checked) markerEnd.addTo(map);
-
-  // Highest point marker
-  let highestIdx = -1, highestEle = -Infinity;
-  for (let i = 0; i < points.length; i++) {
-    if (points[i].ele != null && points[i].ele > highestEle) { highestEle = points[i].ele; highestIdx = i; }
-  }
-  if (highestIdx >= 0) {
-    // CSS border trick: a 0x0 div with transparent left/right borders and a colored bottom border renders as an upward-pointing triangle
-    const highIcon = L.divIcon({ className: '', html: '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid #2196f3;filter:drop-shadow(0 0 2px rgba(0,0,0,0.5));"></div>', iconSize: [16,14], iconAnchor: [8,14] });
-    markerHighest = L.marker([points[highestIdx].lat, points[highestIdx].lon], { icon: highIcon }).bindPopup('Highest: ' + Math.round(highestEle) + ' m');
-    if (showHighest.checked) markerHighest.addTo(map);
+  // Track name
+  if (allTracks.length === 1) {
+    document.getElementById('track-name').textContent = allTracks[0].name;
+  } else {
+    document.getElementById('track-name').textContent = allTracks.length + ' tracks';
   }
 
-  // Compute stats
-  let totalDist = 0;
-  let elevGain = 0;
+  const smoothWindow = parseInt(smoothingSlider.value);
+  const allBounds = L.latLngBounds();
+  const elevationSegments = [];
 
-  let minEle = Infinity, maxEle = -Infinity;
-  const distances = [0]; // cumulative distance per point
+  // Aggregated stats accumulators
+  let totalDist = 0, totalElevGain = 0;
+  let globalMinEle = Infinity, globalMaxEle = -Infinity;
+  let totalElapsedSec = 0, hasElapsed = false;
+  let totalMovingSec = 0, hasMoving = false;
+  let earliestDate = null, latestDate = null;
+  const types = new Set();
 
-  for (let i = 1; i < points.length; i++) {
-    const d = haversine(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
-    totalDist += d;
-    distances.push(totalDist);
-    if (points[i].ele != null && points[i - 1].ele != null) {
-      const diff = points[i].ele - points[i - 1].ele;
-      if (diff > 0) elevGain += diff;
+  allTracks.forEach(track => {
+    const points = smoothPoints(track.rawPoints, smoothWindow);
+
+    // Draw polyline
+    const latlngs = points.map(p => [p.lat, p.lon]);
+    track.trackLayer = L.polyline(latlngs, {
+      color: lineColorPicker.value,
+      weight: parseFloat(lineWidthSlider.value),
+      opacity: parseFloat(lineAlphaSlider.value),
+    }).addTo(map);
+    allBounds.extend(track.trackLayer.getBounds());
+
+    // Start / End markers
+    const startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#00c853;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
+    const endIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#e94560;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
+    track.markerStart = L.marker(latlngs[0], { icon: startIcon }).bindPopup('Start');
+    if (showStartMarker.checked) track.markerStart.addTo(map);
+    track.markerEnd = L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).bindPopup('End');
+    if (showEndMarker.checked) track.markerEnd.addTo(map);
+
+    // Highest point marker
+    let highestIdx = -1, highestEle = -Infinity;
+    for (let i = 0; i < points.length; i++) {
+      if (points[i].ele != null && points[i].ele > highestEle) { highestEle = points[i].ele; highestIdx = i; }
     }
-    if (points[i].ele != null) {
-      if (points[i].ele < minEle) minEle = points[i].ele;
-      if (points[i].ele > maxEle) maxEle = points[i].ele;
+    if (highestIdx >= 0) {
+      const highIcon = L.divIcon({ className: '', html: '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid #2196f3;filter:drop-shadow(0 0 2px rgba(0,0,0,0.5));"></div>', iconSize: [16,14], iconAnchor: [8,14] });
+      track.markerHighest = L.marker([points[highestIdx].lat, points[highestIdx].lon], { icon: highIcon }).bindPopup('Highest: ' + Math.round(highestEle) + ' m');
+      if (showHighest.checked) track.markerHighest.addTo(map);
     }
-  }
-  if (points[0].ele != null) {
-    if (points[0].ele < minEle) minEle = points[0].ele;
-    if (points[0].ele > maxEle) maxEle = points[0].ele;
-  }
 
-  const startTime = points[0].time;
-  const endTime = points[points.length - 1].time;
-  const totalSec = (startTime && endTime) ? (endTime - startTime) / 1000 : null;
+    // Per-track stats
+    let trackDist = 0, elevGain = 0;
+    let minEle = Infinity, maxEle = -Infinity;
+    const distances = [0];
 
-  const dateStr = startTime ? startTime.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : '—';
+    for (let i = 1; i < points.length; i++) {
+      const d = haversine(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
+      trackDist += d;
+      distances.push(trackDist);
+      if (points[i].ele != null && points[i - 1].ele != null) {
+        const diff = points[i].ele - points[i - 1].ele;
+        if (diff > 0) elevGain += diff;
+      }
+      if (points[i].ele != null) {
+        if (points[i].ele < minEle) minEle = points[i].ele;
+        if (points[i].ele > maxEle) maxEle = points[i].ele;
+      }
+    }
+    if (points[0].ele != null) {
+      if (points[0].ele < minEle) minEle = points[0].ele;
+      if (points[0].ele > maxEle) maxEle = points[0].ele;
+    }
+
+    totalDist += trackDist;
+    totalElevGain += elevGain;
+    if (minEle < globalMinEle) globalMinEle = minEle;
+    if (maxEle > globalMaxEle) globalMaxEle = maxEle;
+
+    // Time stats
+    const startTime = points[0].time;
+    const endTime = points[points.length - 1].time;
+    if (startTime && endTime) {
+      totalElapsedSec += (endTime - startTime) / 1000;
+      hasElapsed = true;
+      if (!earliestDate || startTime < earliestDate) earliestDate = startTime;
+      if (!latestDate || endTime > latestDate) latestDate = endTime;
+    }
+    const movingData = computeMovingTime(points);
+    if (movingData) {
+      totalMovingSec += movingData.movingSec;
+      hasMoving = true;
+    }
+
+    types.add(track.type);
+    elevationSegments.push({ points, distances });
+  });
+
+  map.fitBounds(allBounds, { padding: [30, 30] });
+
+  // Aggregated stats display
   const distKm = totalDist / 1000;
-  const timeStr = totalSec ? formatDuration(totalSec) : '—';
-  const avgSpeed = totalSec ? (distKm / (totalSec / 3600)).toFixed(1) : '—';
-  const movingData = computeMovingTime(points);
-  const movingTimeStr = movingData ? formatDuration(movingData.movingSec) : '—';
-  const movingAvg = (movingData && movingData.movingSec > 0) ? (distKm / (movingData.movingSec / 3600)).toFixed(1) : '—';
+  const activityStr = types.size === 1 ? [...types][0] : 'Multiple';
+  const activityDisplay = activityStr.charAt(0).toUpperCase() + activityStr.slice(1);
+
+  let dateStr = '—';
+  if (earliestDate) {
+    const fmt = d => d.toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+    if (allTracks.length === 1) {
+      dateStr = fmt(earliestDate);
+    } else {
+      const d1 = fmt(earliestDate);
+      const d2 = fmt(latestDate);
+      dateStr = d1 === d2 ? d1 : d1 + ' — ' + d2;
+    }
+  }
+
+  const timeStr = hasElapsed ? formatDuration(totalElapsedSec) : '—';
+  const avgSpeed = hasElapsed && totalElapsedSec > 0 ? (distKm / (totalElapsedSec / 3600)).toFixed(1) : '—';
+  const movingTimeStr = hasMoving ? formatDuration(totalMovingSec) : '—';
+  const movingAvg = (hasMoving && totalMovingSec > 0) ? (distKm / (totalMovingSec / 3600)).toFixed(1) : '—';
 
   const stats = [
-    { label: 'Activity', value: type.charAt(0).toUpperCase() + type.slice(1), unit: '' },
+    { label: 'Activity', value: activityDisplay, unit: '' },
     { label: 'Date', value: dateStr, unit: '' },
     { label: 'Distance', value: distKm.toFixed(2), unit: 'km' },
     { label: 'Elapsed Time', value: timeStr, unit: '' },
     { label: 'Moving Time', value: movingTimeStr, unit: '' },
-    { label: 'Elev. Gain', value: Math.round(elevGain), unit: 'm' },
-    { label: 'Min / Max Elev.', value: Math.round(minEle) + ' / ' + Math.round(maxEle), unit: 'm' },
+    { label: 'Elev. Gain', value: Math.round(totalElevGain), unit: 'm' },
+    { label: 'Min / Max Elev.', value: Math.round(globalMinEle) + ' / ' + Math.round(globalMaxEle), unit: 'm' },
     { label: 'Avg Speed', value: avgSpeed, unit: 'km/h' },
     { label: 'Moving Avg', value: movingAvg, unit: 'km/h' },
   ];
@@ -445,8 +518,8 @@ function renderTrack(rawPts, name, type) {
   });
   document.getElementById('stats').style.display = 'block';
 
-  // Elevation profile
-  drawElevationChart(points, distances);
+  // Elevation chart
+  drawElevationChart(elevationSegments);
 }
 
 function haversine(lat1, lon1, lat2, lon2) {
@@ -481,11 +554,12 @@ function computeMovingTime(points) {
 
 let lastElevationData = null;
 
-function drawElevationChart(points, distances) {
-  lastElevationData = { points, distances };
+function drawElevationChart(segments) {
+  lastElevationData = segments;
   const container = document.getElementById('elevation-chart');
   const canvas = document.getElementById('elevation-canvas');
-  const hasEle = points.some(p => p.ele != null);
+
+  const hasEle = segments.some(seg => seg.points.some(p => p.ele != null));
   if (!hasEle || !document.getElementById('show-elevation').checked) { container.style.display = 'none'; return; }
 
   container.style.display = 'block';
@@ -497,50 +571,77 @@ function drawElevationChart(points, distances) {
   ctx.scale(dpr, dpr);
   const W = rect.width, H = rect.height;
 
-  const eles = points.map(p => p.ele ?? 0);
-  const maxD = distances[distances.length - 1];
-  const minE = Math.min(...eles) - 20;
-  const maxE = Math.max(...eles) + 20;
+  // Compute global elevation range
+  let globalMinE = Infinity, globalMaxE = -Infinity;
+  segments.forEach(seg => {
+    seg.points.forEach(p => {
+      const e = p.ele ?? 0;
+      if (e < globalMinE) globalMinE = e;
+      if (e > globalMaxE) globalMaxE = e;
+    });
+  });
+  const minE = globalMinE - 20;
+  const maxE = globalMaxE + 20;
+
+  // Compute total distance with gaps between segments
+  const gapFraction = 0.01; // 1% of total distance per gap
+  let totalSegDist = 0;
+  segments.forEach(seg => {
+    const lastD = seg.distances[seg.distances.length - 1];
+    totalSegDist += lastD;
+  });
+  const gapSize = segments.length > 1 ? totalSegDist * gapFraction : 0;
+  const totalWithGaps = totalSegDist + gapSize * (segments.length - 1);
 
   ctx.clearRect(0, 0, W, H);
 
-  // Fill
-  ctx.beginPath();
-  ctx.moveTo(0, H);
-  for (let i = 0; i < points.length; i++) {
-    const x = (distances[i] / maxD) * W;
-    const y = H - ((eles[i] - minE) / (maxE - minE)) * H;
-    ctx.lineTo(x, y);
-  }
-  ctx.lineTo(W, H);
-  ctx.closePath();
-  const grad = ctx.createLinearGradient(0, 0, 0, H);
-  grad.addColorStop(0, 'rgba(255,255,255,0.4)');
-  grad.addColorStop(1, 'rgba(255,255,255,0.05)');
-  ctx.fillStyle = grad;
-  ctx.fill();
+  let cumOffset = 0;
+  segments.forEach((seg, segIdx) => {
+    const segMaxD = seg.distances[seg.distances.length - 1];
+    const eles = seg.points.map(p => p.ele ?? 0);
 
-  // Line
-  ctx.beginPath();
-  for (let i = 0; i < points.length; i++) {
-    const x = (distances[i] / maxD) * W;
-    const y = H - ((eles[i] - minE) / (maxE - minE)) * H;
-    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-  }
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
+    // Fill
+    ctx.beginPath();
+    const x0 = ((cumOffset + seg.distances[0]) / totalWithGaps) * W;
+    ctx.moveTo(x0, H);
+    for (let i = 0; i < seg.points.length; i++) {
+      const x = ((cumOffset + seg.distances[i]) / totalWithGaps) * W;
+      const y = H - ((eles[i] - minE) / (maxE - minE)) * H;
+      ctx.lineTo(x, y);
+    }
+    const xEnd = ((cumOffset + segMaxD) / totalWithGaps) * W;
+    ctx.lineTo(xEnd, H);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, 0, 0, H);
+    grad.addColorStop(0, 'rgba(255,255,255,0.4)');
+    grad.addColorStop(1, 'rgba(255,255,255,0.05)');
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line
+    ctx.beginPath();
+    for (let i = 0; i < seg.points.length; i++) {
+      const x = ((cumOffset + seg.distances[i]) / totalWithGaps) * W;
+      const y = H - ((eles[i] - minE) / (maxE - minE)) * H;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    cumOffset += segMaxD + gapSize;
+  });
 
   // Axis labels
   ctx.fillStyle = '#fff';
   ctx.font = '10px sans-serif';
   ctx.fillText(Math.round(maxE) + ' m', 4, 12);
   ctx.fillText(Math.round(minE) + ' m', 4, H - 4);
-  ctx.fillText((maxD / 1000).toFixed(1) + ' km', W - 50, H - 4);
+  ctx.fillText((totalSegDist / 1000).toFixed(1) + ' km', W - 50, H - 4);
 }
 
 window.addEventListener('resize', () => {
-  if (lastElevationData) drawElevationChart(lastElevationData.points, lastElevationData.distances);
+  if (lastElevationData) drawElevationChart(lastElevationData);
 });
 </script>
 </body>
