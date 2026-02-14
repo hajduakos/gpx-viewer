@@ -144,6 +144,7 @@
   <span id="track-name"></span>
   <div id="settings-wrapper">
     <button id="tracks-btn" class="header-btn">Tracks</button>
+    <button id="elevation-btn" class="header-btn">Elevation</button>
     <button id="settings-btn" class="header-btn">
       Settings
     </button>
@@ -178,10 +179,6 @@
         <span id="line-alpha-value" class="slider-value">0.85</span>
       </div>
       <hr class="settings-divider">
-      <div class="settings-row settings-row-spaced">
-        <label for="show-elevation" class="settings-label-inline">Elevation chart</label>
-        <input type="checkbox" id="show-elevation" checked class="settings-checkbox">
-      </div>
       <div class="settings-row settings-row-spaced">
         <label for="show-zoom" class="settings-label-inline">Zoom controls</label>
         <input type="checkbox" id="show-zoom" class="settings-checkbox">
@@ -291,6 +288,20 @@ tracksBtn.addEventListener('click', (e) => {
   }
 });
 
+const elevationBtn = document.getElementById('elevation-btn');
+let elevationVisible = true;
+elevationBtn.style.background = 'rgba(255,255,255,0.15)';
+elevationBtn.addEventListener('click', () => {
+  elevationVisible = !elevationVisible;
+  elevationBtn.style.background = elevationVisible ? 'rgba(255,255,255,0.15)' : '';
+  if (elevationVisible && lastElevationData) {
+    elevationChart.style.display = 'block';
+    drawElevationChart(lastElevationData);
+  } else {
+    elevationChart.style.display = 'none';
+  }
+});
+
 let allTracks = [];
 let markerHighest = null;
 
@@ -337,16 +348,6 @@ const smoothingValue = document.getElementById('smoothing-value');
 smoothingSlider.addEventListener('input', () => {
   smoothingValue.textContent = smoothingSlider.value;
   if (allTracks.length > 0) renderAllTracks();
-});
-
-const showElevation = document.getElementById('show-elevation');
-showElevation.addEventListener('change', () => {
-  if (showElevation.checked && lastElevationData) {
-    elevationChart.style.display = 'block';
-    drawElevationChart(lastElevationData);
-  } else {
-    elevationChart.style.display = 'none';
-  }
 });
 
 const showZoom = document.getElementById('show-zoom');
@@ -700,7 +701,7 @@ function drawElevationChart(segments) {
   lastElevationData = segments;
 
   const hasEle = segments.some(seg => seg.points.some(p => p.ele != null));
-  if (!hasEle || !showElevation.checked) { elevationChart.style.display = 'none'; return; }
+  if (!hasEle || !elevationVisible) { elevationChart.style.display = 'none'; return; }
 
   elevationChart.style.display = 'block';
   const ctx = elevationCanvas.getContext('2d');
