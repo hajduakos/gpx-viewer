@@ -125,7 +125,7 @@
   }
   .settings-label-inline { margin: 0; white-space: nowrap; }
   .slider-value {
-    font-size: 13px; color: #fff; min-width: 28px; text-align: right;
+    font-size: 13px; color: #fff; min-width: 40px; text-align: right; white-space: nowrap;
   }
   .settings-checkbox { margin-left: auto; }
   .color-picker {
@@ -153,6 +153,11 @@
         <label for="smoothing" class="settings-label-inline">Track smoothing</label>
         <input type="range" id="smoothing" min="0" max="50" step="1" value="5" class="slider">
         <span id="smoothing-value" class="slider-value">5</span>
+      </div>
+      <div class="settings-row settings-row-spaced">
+        <label for="min-render-dist" class="settings-label-inline">Min point distance</label>
+        <input type="range" id="min-render-dist" min="0" max="100" step="1" value="10" class="slider">
+        <span id="min-render-dist-value" class="slider-value">10 m</span>
       </div>
       <hr class="settings-divider">
       <div class="settings-row settings-row-spaced">
@@ -305,7 +310,12 @@ elevationBtn.addEventListener('click', () => {
 
 let allTracks = [];
 let markerHighest = null;
-const MIN_RENDER_DISTANCE_M = 5;
+const minRenderDistSlider = document.getElementById('min-render-dist');
+const minRenderDistValue = document.getElementById('min-render-dist-value');
+minRenderDistSlider.addEventListener('input', () => {
+  minRenderDistValue.textContent = minRenderDistSlider.value + ' m';
+  if (allTracks.length > 0) renderAllTracks({ fitBounds: false });
+});
 
 function clearAllTracks() {
   allTracks.forEach(t => {
@@ -467,7 +477,8 @@ function renderAllTracks({ fitBounds = true } = {}) {
     : allTracks.length + ' tracks';
 
   const smoothWindow = parseInt(smoothingSlider.value);
-  console.log(`Smoothing level: ${smoothWindow}`);
+  const minRenderDist = parseInt(minRenderDistSlider.value);
+  console.log(`Smoothing level: ${smoothWindow}, min render distance: ${minRenderDist} m`);
   const allBounds = L.latLngBounds();
   const elevationSegments = [];
 
@@ -487,7 +498,7 @@ function renderAllTracks({ fitBounds = true } = {}) {
     const latlngs = [[points[0].lat, points[0].lon]];
     for (let i = 1; i < points.length; i++) {
       const prev = latlngs[latlngs.length - 1];
-      if (i === points.length - 1 || haversine(prev[0], prev[1], points[i].lat, points[i].lon) >= MIN_RENDER_DISTANCE_M) {
+      if (i === points.length - 1 || haversine(prev[0], prev[1], points[i].lat, points[i].lon) >= minRenderDist) {
         latlngs.push([points[i].lat, points[i].lon]);
       }
     }
