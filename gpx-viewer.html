@@ -390,6 +390,7 @@ document.getElementById('file-input').addEventListener('change', e => {
   const files = Array.from(e.target.files);
   if (files.length === 0) return;
   files.sort((a, b) => a.name.localeCompare(b.name));
+  console.log(`Reading ${files.length} file(s)...`);
   let loaded = 0;
   const parsed = new Array(files.length);
   trackNameEl.textContent = 'Loading 0/' + files.length + '...';
@@ -397,6 +398,7 @@ document.getElementById('file-input').addEventListener('change', e => {
     const reader = new FileReader();
     reader.onload = ev => {
       parsed[idx] = parseGPX(ev.target.result);
+      console.log(`Loaded "${file.name}": ${parsed[idx] ? parsed[idx].rawPoints.length : 0} points`);
       loaded++;
       trackNameEl.textContent = 'Loading ' + loaded + '/' + files.length + '...';
       if (loaded === files.length) {
@@ -456,6 +458,7 @@ function smoothPoints(points, windowSize) {
 }
 
 function renderAllTracks({ fitBounds = true } = {}) {
+  console.log(`Rendering ${allTracks.length} track(s)...`);
   clearAllTracks();
 
   // Track name
@@ -464,6 +467,7 @@ function renderAllTracks({ fitBounds = true } = {}) {
     : allTracks.length + ' tracks';
 
   const smoothWindow = parseInt(smoothingSlider.value);
+  console.log(`Smoothing level: ${smoothWindow}`);
   const allBounds = L.latLngBounds();
   const elevationSegments = [];
 
@@ -487,7 +491,7 @@ function renderAllTracks({ fitBounds = true } = {}) {
         latlngs.push([points[i].lat, points[i].lon]);
       }
     }
-    console.log(`Track "${track.name}": ${points.length} total points, ${latlngs.length} rendered`);
+    console.log(`Track "${track.name}": ${latlngs.length}/${points.length} points rendered`);
     track.trackLayer = L.polyline(latlngs, {
       color: lineColorPicker.value,
       weight: parseFloat(lineWidthSlider.value),
