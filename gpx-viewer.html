@@ -305,6 +305,7 @@ elevationBtn.addEventListener('click', () => {
 
 let allTracks = [];
 let markerHighest = null;
+const MIN_RENDER_DISTANCE_M = 5;
 
 function clearAllTracks() {
   allTracks.forEach(t => {
@@ -478,8 +479,15 @@ function renderAllTracks({ fitBounds = true } = {}) {
   allTracks.forEach(track => {
     const points = smoothPoints(track.rawPoints, smoothWindow);
 
-    // Draw polyline
-    const latlngs = points.map(p => [p.lat, p.lon]);
+    // Draw polyline (skip points within MIN_RENDER_DISTANCE_M of the last rendered point)
+    const latlngs = [[points[0].lat, points[0].lon]];
+    for (let i = 1; i < points.length; i++) {
+      const prev = latlngs[latlngs.length - 1];
+      if (i === points.length - 1 || haversine(prev[0], prev[1], points[i].lat, points[i].lon) >= MIN_RENDER_DISTANCE_M) {
+        latlngs.push([points[i].lat, points[i].lon]);
+      }
+    }
+    console.log(`Track "${track.name}": ${points.length} total points, ${latlngs.length} rendered`);
     track.trackLayer = L.polyline(latlngs, {
       color: lineColorPicker.value,
       weight: parseFloat(lineWidthSlider.value),
