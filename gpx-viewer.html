@@ -300,6 +300,7 @@ elevationBtn.addEventListener('click', () => {
   } else {
     elevationChart.style.display = 'none';
   }
+  if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
 });
 
 let allTracks = [];
