@@ -347,7 +347,7 @@ const smoothingSlider = document.getElementById('smoothing');
 const smoothingValue = document.getElementById('smoothing-value');
 smoothingSlider.addEventListener('input', () => {
   smoothingValue.textContent = smoothingSlider.value;
-  if (allTracks.length > 0) renderAllTracks();
+  if (allTracks.length > 0) renderAllTracks({ fitBounds: false });
 });
 
 const showZoom = document.getElementById('show-zoom');
@@ -451,7 +451,7 @@ function smoothPoints(points, windowSize) {
   });
 }
 
-function renderAllTracks() {
+function renderAllTracks({ fitBounds = true } = {}) {
   clearAllTracks();
 
   // Track name
@@ -566,7 +566,7 @@ function renderAllTracks() {
     if (showHighest.checked) markerHighest.addTo(map);
   }
 
-  map.fitBounds(allBounds, { padding: [30, 30] });
+  if (fitBounds) map.fitBounds(allBounds, { padding: [30, 30] });
 
   // Aggregated stats display
   const distKm = totalDist / 1000;
