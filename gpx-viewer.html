@@ -390,11 +390,13 @@ document.getElementById('file-input').addEventListener('change', e => {
   files.sort((a, b) => a.name.localeCompare(b.name));
   let loaded = 0;
   const parsed = new Array(files.length);
+  trackNameEl.textContent = 'Loading 0/' + files.length + '...';
   files.forEach((file, idx) => {
     const reader = new FileReader();
     reader.onload = ev => {
       parsed[idx] = parseGPX(ev.target.result);
       loaded++;
+      trackNameEl.textContent = 'Loading ' + loaded + '/' + files.length + '...';
       if (loaded === files.length) {
         clearAllTracks();
         allTracks = parsed.filter(t => t !== null);
