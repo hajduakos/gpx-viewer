@@ -6,6 +6,7 @@
 <title>GPX Viewer</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -145,6 +146,7 @@
   <div id="settings-wrapper">
     <button id="tracks-btn" class="header-btn">Tracks</button>
     <button id="elevation-btn" class="header-btn">Elevation</button>
+    <button id="export-png-btn" class="header-btn">Export PNG</button>
     <button id="settings-btn" class="header-btn">
       Settings
     </button>
@@ -311,6 +313,15 @@ elevationBtn.addEventListener('click', () => {
     elevationChart.style.display = 'none';
   }
   if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
+});
+
+document.getElementById('export-png-btn').addEventListener('click', () => {
+  html2canvas(document.body, { useCORS: true }).then(canvas => {
+    const link = document.createElement('a');
+    link.download = 'gpx-viewer.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
 });
 
 let allTracks = [];
