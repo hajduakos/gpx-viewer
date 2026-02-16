@@ -323,6 +323,7 @@ minRenderDistSlider.addEventListener('input', () => {
 });
 
 function clearAllTracks() {
+  console.log(`Clearing ${allTracks.length} existing track(s)...`);
   allTracks.forEach(t => {
     if (t.trackLayer) map.removeLayer(t.trackLayer);
     if (t.markerStart) map.removeLayer(t.markerStart);
@@ -482,8 +483,8 @@ function smoothPoints(points, windowSize) {
 }
 
 function renderAllTracks({ fitBounds = true } = {}) {
-  console.log(`Rendering ${allTracks.length} track(s)...`);
   clearAllTracks();
+  console.log(`Rendering ${allTracks.length} track(s)...`);
 
   // Track name
   trackNameEl.textContent = allTracks.length === 1
