@@ -62,7 +62,7 @@
 
   #map-wrapper { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
   #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
-  .leaflet-tile-pane { filter: brightness(1); }
+  .leaflet-tile-pane { filter: brightness(1) opacity(1); }
   .leaflet-top.leaflet-left { top: 52px; }
 
   #overlay {
@@ -168,6 +168,11 @@
         <label for="map-brightness" class="settings-label-inline">Map brightness</label>
         <input type="range" id="map-brightness" min="0" max="1" step="0.05" value="1" class="slider">
         <span id="map-brightness-value" class="slider-value">1</span>
+      </div>
+      <div class="settings-row settings-row-spaced">
+        <label for="map-opacity" class="settings-label-inline">Map opacity</label>
+        <input type="range" id="map-opacity" min="0" max="1" step="0.05" value="1" class="slider">
+        <span id="map-opacity-value" class="slider-value">1</span>
       </div>
       <div class="settings-row settings-row-spaced">
         <label for="line-color" class="settings-label-inline">Line color</label>
@@ -331,9 +336,18 @@ function clearAllTracks() {
 
 const mapBrightnessSlider = document.getElementById('map-brightness');
 const mapBrightnessValue = document.getElementById('map-brightness-value');
+const mapOpacitySlider = document.getElementById('map-opacity');
+const mapOpacityValue = document.getElementById('map-opacity-value');
+function updateTileFilter() {
+  map.getPane('tilePane').style.filter = 'brightness(' + mapBrightnessSlider.value + ') opacity(' + mapOpacitySlider.value + ')';
+}
 mapBrightnessSlider.addEventListener('input', () => {
   mapBrightnessValue.textContent = mapBrightnessSlider.value;
-  map.getPane('tilePane').style.filter = 'brightness(' + mapBrightnessSlider.value + ')';
+  updateTileFilter();
+});
+mapOpacitySlider.addEventListener('input', () => {
+  mapOpacityValue.textContent = mapOpacitySlider.value;
+  updateTileFilter();
 });
 
 const lineWidthSlider = document.getElementById('line-width');
