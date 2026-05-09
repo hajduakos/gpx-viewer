@@ -742,17 +742,18 @@ function renderAllTracks({ fitBounds = true } = {}) {
   tracksPanel.innerHTML = tableHtml;
 
   // Highlight track on hover
-  const baseOpacity = parseFloat(lineAlphaSlider.value);
-  function setLayerOpacity(layer, val) {
-    if (layer) layer.eachLayer(l => l.setStyle({ opacity: val }));
+  const baseWeight = parseFloat(lineWidthSlider.value);
+  function setLayerWeight(layer, val) {
+    if (!layer) return;
+    layer.getLayers().forEach(l => l.setStyle({ weight: val }));
   }
   tracksPanel.querySelectorAll('tr[data-track-idx]').forEach(row => {
     row.addEventListener('mouseenter', () => {
       const i = parseInt(row.dataset.trackIdx);
-      allTracks.forEach((t, j) => setLayerOpacity(t.trackLayer, j === i ? baseOpacity : baseOpacity * 0.5));
+      allTracks.forEach((t, j) => setLayerWeight(t.trackLayer, j === i ? baseWeight * 2 : baseWeight));
     });
     row.addEventListener('mouseleave', () => {
-      allTracks.forEach(t => setLayerOpacity(t.trackLayer, baseOpacity));
+      allTracks.forEach(t => setLayerWeight(t.trackLayer, baseWeight));
     });
   });
 
