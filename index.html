@@ -197,12 +197,8 @@
         <input type="checkbox" id="show-zoom" class="settings-checkbox">
       </div>
       <div class="settings-row settings-row-spaced">
-        <label for="show-start-marker" class="settings-label-inline">Start marker</label>
-        <input type="checkbox" id="show-start-marker" checked class="settings-checkbox">
-      </div>
-      <div class="settings-row settings-row-spaced">
-        <label for="show-end-marker" class="settings-label-inline">End marker</label>
-        <input type="checkbox" id="show-end-marker" checked class="settings-checkbox">
+        <label for="show-markers" class="settings-label-inline">Markers</label>
+        <input type="checkbox" id="show-markers" checked class="settings-checkbox">
       </div>
       <div class="settings-row settings-row-spaced">
         <label for="show-highest" class="settings-label-inline">Highest point</label>
@@ -398,21 +394,14 @@ showZoom.addEventListener('change', () => {
   }
 });
 
-const showStartMarker = document.getElementById('show-start-marker');
-showStartMarker.addEventListener('change', () => {
+const showMarkers = document.getElementById('show-markers');
+showMarkers.addEventListener('change', () => {
   allTracks.forEach(t => {
-    if (!t.markerStart) return;
-    if (showStartMarker.checked) t.markerStart.addTo(map);
-    else map.removeLayer(t.markerStart);
-  });
-});
-
-const showEndMarker = document.getElementById('show-end-marker');
-showEndMarker.addEventListener('change', () => {
-  allTracks.forEach(t => {
-    if (!t.markerEnd) return;
-    if (showEndMarker.checked) t.markerEnd.addTo(map);
-    else map.removeLayer(t.markerEnd);
+    [t.markerStart, t.markerEnd].forEach(m => {
+      if (!m) return;
+      if (showMarkers.checked) m.addTo(map);
+      else map.removeLayer(m);
+    });
   });
 });
 
@@ -537,13 +526,11 @@ function renderAllTracks({ fitBounds = true } = {}) {
     }).addTo(map);
     allBounds.extend(track.trackLayer.getBounds());
 
-    // Start / End markers
+    // Start / End markers (colors may be updated to yellow for mid-points after the loop)
     const startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#00c853;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
     const endIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#e94560;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
     track.markerStart = L.marker(latlngs[0], { icon: startIcon }).bindPopup('Start');
-    if (showStartMarker.checked) track.markerStart.addTo(map);
     track.markerEnd = L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).bindPopup('End');
-    if (showEndMarker.checked) track.markerEnd.addTo(map);
 
     // Track global highest point
     for (let i = 0; i < points.length; i++) {
@@ -617,6 +604,26 @@ function renderAllTracks({ fitBounds = true } = {}) {
     const highIcon = L.divIcon({ className: '', html: '<div style="width:0;height:0;border-left:8px solid transparent;border-right:8px solid transparent;border-bottom:14px solid #2196f3;filter:drop-shadow(0 0 2px rgba(0,0,0,0.5));"></div>', iconSize: [16,14], iconAnchor: [8,14] });
     markerHighest = L.marker([globalHighestLat, globalHighestLon], { icon: highIcon }).bindPopup('Highest: ' + Math.round(globalHighestEle) + ' m');
     if (showHighest.checked) markerHighest.addTo(map);
+  }
+
+  // Recolor close end/start markers to yellow
+  const MID_DIST_THRESHOLD = 100;
+  const midIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#ffd600;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
+  for (let i = 0; i < allTracks.length - 1; i++) {
+    const curEnd = allTracks[i].rawPoints[allTracks[i].rawPoints.length - 1];
+    const nextStart = allTracks[i + 1].rawPoints[0];
+    if (haversine(curEnd.lat, curEnd.lon, nextStart.lat, nextStart.lon) < MID_DIST_THRESHOLD) {
+      allTracks[i].markerEnd.setIcon(midIcon).setPopupContent('Mid');
+      allTracks[i + 1].markerStart.setIcon(midIcon).setPopupContent('Mid');
+    }
+  }
+
+  // Add all markers to map
+  if (showMarkers.checked) {
+    allTracks.forEach(t => {
+      if (t.markerStart) t.markerStart.addTo(map);
+      if (t.markerEnd) t.markerEnd.addTo(map);
+    });
   }
 
   if (fitBounds) map.fitBounds(allBounds, { padding: [30, 30] });
