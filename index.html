@@ -573,8 +573,12 @@ function renderAllTracks({ fitBounds = true } = {}) {
     // Start / End markers (colors may be updated to yellow for mid-points after the loop)
     const startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#00c853;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
     const endIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#e94560;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
-    track.markerStart = L.marker(latlngs[0], { icon: startIcon }).bindPopup('Start of ' + track.name);
-    track.markerEnd = L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).bindPopup('End of ' + track.name);
+    const startEle = rendered[0].ele;
+    const endEle = rendered[rendered.length - 1].ele;
+    const startPopup = 'Start of ' + track.name + (startEle != null ? '<br>' + Math.round(startEle) + ' m' : '');
+    const endPopup = 'End of ' + track.name + (endEle != null ? '<br>' + Math.round(endEle) + ' m' : '');
+    track.markerStart = L.marker(latlngs[0], { icon: startIcon }).bindPopup(startPopup);
+    track.markerEnd = L.marker(latlngs[latlngs.length - 1], { icon: endIcon }).bindPopup(endPopup);
 
     // Track global highest point
     for (let i = 0; i < points.length; i++) {
@@ -655,8 +659,8 @@ function renderAllTracks({ fitBounds = true } = {}) {
     const curEnd = allTracks[i].rawPoints[allTracks[i].rawPoints.length - 1];
     const nextStart = allTracks[i + 1].rawPoints[0];
     if (haversine(curEnd.lat, curEnd.lon, nextStart.lat, nextStart.lon) < MID_DIST_THRESHOLD) {
-      allTracks[i].markerEnd.setIcon(midIcon).setPopupContent('End of ' + allTracks[i].name);
-      allTracks[i + 1].markerStart.setIcon(midIcon).setPopupContent('Start of ' + allTracks[i + 1].name);
+      allTracks[i].markerEnd.setIcon(midIcon);
+      allTracks[i + 1].markerStart.setIcon(midIcon);
     }
   }
 
