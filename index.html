@@ -131,7 +131,7 @@
   }
   .settings-checkbox { margin-left: auto; }
   .color-picker {
-    margin-left: auto; width: 48px; height: 28px;
+    width: 48px; height: 28px;
     border: 1px solid #555; border-radius: 4px;
     background: transparent; cursor: pointer; padding: 0;
   }
@@ -178,8 +178,11 @@
         <span id="map-opacity-value" class="slider-value">1</span>
       </div>
       <div class="settings-row settings-row-spaced">
-        <label for="line-color" class="settings-label-inline">Line color</label>
-        <input type="color" id="line-color" value="#e94560" class="color-picker">
+        <label for="gradient-low" class="settings-label-inline">Line color</label>
+        <span class="slider-value" style="margin-left:auto">Min</span>
+        <input type="color" id="gradient-low" value="#6b0f1d" class="color-picker">
+        <span class="slider-value">Max</span>
+        <input type="color" id="gradient-high" value="#e94560" class="color-picker">
       </div>
       <div class="settings-row settings-row-spaced">
         <label for="line-width" class="settings-label-inline">Line width</label>
@@ -361,21 +364,28 @@ mapOpacitySlider.addEventListener('input', () => {
 
 const lineWidthSlider = document.getElementById('line-width');
 const lineWidthValue = document.getElementById('line-width-value');
-const lineColorPicker = document.getElementById('line-color');
-lineColorPicker.addEventListener('input', () => {
-  allTracks.forEach(t => { if (t.trackLayer) t.trackLayer.setStyle({ color: lineColorPicker.value }); });
-});
+const gradientLow = document.getElementById('gradient-low');
+const gradientHigh = document.getElementById('gradient-high');
+
+function setTrackLayerStyle(style) {
+  allTracks.forEach(t => {
+    if (t.trackLayer) t.trackLayer.eachLayer(l => l.setStyle(style));
+  });
+}
+
+gradientLow.addEventListener('input', () => { if (allTracks.length > 0) renderAllTracks({ fitBounds: false }); });
+gradientHigh.addEventListener('input', () => { if (allTracks.length > 0) renderAllTracks({ fitBounds: false }); });
 
 lineWidthSlider.addEventListener('input', () => {
   lineWidthValue.textContent = lineWidthSlider.value;
-  allTracks.forEach(t => { if (t.trackLayer) t.trackLayer.setStyle({ weight: parseFloat(lineWidthSlider.value) }); });
+  setTrackLayerStyle({ weight: parseFloat(lineWidthSlider.value) });
 });
 
 const lineAlphaSlider = document.getElementById('line-alpha');
 const lineAlphaValue = document.getElementById('line-alpha-value');
 lineAlphaSlider.addEventListener('input', () => {
   lineAlphaValue.textContent = lineAlphaSlider.value;
-  allTracks.forEach(t => { if (t.trackLayer) t.trackLayer.setStyle({ opacity: parseFloat(lineAlphaSlider.value) }); });
+  setTrackLayerStyle({ opacity: parseFloat(lineAlphaSlider.value) });
 });
 
 const smoothingSlider = document.getElementById('smoothing');
@@ -483,6 +493,20 @@ function smoothPoints(points, windowSize) {
   });
 }
 
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function lerpColor(hex1, hex2, t) {
+  const [r1, g1, b1] = hexToRgb(hex1);
+  const [r2, g2, b2] = hexToRgb(hex2);
+  const r = Math.round(r1 + (r2 - r1) * t);
+  const g = Math.round(g1 + (g2 - g1) * t);
+  const b = Math.round(b1 + (b2 - b1) * t);
+  return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+}
+
 function renderAllTracks({ fitBounds = true } = {}) {
   clearAllTracks();
   console.log(`Rendering ${allTracks.length} track(s)...`);
@@ -498,9 +522,19 @@ function renderAllTracks({ fitBounds = true } = {}) {
   const allBounds = L.latLngBounds();
   const elevationSegments = [];
 
+  // Pre-compute global elevation range (needed for gradient coloring)
+  let globalMinEle = Infinity, globalMaxEle = -Infinity;
+  allTracks.forEach(track => {
+    track.rawPoints.forEach(p => {
+      if (p.ele != null) {
+        if (p.ele < globalMinEle) globalMinEle = p.ele;
+        if (p.ele > globalMaxEle) globalMaxEle = p.ele;
+      }
+    });
+  });
+
   // Aggregated stats accumulators
   let totalDist = 0, totalElevGain = 0;
-  let globalMinEle = Infinity, globalMaxEle = -Infinity;
   let totalElapsedSec = 0, hasElapsed = false;
   let totalMovingSec = 0, hasMoving = false;
   let earliestDate = null, latestDate = null;
@@ -510,21 +544,31 @@ function renderAllTracks({ fitBounds = true } = {}) {
   allTracks.forEach(track => {
     const points = smoothPoints(track.rawPoints, smoothWindow);
 
-    // Draw polyline (skip points within MIN_RENDER_DISTANCE_M of the last rendered point)
-    const latlngs = [[points[0].lat, points[0].lon]];
+    // Filter points (skip those within minRenderDist of the last rendered point)
+    const rendered = [{ lat: points[0].lat, lon: points[0].lon, ele: points[0].ele }];
     for (let i = 1; i < points.length; i++) {
-      const prev = latlngs[latlngs.length - 1];
-      if (i === points.length - 1 || haversine(prev[0], prev[1], points[i].lat, points[i].lon) >= minRenderDist) {
-        latlngs.push([points[i].lat, points[i].lon]);
+      const prev = rendered[rendered.length - 1];
+      if (i === points.length - 1 || haversine(prev.lat, prev.lon, points[i].lat, points[i].lon) >= minRenderDist) {
+        rendered.push({ lat: points[i].lat, lon: points[i].lon, ele: points[i].ele });
       }
     }
+    const latlngs = rendered.map(p => [p.lat, p.lon]);
     console.log(`Track "${track.name}": ${latlngs.length}/${points.length} points rendered`);
-    track.trackLayer = L.polyline(latlngs, {
-      color: lineColorPicker.value,
-      weight: parseFloat(lineWidthSlider.value),
-      opacity: parseFloat(lineAlphaSlider.value),
-    }).addTo(map);
-    allBounds.extend(track.trackLayer.getBounds());
+
+    const weight = parseFloat(lineWidthSlider.value);
+    const opacity = parseFloat(lineAlphaSlider.value);
+
+    const layers = [];
+    for (let i = 0; i < rendered.length - 1; i++) {
+      const e1 = rendered[i].ele ?? 0;
+      const e2 = rendered[i + 1].ele ?? 0;
+      const avgEle = (e1 + e2) / 2;
+      const t = (globalMaxEle > globalMinEle) ? (avgEle - globalMinEle) / (globalMaxEle - globalMinEle) : 0;
+      const color = lerpColor(gradientLow.value, gradientHigh.value, t);
+      layers.push(L.polyline([latlngs[i], latlngs[i + 1]], { color, weight, opacity }));
+    }
+    track.trackLayer = L.layerGroup(layers).addTo(map);
+    allBounds.extend(L.latLngBounds(latlngs));
 
     // Start / End markers (colors may be updated to yellow for mid-points after the loop)
     const startIcon = L.divIcon({ className: '', html: '<div style="width:14px;height:14px;background:#00c853;border:2px solid #fff;border-radius:50%;"></div>', iconSize: [14,14], iconAnchor: [7,7] });
@@ -566,8 +610,6 @@ function renderAllTracks({ fitBounds = true } = {}) {
 
     totalDist += trackDist;
     totalElevGain += elevGain;
-    if (minEle < globalMinEle) globalMinEle = minEle;
-    if (maxEle > globalMaxEle) globalMaxEle = maxEle;
 
     // Time stats
     const startTime = points[0].time;
@@ -696,17 +738,16 @@ function renderAllTracks({ fitBounds = true } = {}) {
 
   // Highlight track on hover
   const baseOpacity = parseFloat(lineAlphaSlider.value);
+  function setLayerOpacity(layer, val) {
+    if (layer) layer.eachLayer(l => l.setStyle({ opacity: val }));
+  }
   tracksPanel.querySelectorAll('tr[data-track-idx]').forEach(row => {
     row.addEventListener('mouseenter', () => {
       const i = parseInt(row.dataset.trackIdx);
-      allTracks.forEach((t, j) => {
-        if (t.trackLayer) t.trackLayer.setStyle({ opacity: j === i ? baseOpacity : baseOpacity * 0.5 });
-      });
+      allTracks.forEach((t, j) => setLayerOpacity(t.trackLayer, j === i ? baseOpacity : baseOpacity * 0.5));
     });
     row.addEventListener('mouseleave', () => {
-      allTracks.forEach(t => {
-        if (t.trackLayer) t.trackLayer.setStyle({ opacity: baseOpacity });
-      });
+      allTracks.forEach(t => setLayerOpacity(t.trackLayer, baseOpacity));
     });
   });
 
