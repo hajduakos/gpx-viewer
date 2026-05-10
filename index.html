@@ -146,6 +146,7 @@
   <span id="track-name"></span>
   <div id="settings-wrapper">
     <button id="tracks-btn" class="header-btn">Tracks</button>
+    <button id="stats-btn" class="header-btn">Stats</button>
     <button id="elevation-btn" class="header-btn">Elevation</button>
     <button id="export-png-btn" class="header-btn">Export PNG</button>
     <button id="settings-btn" class="header-btn">
@@ -293,6 +294,16 @@ tracksBtn.addEventListener('click', (e) => {
   } else {
     tracksBtn.style.background = '';
   }
+});
+
+const statsBtnEl = document.getElementById('stats-btn');
+let statsVisible = true;
+statsBtnEl.style.background = 'rgba(255,255,255,0.15)';
+statsBtnEl.addEventListener('click', () => {
+  statsVisible = !statsVisible;
+  statsBtnEl.style.background = statsVisible ? 'rgba(255,255,255,0.15)' : '';
+  statsEl.style.display = statsVisible ? 'block' : 'none';
+  if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
 });
 
 const elevationBtn = document.getElementById('elevation-btn');
@@ -709,7 +720,7 @@ function renderAllTracks({ fitBounds = true } = {}) {
     div.innerHTML = `<span class="stat-label">${s.label}</span><span class="stat-value">${s.value} <span class="stat-unit">${s.unit}</span></span>`;
     statsGrid.appendChild(div);
   });
-  statsEl.style.display = 'block';
+  statsEl.style.display = statsVisible ? 'block' : 'none';
 
   // Tracks table
   const showType = types.size > 1;
