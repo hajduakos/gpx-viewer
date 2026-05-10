@@ -66,6 +66,7 @@
   #map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: #fff; }
   .leaflet-tile-pane { filter: brightness(1) opacity(1); }
   .leaflet-top.leaflet-left { top: 52px; }
+  .leaflet-bottom.leaflet-left { z-index: 1001; }
 
   #overlay {
     position: absolute; bottom: 0; left: 0; right: 0;
@@ -196,6 +197,10 @@
         <input type="checkbox" id="show-zoom" class="settings-checkbox">
       </div>
       <div class="settings-row settings-row-spaced">
+        <label for="show-scale" class="settings-label-inline">Scale bar</label>
+        <input type="checkbox" id="show-scale" class="settings-checkbox">
+      </div>
+      <div class="settings-row settings-row-spaced">
         <label for="show-markers" class="settings-label-inline">Markers</label>
         <input type="checkbox" id="show-markers" checked class="settings-checkbox">
       </div>
@@ -278,6 +283,11 @@ const elevationCanvas = document.getElementById('elevation-canvas');
 const trackNameEl = document.getElementById('track-name');
 const statsEl = document.getElementById('stats');
 const statsGrid = document.getElementById('stats-grid');
+function updateScalePosition() {
+  const container = document.querySelector('.leaflet-bottom.leaflet-left');
+  if (container) container.style.bottom = overlayEl.offsetHeight + 'px';
+}
+
 function updateTracksPanelPosition() {
   const headerH = headerEl.offsetHeight;
   const overlayH = overlayEl.offsetHeight;
@@ -303,6 +313,7 @@ statsBtnEl.addEventListener('click', () => {
   statsVisible = !statsVisible;
   statsBtnEl.style.background = statsVisible ? 'rgba(255,255,255,0.15)' : '';
   statsEl.style.display = statsVisible ? 'block' : 'none';
+  updateScalePosition();
   if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
 });
 
@@ -318,6 +329,7 @@ elevationBtn.addEventListener('click', () => {
   } else {
     elevationChart.style.display = 'none';
   }
+  updateScalePosition();
   if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
 });
 
@@ -401,6 +413,16 @@ showZoom.addEventListener('change', () => {
     map.addControl(map.zoomControl);
   } else {
     map.removeControl(map.zoomControl);
+  }
+});
+
+const scaleControl = L.control.scale({ position: 'bottomleft' });
+const showScale = document.getElementById('show-scale');
+showScale.addEventListener('change', () => {
+  if (showScale.checked) {
+    map.addControl(scaleControl);
+  } else {
+    map.removeControl(scaleControl);
   }
 });
 
@@ -760,6 +782,7 @@ function renderAllTracks({ fitBounds = true } = {}) {
   // Elevation chart
   drawElevationChart(elevationSegments);
 
+  updateScalePosition();
   if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
 }
 
@@ -886,6 +909,7 @@ function drawElevationChart(segments) {
 
 window.addEventListener('resize', () => {
   if (lastElevationData) drawElevationChart(lastElevationData);
+  updateScalePosition();
   if (tracksPanel.classList.contains('open')) updateTracksPanelPosition();
 });
 </script>
