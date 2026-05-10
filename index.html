@@ -747,7 +747,7 @@ function renderAllTracks({ fitBounds = true } = {}) {
   // Tracks table
   const showType = types.size > 1;
   let tableHtml = '<table id="tracks-table"><thead><tr>' +
-    '<th>Name</th>' + (showType ? '<th>Type</th>' : '') + '<th>Date</th><th>Distance</th><th>Elapsed</th><th>Moving</th><th>Gain</th><th>Min Elev.</th><th>Max Elev.</th>' +
+    '<th>Name</th>' + (showType ? '<th>Type</th>' : '') + '<th>Date</th><th>Distance</th><th>Elapsed</th><th>Moving</th><th>Min Elev.</th><th>Max Elev.</th><th>Gain</th>' +
     '</tr></thead><tbody>';
   allTracks.forEach((t, idx) => {
     const s = t._stats;
@@ -758,7 +758,7 @@ function renderAllTracks({ fitBounds = true } = {}) {
     const mn = s.minEle != null ? Math.round(s.minEle) + ' m' : '—';
     const mx = s.maxEle != null ? Math.round(s.maxEle) + ' m' : '—';
     const tp = t.type.charAt(0).toUpperCase() + t.type.slice(1);
-    tableHtml += `<tr data-track-idx="${idx}"><td>${t.name}</td>${showType ? '<td>' + tp + '</td>' : ''}<td>${s.date ? formatDateFull(s.date) : '—'}</td><td>${dk} km</td><td>${el}</td><td>${mv}</td><td>${gn} m</td><td>${mn}</td><td>${mx}</td></tr>`;
+    tableHtml += `<tr data-track-idx="${idx}"><td>${t.name}</td>${showType ? '<td>' + tp + '</td>' : ''}<td>${s.date ? formatDateFull(s.date) : '—'}</td><td>${dk} km</td><td>${el}</td><td>${mv}</td><td>${mn}</td><td>${mx}</td><td>${gn} m</td></tr>`;
   });
   tableHtml += '</tbody></table>';
   tracksPanel.innerHTML = tableHtml;
