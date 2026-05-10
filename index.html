@@ -189,11 +189,6 @@
         <input type="range" id="line-width" min="1" max="10" step="0.5" value="4" class="slider">
         <span id="line-width-value" class="slider-value">4</span>
       </div>
-      <div class="settings-row settings-row-spaced">
-        <label for="line-alpha" class="settings-label-inline">Line opacity</label>
-        <input type="range" id="line-alpha" min="0" max="1" step="0.05" value="0.85" class="slider">
-        <span id="line-alpha-value" class="slider-value">0.85</span>
-      </div>
       <hr class="settings-divider">
       <div class="settings-row settings-row-spaced">
         <label for="show-zoom" class="settings-label-inline">Zoom controls</label>
@@ -381,12 +376,6 @@ lineWidthSlider.addEventListener('input', () => {
   setTrackLayerStyle({ weight: parseFloat(lineWidthSlider.value) });
 });
 
-const lineAlphaSlider = document.getElementById('line-alpha');
-const lineAlphaValue = document.getElementById('line-alpha-value');
-lineAlphaSlider.addEventListener('input', () => {
-  lineAlphaValue.textContent = lineAlphaSlider.value;
-  setTrackLayerStyle({ opacity: parseFloat(lineAlphaSlider.value) });
-});
 
 const smoothingSlider = document.getElementById('smoothing');
 const smoothingValue = document.getElementById('smoothing-value');
@@ -556,7 +545,7 @@ function renderAllTracks({ fitBounds = true } = {}) {
     console.log(`Track "${track.name}": ${latlngs.length}/${points.length} points rendered`);
 
     const weight = parseFloat(lineWidthSlider.value);
-    const opacity = parseFloat(lineAlphaSlider.value);
+    const opacity = 1;
 
     const layers = [];
     for (let i = 0; i < rendered.length - 1; i++) {
