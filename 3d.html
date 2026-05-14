@@ -164,8 +164,13 @@
         <div class="settings">
             <label>
                 Grid resolution
-                <input type="range" id="set-grid" min="50" max="3000" value="600" step="10">
+                <input type="range" id="set-grid" min="50" max="1000" value="600" step="10">
                 <span class="val" id="set-grid-v">600</span>
+            </label>
+            <label>
+                Texture resolution
+                <input type="range" id="set-tex" min="1024" max="8192" value="2048" step="1024">
+                <span class="val" id="set-tex-v">2048</span>
             </label>
             <label>
                 Padding
@@ -225,9 +230,12 @@
     const $dropzone  = document.getElementById('dropzone');
     const $setGrid   = document.getElementById('set-grid');
     const $setGridV  = document.getElementById('set-grid-v');
+    const $setTex    = document.getElementById('set-tex');
+    const $setTexV   = document.getElementById('set-tex-v');
     const $setPad    = document.getElementById('set-pad');
     const $setPadV   = document.getElementById('set-pad-v');
     $setGrid.oninput = () => $setGridV.textContent = $setGrid.value;
+    $setTex.oninput  = () => $setTexV.textContent = $setTex.value;
     $setPad.oninput  = () => $setPadV.textContent = $setPad.value + '%';
 
     function prog(step, pct, detail = '') {
@@ -340,11 +348,11 @@
 
     // ── Satellite Tiles ─────────────────────────────────────────
 
-    async function fetchTexture(bb, onProg) {
+    async function fetchTexture(bb, texRes, onProg) {
         const mid = (bb.maxLat + bb.minLat) / 2;
         const mw = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
-        let z = Math.round(Math.log2(156543 * Math.cos(mid * Math.PI / 180) / (mw / 2048)));
-        z = Math.max(10, Math.min(z, 17));
+        let z = Math.round(Math.log2(156543 * Math.cos(mid * Math.PI / 180) / (mw / texRes)));
+        z = Math.max(10, Math.min(z, 19));
 
         const tx0 = lon2t(bb.minLon, z), tx1 = lon2t(bb.maxLon, z);
         const ty0 = lat2t(bb.maxLat, z), ty1 = lat2t(bb.minLat, z);
@@ -517,6 +525,7 @@
         $progress.classList.add('active');
 
         const gridSize = +$setGrid.value;
+        const texRes = +$setTex.value;
         const padding = +$setPad.value / 100;
 
         try {
@@ -542,7 +551,7 @@
             });
 
             prog('Step 3/4 — Loading satellite imagery...', 66);
-            const texCv = await fetchTexture(bb, (d, t) => {
+            const texCv = await fetchTexture(bb, texRes, (d, t) => {
                 prog('Step 3/4 — Loading satellite imagery...', 66 + (d / t) * 27, `Tile ${d} / ${t}`);
             });
 
