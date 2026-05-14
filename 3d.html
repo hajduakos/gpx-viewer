@@ -117,8 +117,8 @@
     <div id="landing">
         <h1>3D GPX Viewer</h1>
         <div class="file-picker" id="dropzone">
-            <span>Browse or drop a GPX file</span>
-            <input type="file" accept=".gpx" id="file-input">
+            <span>Browse or drop GPX files</span>
+            <input type="file" accept=".gpx" id="file-input" multiple>
         </div>
         <div class="settings">
             <label>
@@ -348,9 +348,8 @@
     // ── 3D Scene ────────────────────────────────────────────────
 
     let renderer, scene, camera, controls, terrain;
-    let S = null; // scale info
-    let D = null; // data info
-    let trackPts = null;
+    let S = null;
+    let D = null;
     const exag = 1.0;
     let animId = null;
 
@@ -362,9 +361,6 @@
     }
 
     function addTrackLine(pts, bb, elev, gw, gh, scale, meanE, ex, sw, sd) {
-        const old = scene.getObjectByName('gpx-track');
-        if (old) { scene.remove(old); old.geometry.dispose(); old.material.dispose(); }
-
         const arr = [];
         const offset = 0.2;
         for (const p of pts) {
@@ -381,7 +377,7 @@
         scene.add(line);
     }
 
-    function buildScene(elev, texCv, pts, bb, gw, gh) {
+    function buildScene(elev, texCv, tracks, bb, gw, gh) {
         const mid = (bb.maxLat + bb.minLat) / 2;
         const wm = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
         const dm = (bb.maxLat - bb.minLat) * 110540;
@@ -399,7 +395,6 @@
 
         S = { scale, meanE, sw, sd };
         D = { elev, bb, gw, gh };
-        trackPts = pts;
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
@@ -437,7 +432,7 @@
         terrain = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 }));
         scene.add(terrain);
 
-        addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd);
+        for (const pts of tracks) addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd);
 
         function animate() { animId = requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
         animate();
@@ -446,8 +441,7 @@
             camera.aspect = innerWidth / innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(innerWidth, innerHeight);
-            const tl = scene.getObjectByName('gpx-track');
-            if (tl) tl.material.resolution.set(innerWidth, innerHeight);
+            scene.traverse(o => { if (o.name === 'gpx-track') o.material.resolution.set(innerWidth, innerHeight); });
         };
         window.addEventListener('resize', onResize);
         renderer._onResize = onResize;
@@ -456,7 +450,7 @@
 
     // ── Main Flow ───────────────────────────────────────────────
 
-    async function processFile(file) {
+    async function processFiles(files) {
         $landing.style.display = 'none';
         $progress.classList.add('active');
 
@@ -464,13 +458,19 @@
         const padding = +$setPad.value / 100;
 
         try {
-            prog('Step 1/4 — Parsing GPX file...', 2);
-            const text = await file.text();
-            const { points, name } = parseGPX(text);
-            if (!points.length) throw new Error('No track points found in GPX file');
-            prog('Step 1/4 — Parsing GPX file...', 5, `${points.length} track points`);
+            prog('Step 1/4 — Parsing GPX files...', 2);
+            const sorted = Array.from(files).sort((a, b) => a.name.localeCompare(b.name));
+            const tracks = [];
+            const allPoints = [];
+            for (const file of sorted) {
+                const text = await file.text();
+                const { points } = parseGPX(text);
+                if (points.length) { tracks.push(points); allPoints.push(...points); }
+            }
+            if (!allPoints.length) throw new Error('No track points found in GPX files');
+            prog('Step 1/4 — Parsing GPX files...', 5, `${sorted.length} files, ${allPoints.length} total points`);
 
-            const bb = bbox(points, padding);
+            const bb = bbox(allPoints, padding);
             const gw = gridSize, gh = gridSize;
 
             prog('Step 2/4 — Fetching elevation data...', 6, `Grid ${gw}×${gh} = ${(gw*gh).toLocaleString()} points`);
@@ -485,7 +485,7 @@
 
             prog('Step 4/4 — Building 3D scene...', 95);
             await new Promise(r => setTimeout(r, 80));
-            buildScene(elev, texCv, points, bb, gw, gh);
+            buildScene(elev, texCv, tracks, bb, gw, gh);
 
             prog('Done!', 100);
             await new Promise(r => setTimeout(r, 350));
@@ -500,14 +500,14 @@
 
     // ── Events ──────────────────────────────────────────────────
 
-    $fileInput.addEventListener('change', e => { if (e.target.files[0]) processFile(e.target.files[0]); });
+    $fileInput.addEventListener('change', e => { if (e.target.files.length) processFiles(e.target.files); });
 
     $dropzone.addEventListener('dragover', e => { e.preventDefault(); $dropzone.classList.add('dragover'); });
     $dropzone.addEventListener('dragleave', () => $dropzone.classList.remove('dragover'));
     $dropzone.addEventListener('drop', e => {
         e.preventDefault();
         $dropzone.classList.remove('dragover');
-        if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+        if (e.dataTransfer.files.length) processFiles(e.dataTransfer.files);
     });
 
     </script>
