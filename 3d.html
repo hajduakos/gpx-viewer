@@ -143,6 +143,15 @@
         #btn-play:hover { background: rgba(255,255,255,0.1); color: #fff; }
         #btn-play.playing { color: #4facfe; border-color: #4facfe; }
         #rot-speed { width: 80px; }
+        #sel-highlight {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 4px;
+            color: #ccc;
+            font-size: 0.8rem;
+            padding: 4px 6px;
+            max-width: 200px;
+        }
     </style>
 </head>
 <body>
@@ -178,6 +187,8 @@
     <div id="rotate-box">
         <button id="btn-play" title="Auto-rotate">&#9654;</button>
         <input type="range" id="rot-speed" min="0.5" max="10" value="2" step="0.5">
+        <span style="color:#666">|</span>
+        <select id="sel-highlight"></select>
     </div>
 
 
@@ -397,7 +408,7 @@
         geom.computeVertexNormals();
     }
 
-    function addTrackLine(pts, bb, elev, gw, gh, scale, meanE, ex, sw, sd) {
+    function addTrackLine(pts, bb, elev, gw, gh, scale, meanE, ex, sw, sd, color, idx) {
         const arr = [];
         const offset = 0.2;
         for (const p of pts) {
@@ -408,9 +419,10 @@
         }
         const geom = new LineGeometry();
         geom.setPositions(arr);
-        const mat = new LineMaterial({ color: 0xff3333, linewidth: 3, resolution: new THREE.Vector2(innerWidth, innerHeight) });
+        const mat = new LineMaterial({ color, linewidth: 3, resolution: new THREE.Vector2(innerWidth, innerHeight) });
         const line = new Line2(geom, mat);
         line.name = 'gpx-track';
+        line.userData.trackIdx = idx;
         scene.add(line);
     }
 
@@ -469,7 +481,7 @@
         terrain = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 }));
         scene.add(terrain);
 
-        for (const pts of tracks) addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd);
+        tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd, 0xff3333, i));
 
         function animate() { animId = requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
         animate();
@@ -498,11 +510,12 @@
             prog('Step 1/4 — Parsing GPX files...', 2);
             const sorted = Array.from(files).sort((a, b) => a.name.localeCompare(b.name));
             const tracks = [];
+            const trackNames = [];
             const allPoints = [];
             for (const file of sorted) {
                 const text = await file.text();
-                const { points } = parseGPX(text);
-                if (points.length) { tracks.push(points); allPoints.push(...points); }
+                const { points, name } = parseGPX(text);
+                if (points.length) { tracks.push(points); trackNames.push(name); allPoints.push(...points); }
             }
             if (!allPoints.length) throw new Error('No track points found in GPX files');
             prog('Step 1/4 — Parsing GPX files...', 5, `${sorted.length} files, ${allPoints.length} total points`);
@@ -530,6 +543,15 @@
             $progress.classList.remove('active');
             $viewer.classList.add('active');
             $rotBox.classList.add('active');
+
+            const $sel = document.getElementById('sel-highlight');
+            $sel.innerHTML = '<option value="">-- none --</option>';
+            trackNames.forEach((n, i) => {
+                const opt = document.createElement('option');
+                opt.value = i;
+                opt.textContent = n;
+                $sel.appendChild(opt);
+            });
         } catch (err) {
             prog('Error', 0, err.message);
             console.error(err);
@@ -551,6 +573,17 @@
 
     $rotSpd.addEventListener('input', () => {
         if (controls) controls.autoRotateSpeed = +$rotSpd.value;
+    });
+
+    document.getElementById('sel-highlight').addEventListener('change', e => {
+        if (!scene) return;
+        const idx = e.target.value;
+        scene.traverse(o => {
+            if (o.name === 'gpx-track') {
+                o.material.color.set(idx !== '' && o.userData.trackIdx === +idx ? 0xffee00 : 0xff3333);
+                o.material.linewidth = idx !== '' && o.userData.trackIdx === +idx ? 5 : 3;
+            }
+        });
     });
 
     // ── Events ──────────────────────────────────────────────────
