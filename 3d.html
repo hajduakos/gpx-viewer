@@ -398,6 +398,8 @@
     let renderer, scene, camera, controls, terrain;
     let S = null;
     let D = null;
+    let trackMidpoints = [];
+    let origTarget = null;
     const exag = 1.0;
     let animId = null;
 
@@ -445,6 +447,16 @@
         S = { scale, meanE, sw, sd };
         D = { elev, bb, gw, gh };
 
+        trackMidpoints = tracks.map(pts => {
+            let mLa = 0, mLo = 0;
+            for (const p of pts) { mLa += p.lat; mLo += p.lon; }
+            mLa /= pts.length; mLo /= pts.length;
+            const x = ((mLo - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
+            const z = ((bb.maxLat - mLa) / (bb.maxLat - bb.minLat) - 0.5) * sd;
+            const e = interpElev(mLa, mLo, bb, elev, gw, gh);
+            return new THREE.Vector3(x, (e - meanE) * scale * exag, z);
+        });
+
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
         scene.fog = new THREE.FogExp2(0x87CEEB, 0.004);
@@ -460,6 +472,7 @@
 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.target.set(0, (maxE - meanE) * scale * exag * 0.25, 0);
+        origTarget = controls.target.clone();
         controls.enableDamping = true;
         controls.dampingFactor = 0.06;
         controls.maxPolarAngle = Math.PI * 0.85;
@@ -585,6 +598,11 @@
                 o.position.y = hit ? 0.02 : 0;
             }
         });
+        if (idx !== '' && trackMidpoints[+idx]) {
+            controls.target.copy(trackMidpoints[+idx]);
+        } else if (origTarget) {
+            controls.target.copy(origTarget);
+        }
     });
 
     // ── Events ──────────────────────────────────────────────────
