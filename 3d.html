@@ -580,8 +580,9 @@
         const idx = e.target.value;
         scene.traverse(o => {
             if (o.name === 'gpx-track') {
-                o.material.color.set(idx !== '' && o.userData.trackIdx === +idx ? 0xffee00 : 0xff3333);
-                o.material.linewidth = idx !== '' && o.userData.trackIdx === +idx ? 5 : 3;
+                const hit = idx !== '' && o.userData.trackIdx === +idx;
+                o.material.color.set(hit ? 0xffee00 : 0xff3333);
+                o.position.y = hit ? 0.02 : 0;
             }
         });
     });
