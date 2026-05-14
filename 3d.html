@@ -111,6 +111,38 @@
         #viewer.active { display: block; }
         #viewer canvas { display: block; }
 
+        #rotate-box {
+            display: none;
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            background: rgba(15,15,26,0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 10px 14px;
+            z-index: 10;
+            align-items: center;
+            gap: 10px;
+        }
+        #rotate-box.active { display: flex; }
+        #btn-play {
+            width: 32px;
+            height: 32px;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            background: rgba(255,255,255,0.04);
+            color: #ccc;
+            font-size: 14px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+        #btn-play:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        #btn-play.playing { color: #4facfe; border-color: #4facfe; }
+        #rot-speed { width: 80px; }
     </style>
 </head>
 <body>
@@ -142,6 +174,11 @@
     </div>
 
     <div id="viewer"></div>
+
+    <div id="rotate-box">
+        <button id="btn-play" title="Auto-rotate">&#9654;</button>
+        <input type="range" id="rot-speed" min="0.5" max="10" value="2" step="0.5">
+    </div>
 
 
 
@@ -492,11 +529,29 @@
 
             $progress.classList.remove('active');
             $viewer.classList.add('active');
+            $rotBox.classList.add('active');
         } catch (err) {
             prog('Error', 0, err.message);
             console.error(err);
         }
     }
+
+    // ── Auto-rotate ─────────────────────────────────────────────
+
+    const $rotBox  = document.getElementById('rotate-box');
+    const $btnPlay = document.getElementById('btn-play');
+    const $rotSpd  = document.getElementById('rot-speed');
+
+    $btnPlay.addEventListener('click', () => {
+        if (!controls) return;
+        controls.autoRotate = !controls.autoRotate;
+        $btnPlay.classList.toggle('playing', controls.autoRotate);
+        $btnPlay.innerHTML = controls.autoRotate ? '&#9646;&#9646;' : '&#9654;';
+    });
+
+    $rotSpd.addEventListener('input', () => {
+        if (controls) controls.autoRotateSpeed = +$rotSpd.value;
+    });
 
     // ── Events ──────────────────────────────────────────────────
 
