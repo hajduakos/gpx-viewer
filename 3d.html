@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D GPX Viewer</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #landing {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            gap: 28px;
+        }
+        #landing h1 {
+            font-size: 2rem;
+            font-weight: 300;
+            letter-spacing: 2px;
+        }
+        .file-picker {
+            position: relative;
+            padding: 24px 48px;
+            background: rgba(255,255,255,0.04);
+            border: 2px dashed rgba(255,255,255,0.2);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 1rem;
+        }
+        .file-picker:hover, .file-picker.dragover {
+            border-color: #4facfe;
+            background: rgba(79,172,254,0.06);
+        }
+        .file-picker input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .settings {
+            display: flex;
+            gap: 32px;
+            font-size: 0.85rem;
+            color: #777;
+        }
+        .settings label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .settings input[type=range] { width: 100px; }
+        .settings .val { min-width: 32px; text-align: right; color: #bbb; }
+
+        #progress {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #0f0f1a;
+            z-index: 100;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+        }
+        #progress.active { display: flex; }
+        #progress-step {
+            font-size: 1.05rem;
+            color: #aaa;
+        }
+        .bar-wrap {
+            width: 420px;
+            max-width: 80vw;
+            height: 5px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        #progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            border-radius: 3px;
+            transition: width 0.15s;
+        }
+        #progress-pct {
+            font-size: 1.6rem;
+            font-weight: 300;
+            color: #4facfe;
+        }
+        #progress-detail {
+            font-size: 0.8rem;
+            color: #555;
+            height: 18px;
+        }
+
+        #viewer {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+        }
+        #viewer.active { display: block; }
+        #viewer canvas { display: block; }
+
+    </style>
+</head>
+<body>
+    <div id="landing">
+        <h1>3D GPX Viewer</h1>
+        <div class="file-picker" id="dropzone">
+            <span>Browse or drop a GPX file</span>
+            <input type="file" accept=".gpx" id="file-input">
+        </div>
+        <div class="settings">
+            <label>
+                Grid resolution
+                <input type="range" id="set-grid" min="50" max="300" value="150" step="10">
+                <span class="val" id="set-grid-v">150</span>
+            </label>
+            <label>
+                Padding
+                <input type="range" id="set-pad" min="5" max="50" value="20" step="5">
+                <span class="val" id="set-pad-v">20%</span>
+            </label>
+        </div>
+    </div>
+
+    <div id="progress">
+        <div id="progress-step">Initializing...</div>
+        <div class="bar-wrap"><div id="progress-fill"></div></div>
+        <div id="progress-pct">0%</div>
+        <div id="progress-detail"></div>
+    </div>
+
+    <div id="viewer"></div>
+
+
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { Line2 } from 'three/addons/lines/Line2.js';
+    import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+    import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+
+    const SAT_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile';
+    const TERR_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
+    const TILE_PX = 256;
+
+    // DOM
+    const $landing   = document.getElementById('landing');
+    const $progress  = document.getElementById('progress');
+    const $pStep     = document.getElementById('progress-step');
+    const $pFill     = document.getElementById('progress-fill');
+    const $pPct      = document.getElementById('progress-pct');
+    const $pDetail   = document.getElementById('progress-detail');
+    const $viewer    = document.getElementById('viewer');
+    const $fileInput = document.getElementById('file-input');
+    const $dropzone  = document.getElementById('dropzone');
+    const $setGrid   = document.getElementById('set-grid');
+    const $setGridV  = document.getElementById('set-grid-v');
+    const $setPad    = document.getElementById('set-pad');
+    const $setPadV   = document.getElementById('set-pad-v');
+    $setGrid.oninput = () => $setGridV.textContent = $setGrid.value;
+    $setPad.oninput  = () => $setPadV.textContent = $setPad.value + '%';
+
+    function prog(step, pct, detail = '') {
+        $pStep.textContent = step;
+        $pFill.style.width = pct + '%';
+        $pPct.textContent = Math.round(pct) + '%';
+        $pDetail.textContent = detail;
+    }
+
+    // ── GPX Parser ──────────────────────────────────────────────
+
+    function parseGPX(text) {
+        const doc = new DOMParser().parseFromString(text, 'application/xml');
+        const pts = [];
+        for (const tp of doc.querySelectorAll('trkpt')) {
+            pts.push({
+                lat: +tp.getAttribute('lat'),
+                lon: +tp.getAttribute('lon'),
+                ele: tp.querySelector('ele') ? +tp.querySelector('ele').textContent : null,
+            });
+        }
+        const n = doc.querySelector('trk > name, metadata > name');
+        return { points: pts, name: n ? n.textContent : 'GPX Track' };
+    }
+
+    // ── Bounding Box ────────────────────────────────────────────
+
+    function bbox(pts, pad) {
+        let minLa = Infinity, maxLa = -Infinity, minLo = Infinity, maxLo = -Infinity;
+        for (const p of pts) {
+            if (p.lat < minLa) minLa = p.lat;
+            if (p.lat > maxLa) maxLa = p.lat;
+            if (p.lon < minLo) minLo = p.lon;
+            if (p.lon > maxLo) maxLo = p.lon;
+        }
+        const cLat = (minLa + maxLa) / 2, cLon = (minLo + maxLo) / 2;
+        const latM = (maxLa - minLa) * 110540;
+        const lonM = (maxLo - minLo) * 111320 * Math.cos(cLat * Math.PI / 180);
+        const halfM = Math.max(latM, lonM) / 2 * (1 + pad);
+        const halfLat = halfM / 110540;
+        const halfLon = halfM / (111320 * Math.cos(cLat * Math.PI / 180));
+        return { minLat: cLat - halfLat, maxLat: cLat + halfLat, minLon: cLon - halfLon, maxLon: cLon + halfLon };
+    }
+
+    // ── Elevation (AWS Terrain Tiles – Terrarium format) ───────
+
+    const lon2t = (lo, z) => Math.floor((lo + 180) / 360 * (1 << z));
+    const lat2t = (la, z) => { const r = la * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * (1 << z)); };
+
+    function loadTileImage(url) {
+        return new Promise((res, rej) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => res(img);
+            img.onerror = () => rej(new Error('Failed to load tile: ' + url));
+            img.src = url;
+        });
+    }
+
+    async function fetchElevations(bb, gw, gh, onProg) {
+        const mid = (bb.maxLat + bb.minLat) / 2;
+        const mw = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
+        let z = Math.round(Math.log2(156543 * Math.cos(mid * Math.PI / 180) / (mw / (gw * 1.5))));
+        z = Math.max(8, Math.min(z, 14));
+
+        const tx0 = lon2t(bb.minLon, z), tx1 = lon2t(bb.maxLon, z);
+        const ty0 = lat2t(bb.maxLat, z), ty1 = lat2t(bb.minLat, z);
+        const tw = tx1 - tx0 + 1, th = ty1 - ty0 + 1;
+        const total = tw * th;
+
+        const cv = document.createElement('canvas');
+        cv.width = tw * TILE_PX; cv.height = th * TILE_PX;
+        const cx = cv.getContext('2d', { willReadFrequently: true });
+
+        let loaded = 0;
+        const proms = [];
+        for (let ty = ty0; ty <= ty1; ty++) {
+            for (let tx = tx0; tx <= tx1; tx++) {
+                proms.push(
+                    loadTileImage(`${TERR_TILE_URL}/${z}/${tx}/${ty}.png`)
+                        .then(img => { cx.drawImage(img, (tx - tx0) * TILE_PX, (ty - ty0) * TILE_PX); })
+                        .catch(() => {})
+                        .finally(() => { loaded++; onProg(loaded, total); })
+                );
+            }
+        }
+        await Promise.all(proms);
+
+        const nn = 1 << z;
+        const lo2px = lo => ((lo + 180) / 360 * nn - tx0) * TILE_PX;
+        const la2px = la => { const r = la * Math.PI / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * nn - ty0) * TILE_PX; };
+
+        const imgData = cx.getImageData(0, 0, cv.width, cv.height).data;
+        const stride = cv.width * 4;
+        const elev = new Float64Array(gw * gh);
+        for (let r = 0; r < gh; r++) {
+            const lat = bb.maxLat - (r / (gh - 1)) * (bb.maxLat - bb.minLat);
+            const py = la2px(lat);
+            const iy = Math.max(0, Math.min(Math.round(py), cv.height - 1));
+            for (let c = 0; c < gw; c++) {
+                const lon = bb.minLon + (c / (gw - 1)) * (bb.maxLon - bb.minLon);
+                const px = lo2px(lon);
+                const ix = Math.max(0, Math.min(Math.round(px), cv.width - 1));
+                const off = iy * stride + ix * 4;
+                elev[r * gw + c] = (imgData[off] * 256 + imgData[off+1] + imgData[off+2] / 256) - 32768;
+            }
+        }
+        return elev;
+    }
+
+    // ── Satellite Tiles ─────────────────────────────────────────
+
+    async function fetchTexture(bb, onProg) {
+        const mid = (bb.maxLat + bb.minLat) / 2;
+        const mw = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
+        let z = Math.round(Math.log2(156543 * Math.cos(mid * Math.PI / 180) / (mw / 2048)));
+        z = Math.max(10, Math.min(z, 17));
+
+        const tx0 = lon2t(bb.minLon, z), tx1 = lon2t(bb.maxLon, z);
+        const ty0 = lat2t(bb.maxLat, z), ty1 = lat2t(bb.minLat, z);
+        const tw = tx1 - tx0 + 1, th = ty1 - ty0 + 1, total = tw * th;
+
+        const cv = document.createElement('canvas');
+        cv.width = tw * TILE_PX; cv.height = th * TILE_PX;
+        const cx = cv.getContext('2d');
+
+        let loaded = 0;
+        const proms = [];
+        for (let ty = ty0; ty <= ty1; ty++) {
+            for (let tx = tx0; tx <= tx1; tx++) {
+                proms.push(
+                    loadTileImage(`${SAT_TILE_URL}/${z}/${ty}/${tx}`)
+                        .then(img => { cx.drawImage(img, (tx - tx0) * TILE_PX, (ty - ty0) * TILE_PX); })
+                        .catch(() => {})
+                        .finally(() => { loaded++; onProg(loaded, total); })
+                );
+            }
+        }
+        await Promise.all(proms);
+
+        const nn = 1 << z;
+        const lo2px = lo => ((lo + 180) / 360 * nn - tx0) * TILE_PX;
+        const la2px = la => { const r = la * Math.PI / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * nn - ty0) * TILE_PX; };
+
+        const sx = lo2px(bb.minLon), sy = la2px(bb.maxLat);
+        const sw = lo2px(bb.maxLon) - sx, sh = la2px(bb.minLat) - sy;
+
+        const out = document.createElement('canvas');
+        out.width = Math.round(sw); out.height = Math.round(sh);
+        out.getContext('2d').drawImage(cv, -sx, -sy);
+        return out;
+    }
+
+    // ── Interpolation ───────────────────────────────────────────
+
+    function interpElev(lat, lon, bb, elev, gw, gh) {
+        const fr = (bb.maxLat - lat) / (bb.maxLat - bb.minLat) * (gh - 1);
+        const fc = (lon - bb.minLon) / (bb.maxLon - bb.minLon) * (gw - 1);
+        const r0 = Math.max(0, Math.min(Math.floor(fr), gh - 2));
+        const c0 = Math.max(0, Math.min(Math.floor(fc), gw - 2));
+        const dr = fr - r0, dc = fc - c0;
+        return elev[r0*gw+c0]*(1-dr)*(1-dc) + elev[r0*gw+c0+1]*(1-dr)*dc +
+               elev[(r0+1)*gw+c0]*dr*(1-dc) + elev[(r0+1)*gw+c0+1]*dr*dc;
+    }
+
+    // ── 3D Scene ────────────────────────────────────────────────
+
+    let renderer, scene, camera, controls, terrain;
+    let S = null; // scale info
+    let D = null; // data info
+    let trackPts = null;
+    const exag = 1.0;
+    let animId = null;
+
+    function setTerrainY(geom, elev, meanE, scale, ex) {
+        const pos = geom.attributes.position;
+        for (let i = 0; i < pos.count; i++) pos.setY(i, (elev[i] - meanE) * scale * ex);
+        pos.needsUpdate = true;
+        geom.computeVertexNormals();
+    }
+
+    function addTrackLine(pts, bb, elev, gw, gh, scale, meanE, ex, sw, sd) {
+        const old = scene.getObjectByName('gpx-track');
+        if (old) { scene.remove(old); old.geometry.dispose(); old.material.dispose(); }
+
+        const arr = [];
+        const offset = 0.2;
+        for (const p of pts) {
+            const x = ((p.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
+            const z = ((bb.maxLat - p.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
+            const e = interpElev(p.lat, p.lon, bb, elev, gw, gh);
+            arr.push(x, (e - meanE) * scale * ex + offset, z);
+        }
+        const geom = new LineGeometry();
+        geom.setPositions(arr);
+        const mat = new LineMaterial({ color: 0xff3333, linewidth: 3, resolution: new THREE.Vector2(innerWidth, innerHeight) });
+        const line = new Line2(geom, mat);
+        line.name = 'gpx-track';
+        scene.add(line);
+    }
+
+    function buildScene(elev, texCv, pts, bb, gw, gh) {
+        const mid = (bb.maxLat + bb.minLat) / 2;
+        const wm = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
+        const dm = (bb.maxLat - bb.minLat) * 110540;
+        const mx = Math.max(wm, dm);
+        const scale = 100 / mx;
+        const sw = wm * scale, sd = dm * scale;
+
+        let minE = Infinity, maxE = -Infinity, sum = 0;
+        for (let i = 0; i < elev.length; i++) {
+            if (elev[i] < minE) minE = elev[i];
+            if (elev[i] > maxE) maxE = elev[i];
+            sum += elev[i];
+        }
+        const meanE = sum / elev.length;
+
+        S = { scale, meanE, sw, sd };
+        D = { elev, bb, gw, gh };
+        trackPts = pts;
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB);
+        scene.fog = new THREE.FogExp2(0x87CEEB, 0.004);
+
+        camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
+        camera.position.set(sw * 0.6, (maxE - meanE) * scale * exag + 25, sd * 0.6);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        $viewer.innerHTML = '';
+        $viewer.appendChild(renderer.domElement);
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, (maxE - meanE) * scale * exag * 0.25, 0);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.maxPolarAngle = Math.PI * 0.85;
+        controls.update();
+
+        scene.add(new THREE.AmbientLight(0xffffff, 0.65));
+        const dl = new THREE.DirectionalLight(0xffffff, 0.8);
+        dl.position.set(50, 80, 30);
+        scene.add(dl);
+
+        const geom = new THREE.PlaneGeometry(sw, sd, gw - 1, gh - 1);
+        geom.rotateX(-Math.PI / 2);
+        setTerrainY(geom, elev, meanE, scale, exag);
+
+        const tex = new THREE.CanvasTexture(texCv);
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
+
+        terrain = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 }));
+        scene.add(terrain);
+
+        addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd);
+
+        function animate() { animId = requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+        animate();
+
+        const onResize = () => {
+            camera.aspect = innerWidth / innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(innerWidth, innerHeight);
+            const tl = scene.getObjectByName('gpx-track');
+            if (tl) tl.material.resolution.set(innerWidth, innerHeight);
+        };
+        window.addEventListener('resize', onResize);
+        renderer._onResize = onResize;
+    }
+
+
+    // ── Main Flow ───────────────────────────────────────────────
+
+    async function processFile(file) {
+        $landing.style.display = 'none';
+        $progress.classList.add('active');
+
+        const gridSize = +$setGrid.value;
+        const padding = +$setPad.value / 100;
+
+        try {
+            prog('Step 1/4 — Parsing GPX file...', 2);
+            const text = await file.text();
+            const { points, name } = parseGPX(text);
+            if (!points.length) throw new Error('No track points found in GPX file');
+            prog('Step 1/4 — Parsing GPX file...', 5, `${points.length} track points`);
+
+            const bb = bbox(points, padding);
+            const gw = gridSize, gh = gridSize;
+
+            prog('Step 2/4 — Fetching elevation data...', 6, `Grid ${gw}×${gh} = ${(gw*gh).toLocaleString()} points`);
+            const elev = await fetchElevations(bb, gw, gh, (d, t) => {
+                prog('Step 2/4 — Fetching elevation data...', 6 + (d / t) * 59, `Terrain tile ${d} / ${t}`);
+            });
+
+            prog('Step 3/4 — Loading satellite imagery...', 66);
+            const texCv = await fetchTexture(bb, (d, t) => {
+                prog('Step 3/4 — Loading satellite imagery...', 66 + (d / t) * 27, `Tile ${d} / ${t}`);
+            });
+
+            prog('Step 4/4 — Building 3D scene...', 95);
+            await new Promise(r => setTimeout(r, 80));
+            buildScene(elev, texCv, points, bb, gw, gh);
+
+            prog('Done!', 100);
+            await new Promise(r => setTimeout(r, 350));
+
+            $progress.classList.remove('active');
+            $viewer.classList.add('active');
+        } catch (err) {
+            prog('Error', 0, err.message);
+            console.error(err);
+        }
+    }
+
+    // ── Events ──────────────────────────────────────────────────
+
+    $fileInput.addEventListener('change', e => { if (e.target.files[0]) processFile(e.target.files[0]); });
+
+    $dropzone.addEventListener('dragover', e => { e.preventDefault(); $dropzone.classList.add('dragover'); });
+    $dropzone.addEventListener('dragleave', () => $dropzone.classList.remove('dragover'));
+    $dropzone.addEventListener('drop', e => {
+        e.preventDefault();
+        $dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+    });
+
+    </script>
+</body>
+</html>
