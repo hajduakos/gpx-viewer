@@ -412,7 +412,7 @@
 
     function addTrackLine(pts, bb, elev, gw, gh, scale, meanE, ex, sw, sd, color, idx) {
         const arr = [];
-        const offset = 0.2;
+        const offset = 0.05;
         for (const p of pts) {
             const x = ((p.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
             const z = ((bb.maxLat - p.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
