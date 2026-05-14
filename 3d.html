@@ -105,6 +105,7 @@
 
         #viewer {
             display: none;
+            position: relative;
             width: 100vw;
             height: 100vh;
         }
@@ -194,6 +195,10 @@
         <input type="range" id="rot-speed" min="0.5" max="10" value="2" step="0.5">
         <span style="color:#666">|</span>
         <select id="sel-highlight"></select>
+        <span style="color:#666">|</span>
+        <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="chk-landmarks" checked> Landmarks
+        </label>
     </div>
 
 
@@ -213,6 +218,7 @@
     import { Line2 } from 'three/addons/lines/Line2.js';
     import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
     import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+    import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 
     const SAT_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile';
     const TERR_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
@@ -403,7 +409,39 @@
 
     // ── 3D Scene ────────────────────────────────────────────────
 
-    let renderer, scene, camera, controls, terrain;
+    const LANDMARKS = [
+        { name: 'Mt Everest', lat: 27.9881, lon: 86.9250 },
+        { name: 'Lhotse', lat: 27.9617, lon: 86.9336 },
+        { name: 'Ama Dablam', lat: 27.8614, lon: 86.8614 },
+        { name: 'Cho Oyu', lat: 28.0941, lon: 86.6608 },
+        { name: 'Makalu', lat: 27.8897, lon: 87.0886 },
+        { name: 'Pumori', lat: 28.0153, lon: 86.8263 },
+        { name: 'Nuptse', lat: 27.9664, lon: 86.8900 },
+        { name: 'Tobuche', lat: 27.8967, lon: 86.7776 },
+        { name: 'Cholatse', lat: 27.9179, lon: 86.7667 },
+        { name: 'Kangtega', lat: 27.7995, lon: 86.8082 },
+        { name: 'Thamserku', lat: 27.7903, lon: 86.7875 },
+        { name: 'Numbur', lat: 27.7539, lon: 86.5737 },
+        { name: 'Lobuche East', lat: 27.9595, lon: 86.7899 },
+        { name: 'Nupla', lat: 27.7720, lon: 86.6607 },
+        { name: 'Phari Lapcha', lat: 27.9296, lon: 86.6808 },
+        { name: 'Kyajori', lat: 27.9095, lon: 86.6700 },
+        { name: 'Gyachung Kang', lat: 28.0975, lon: 86.7426 },
+        { name: 'Hungchi', lat: 28.0350, lon: 86.7589 },
+        { name: 'Kang Thari', lat: 27.8142, lon: 86.8335 },
+        { name: 'Lukla', lat: 27.6859, lon: 86.7291, lift: 1.5 },
+        { name: 'Phakding', lat: 27.7435, lon: 86.7131, lift: 1.5 },
+        { name: 'Namche Bazaar', lat: 27.8046, lon: 86.7106, lift: 1.5 },
+        { name: 'Dole', lat: 27.8666, lon: 86.7309, lift: 1.5 },
+        { name: 'Machhermo', lat: 27.9034, lon: 86.7143, lift: 1.5 },
+        { name: 'Gokyo', lat: 27.9537, lon: 86.6943, lift: 1.5 },
+        { name: 'Thagnak', lat: 27.9406, lon: 86.7203, lift: 1.5 },
+        { name: 'Lobuche', lat: 27.9486, lon: 86.8104, lift: 1.5 },
+        { name: 'Gorakshep', lat: 27.9810, lon: 86.8290, lift: 1.5 },
+        { name: 'Somare', lat: 27.8677, lon: 86.8054, lift: 1.5 },
+    ];
+
+    let renderer, labelRenderer, scene, camera, controls, terrain;
     let S = null;
     let D = null;
     let trackMidpoints = [];
@@ -504,13 +542,41 @@
 
         tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd, 0xff3333, i));
 
-        function animate() { animId = requestAnimationFrame(animate); controls.update(); renderer.render(scene, camera); }
+        labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(innerWidth, innerHeight);
+        labelRenderer.domElement.style.position = 'absolute';
+        labelRenderer.domElement.style.top = '0';
+        labelRenderer.domElement.style.pointerEvents = 'none';
+        $viewer.appendChild(labelRenderer.domElement);
+
+        for (const lm of LANDMARKS) {
+            if (lm.lat < bb.minLat || lm.lat > bb.maxLat || lm.lon < bb.minLon || lm.lon > bb.maxLon) continue;
+            const x = ((lm.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
+            const z = ((bb.maxLat - lm.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
+            const e = interpElev(lm.lat, lm.lon, bb, elev, gw, gh);
+            const y = (e - meanE) * scale * exag + (lm.lift ?? 0.8);
+            const div = document.createElement('div');
+            div.textContent = lm.name;
+            div.style.cssText = 'color:#fff;font-size:11px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;';
+            const label = new CSS2DObject(div);
+            label.position.set(x, y, z);
+            label.name = 'landmark';
+            scene.add(label);
+        }
+
+        function animate() {
+            animId = requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
         animate();
 
         const onResize = () => {
             camera.aspect = innerWidth / innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(innerWidth, innerHeight);
+            labelRenderer.setSize(innerWidth, innerHeight);
             scene.traverse(o => { if (o.name === 'gpx-track') o.material.resolution.set(innerWidth, innerHeight); });
         };
         window.addEventListener('resize', onResize);
@@ -595,6 +661,11 @@
 
     $rotSpd.addEventListener('input', () => {
         if (controls) controls.autoRotateSpeed = +$rotSpd.value;
+    });
+
+    document.getElementById('chk-landmarks').addEventListener('change', e => {
+        if (!scene) return;
+        scene.traverse(o => { if (o.name === 'landmark') o.visible = e.target.checked; });
     });
 
     document.getElementById('sel-highlight').addEventListener('change', e => {
