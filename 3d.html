@@ -690,6 +690,27 @@
         }
     });
 
+    // ── Keyboard Shortcuts ────────────────────────────────────────
+
+    const KEY_ROT = 0.03;
+    document.addEventListener('keydown', e => {
+        if (e.key === 'c' || e.key === 'C') {
+            $rotBox.classList.toggle('active');
+        }
+        if (e.key === 'p' || e.key === 'P') {
+            $btnPlay.click();
+        }
+        if (!controls) return;
+        const sphere = new THREE.Spherical().setFromVector3(
+            camera.position.clone().sub(controls.target)
+        );
+        if (e.key === 'ArrowLeft')  { sphere.theta -= KEY_ROT; e.preventDefault(); }
+        if (e.key === 'ArrowRight') { sphere.theta += KEY_ROT; e.preventDefault(); }
+        if (e.key === 'ArrowUp')    { sphere.phi = Math.max(0.1, sphere.phi - KEY_ROT); e.preventDefault(); }
+        if (e.key === 'ArrowDown')  { sphere.phi = Math.min(Math.PI * 0.85, sphere.phi + KEY_ROT); e.preventDefault(); }
+        camera.position.copy(new THREE.Vector3().setFromSpherical(sphere).add(controls.target));
+    });
+
     // ── Events ──────────────────────────────────────────────────
 
     $fileInput.addEventListener('change', e => { if (e.target.files.length) processFiles(e.target.files); });
