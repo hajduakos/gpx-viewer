@@ -121,12 +121,23 @@
             backdrop-filter: blur(10px);
             border: 1px solid rgba(255,255,255,0.1);
             border-radius: 10px;
-            padding: 10px 14px;
+            padding: 12px 16px;
             z-index: 10;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 220px;
+        }
+        #rotate-box.active { display: flex; }
+        .ctrl-row {
+            display: flex;
             align-items: center;
             gap: 10px;
         }
-        #rotate-box.active { display: flex; }
+        .ctrl-label {
+            font-size: 0.8rem;
+            color: #999;
+            white-space: nowrap;
+        }
         #btn-play {
             width: 32px;
             height: 32px;
@@ -140,10 +151,11 @@
             align-items: center;
             justify-content: center;
             transition: all 0.2s;
+            flex-shrink: 0;
         }
         #btn-play:hover { background: rgba(255,255,255,0.1); color: #fff; }
         #btn-play.playing { color: #4facfe; border-color: #4facfe; }
-        #rot-speed { width: 80px; }
+        #rot-speed { width: 80px; flex: 1; }
         #sel-highlight {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
@@ -151,7 +163,33 @@
             color: #ccc;
             font-size: 0.8rem;
             padding: 4px 6px;
-            max-width: 200px;
+            flex: 1;
+            min-width: 0;
+        }
+        #btn-advanced {
+            background: none;
+            border: none;
+            color: #777;
+            font-size: 0.8rem;
+            cursor: pointer;
+            padding: 0;
+            text-align: left;
+            transition: color 0.2s;
+        }
+        #btn-advanced:hover { color: #bbb; }
+        #advanced-settings {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+        }
+        #advanced-settings.open { display: flex; }
+        #advanced-settings label {
+            font-size: 0.8rem;
+            color: #999;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -191,26 +229,25 @@
     <div id="viewer"></div>
 
     <div id="rotate-box">
-        <button id="btn-play" title="Auto-rotate">&#9654;</button>
-        <input type="range" id="rot-speed" min="0.5" max="10" value="2" step="0.5">
-        <span style="color:#666">|</span>
-        <select id="sel-highlight"></select>
-        <span style="color:#666">|</span>
-        <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="chk-landmarks" checked> Landmarks
-        </label>
-        <span style="color:#666">|</span>
-        <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="chk-wireframe"> Wireframe
-        </label>
-        <span style="color:#666">|</span>
-        <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="chk-texture" checked> Texture
-        </label>
-        <span style="color:#666">|</span>
-        <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
-            <input type="checkbox" id="chk-tracks" checked> Tracks
-        </label>
+        <div class="ctrl-row">
+            <span class="ctrl-label">Orbit</span>
+            <button id="btn-play" title="Auto-rotate">&#9654;</button>
+            <span class="ctrl-label">Speed</span>
+            <input type="range" id="rot-speed" min="0.5" max="10" value="2" step="0.5">
+        </div>
+        <div class="ctrl-row">
+            <span class="ctrl-label">Focus on track:</span>
+            <select id="sel-highlight"></select>
+        </div>
+        <button id="btn-advanced">&#9662; Advanced settings</button>
+        <div id="advanced-settings">
+            <div class="ctrl-row">
+                <label><input type="checkbox" id="chk-landmarks" checked> Landmarks</label>
+                <label><input type="checkbox" id="chk-tracks" checked> Tracks</label>
+                <label><input type="checkbox" id="chk-wireframe"> Wireframe</label>
+                <label><input type="checkbox" id="chk-texture" checked> Texture</label>
+            </div>
+        </div>
     </div>
 
 
@@ -761,6 +798,13 @@
         controls.autoRotate = !controls.autoRotate;
         $btnPlay.classList.toggle('playing', controls.autoRotate);
         $btnPlay.innerHTML = controls.autoRotate ? '&#9646;&#9646;' : '&#9654;';
+    });
+
+    document.getElementById('btn-advanced').addEventListener('click', () => {
+        const panel = document.getElementById('advanced-settings');
+        const btn = document.getElementById('btn-advanced');
+        panel.classList.toggle('open');
+        btn.innerHTML = panel.classList.contains('open') ? '&#9652; Advanced settings' : '&#9662; Advanced settings';
     });
 
     $rotSpd.addEventListener('input', () => {
