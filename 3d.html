@@ -247,6 +247,14 @@
                 <label><input type="checkbox" id="chk-wireframe"> Wireframe</label>
                 <label><input type="checkbox" id="chk-texture" checked> Texture</label>
             </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Azimuth</span>
+                <input type="range" id="sld-theta" min="-3.1416" max="3.1416" value="0" step="0.01" style="flex:1">
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Elevation</span>
+                <input type="range" id="sld-phi" min="0.1" max="2.67" value="1" step="0.01" style="flex:1">
+            </div>
         </div>
     </div>
 
@@ -705,9 +713,17 @@
             scene.add(label);
         }
 
+        const $sldTheta = document.getElementById('sld-theta');
+        const $sldPhi = document.getElementById('sld-phi');
+
         function animate() {
             animId = requestAnimationFrame(animate);
             controls.update();
+            const sph = new THREE.Spherical().setFromVector3(
+                camera.position.clone().sub(controls.target)
+            );
+            $sldTheta.value = sph.theta;
+            $sldPhi.value = sph.phi;
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
         }
@@ -810,6 +826,18 @@
     $rotSpd.addEventListener('input', () => {
         if (controls) controls.autoRotateSpeed = +$rotSpd.value;
     });
+
+    function setCameraFromSliders() {
+        if (!controls) return;
+        const sph = new THREE.Spherical().setFromVector3(
+            camera.position.clone().sub(controls.target)
+        );
+        sph.theta = +document.getElementById('sld-theta').value;
+        sph.phi = +document.getElementById('sld-phi').value;
+        camera.position.copy(new THREE.Vector3().setFromSpherical(sph).add(controls.target));
+    }
+    document.getElementById('sld-theta').addEventListener('input', setCameraFromSliders);
+    document.getElementById('sld-phi').addEventListener('input', setCameraFromSliders);
 
     document.getElementById('chk-landmarks').addEventListener('change', e => {
         if (!scene) return;
