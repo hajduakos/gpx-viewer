@@ -608,7 +608,6 @@
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color(0x87CEEB);
-        scene.fog = new THREE.FogExp2(0x87CEEB, 0.004);
 
         camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
         camera.position.set(sw * 0.6, (maxE - meanE) * scale * exag + 25, sd * 0.6);
