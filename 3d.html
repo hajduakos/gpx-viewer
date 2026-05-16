@@ -479,19 +479,43 @@
         scene.add(line);
     }
 
+    function makeEarthTexture(w, h) {
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const cx = cv.getContext('2d');
+        const img = cx.createImageData(w, h);
+        const d = img.data;
+        for (let i = 0; i < d.length; i += 4) {
+            const t = Math.random();
+            const r = 40 + t * 70 | 0;
+            const g = 25 + t * 40 | 0;
+            const b = 10 + t * 20 | 0;
+            d[i] = r; d[i+1] = g; d[i+2] = b; d[i+3] = 255;
+        }
+        cx.putImageData(img, 0, 0);
+        const tex = new THREE.CanvasTexture(cv);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        return tex;
+    }
+
     function buildBox(elev, gw, gh, sw, sd, meanE, scale, ex, minE) {
         const bottomY = (minE - 200 - meanE) * scale * ex;
+        const earthTex = makeEarthTexture(512, 512);
         const brownMat = new THREE.MeshStandardMaterial({
-            color: 0x6B4226, roughness: 0.95, metalness: 0
+            map: earthTex, roughness: 0.95, metalness: 0
         });
 
         function makeSide(count, getTopVertex, flip) {
             const positions = [];
+            const uvs = [];
             const indices = [];
             for (let i = 0; i < count; i++) {
                 const [x, y, z] = getTopVertex(i);
+                const u = i / (count - 1);
                 positions.push(x, y, z);
+                uvs.push(u, 1);
                 positions.push(x, bottomY, z);
+                uvs.push(u, 0);
             }
             for (let i = 0; i < count - 1; i++) {
                 const t0 = i * 2, b0 = i * 2 + 1, t1 = (i + 1) * 2, b1 = (i + 1) * 2 + 1;
@@ -505,6 +529,7 @@
             }
             const geom = new THREE.BufferGeometry();
             geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
             geom.setIndex(indices);
             geom.computeVertexNormals();
             return new THREE.Mesh(geom, brownMat);
