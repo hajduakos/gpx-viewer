@@ -203,6 +203,10 @@
         <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
             <input type="checkbox" id="chk-wireframe"> Wireframe
         </label>
+        <span style="color:#666">|</span>
+        <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="chk-texture" checked> Texture
+        </label>
     </div>
 
 
@@ -450,7 +454,7 @@
         { name: 'Dzongla', lat: 27.9397, lon: 86.7736, lift: 1.5 },
     ];
 
-    let renderer, labelRenderer, scene, camera, controls, terrain;
+    let renderer, labelRenderer, scene, camera, controls, terrain, terrainTex;
     let S = null;
     let D = null;
     let trackMidpoints = [];
@@ -628,11 +632,11 @@
         geom.rotateX(-Math.PI / 2);
         setTerrainY(geom, elev, meanE, scale, exag);
 
-        const tex = new THREE.CanvasTexture(texCv);
-        tex.minFilter = THREE.LinearFilter;
-        tex.magFilter = THREE.LinearFilter;
+        terrainTex = new THREE.CanvasTexture(texCv);
+        terrainTex.minFilter = THREE.LinearFilter;
+        terrainTex.magFilter = THREE.LinearFilter;
 
-        terrain = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 }));
+        terrain = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ map: terrainTex, roughness: 0.85, metalness: 0 }));
         scene.add(terrain);
 
         buildBox(elev, gw, gh, sw, sd, meanE, scale, exag, minE);
@@ -768,6 +772,13 @@
     document.getElementById('chk-wireframe').addEventListener('change', e => {
         if (!scene) return;
         scene.traverse(o => { if (o.isMesh && o.material) o.material.wireframe = e.target.checked; });
+    });
+
+    document.getElementById('chk-texture').addEventListener('change', e => {
+        if (!terrain) return;
+        terrain.material.map = e.target.checked ? terrainTex : null;
+        terrain.material.color.set(e.target.checked ? 0xffffff : 0x5A8C32);
+        terrain.material.needsUpdate = true;
     });
 
     document.getElementById('sel-highlight').addEventListener('change', e => {
