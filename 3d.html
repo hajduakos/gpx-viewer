@@ -479,6 +479,67 @@
         scene.add(line);
     }
 
+    function buildBox(elev, gw, gh, sw, sd, meanE, scale, ex, minE) {
+        const bottomY = (minE - 200 - meanE) * scale * ex;
+        const brownMat = new THREE.MeshStandardMaterial({
+            color: 0x6B4226, roughness: 0.95, metalness: 0
+        });
+
+        function makeSide(count, getTopVertex, flip) {
+            const positions = [];
+            const indices = [];
+            for (let i = 0; i < count; i++) {
+                const [x, y, z] = getTopVertex(i);
+                positions.push(x, y, z);
+                positions.push(x, bottomY, z);
+            }
+            for (let i = 0; i < count - 1; i++) {
+                const t0 = i * 2, b0 = i * 2 + 1, t1 = (i + 1) * 2, b1 = (i + 1) * 2 + 1;
+                if (flip) {
+                    indices.push(b0, t1, t0);
+                    indices.push(b0, b1, t1);
+                } else {
+                    indices.push(b0, t0, t1);
+                    indices.push(b0, t1, b1);
+                }
+            }
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geom.setIndex(indices);
+            geom.computeVertexNormals();
+            return new THREE.Mesh(geom, brownMat);
+        }
+
+        scene.add(makeSide(gw, c => [
+            (c / (gw - 1) - 0.5) * sw,
+            (elev[c] - meanE) * scale * ex,
+            -sd / 2
+        ], false));
+
+        scene.add(makeSide(gw, c => [
+            (c / (gw - 1) - 0.5) * sw,
+            (elev[(gh - 1) * gw + c] - meanE) * scale * ex,
+            sd / 2
+        ], true));
+
+        scene.add(makeSide(gh, r => [
+            -sw / 2,
+            (elev[r * gw] - meanE) * scale * ex,
+            (r / (gh - 1) - 0.5) * sd
+        ], true));
+
+        scene.add(makeSide(gh, r => [
+            sw / 2,
+            (elev[r * gw + gw - 1] - meanE) * scale * ex,
+            (r / (gh - 1) - 0.5) * sd
+        ], false));
+
+        const bGeom = new THREE.PlaneGeometry(sw, sd);
+        bGeom.rotateX(Math.PI / 2);
+        bGeom.translate(0, bottomY, 0);
+        scene.add(new THREE.Mesh(bGeom, brownMat));
+    }
+
     function buildScene(elev, texCv, tracks, bb, gw, gh) {
         const mid = (bb.maxLat + bb.minLat) / 2;
         const wm = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
@@ -544,6 +605,8 @@
 
         terrain = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 }));
         scene.add(terrain);
+
+        buildBox(elev, gw, gh, sw, sd, meanE, scale, exag, minE);
 
         tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd, 0xff3333, i));
 
