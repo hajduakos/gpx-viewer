@@ -191,6 +191,72 @@
             gap: 6px;
             cursor: pointer;
         }
+
+        #stats-box {
+            display: none;
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            background: rgba(15,15,26,0.65);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 12px 16px;
+            z-index: 20;
+            flex-direction: column;
+            gap: 6px;
+            max-width: 520px;
+            transition: max-width 0.2s;
+        }
+        #stats-box.active { display: flex; }
+        #stats-box.expanded { max-width: 700px; max-height: calc(100vh - 32px); overflow-y: auto; }
+        #stats-box .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            gap: 16px;
+        }
+        #stats-box .stat-label { color: #999; }
+        #stats-box .stat-value { color: #e0e0e0; text-align: right; }
+        #stats-box .stat-title {
+            font-size: 0.9rem;
+            color: #ccc;
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+        #btn-details {
+            background: none;
+            border: none;
+            color: #777;
+            font-size: 0.8rem;
+            cursor: pointer;
+            padding: 0;
+            text-align: left;
+            transition: color 0.2s;
+        }
+        #btn-details:hover { color: #bbb; }
+        #stats-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        #stats-table th {
+            text-align: left;
+            padding: 6px 8px;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #fff;
+            border-bottom: 1px solid #555;
+            white-space: nowrap;
+        }
+        #stats-table td {
+            padding: 6px 8px;
+            color: #e0e0e0;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            white-space: nowrap;
+        }
+        #stats-table tr:hover td { background: rgba(255,255,255,0.05); }
     </style>
 </head>
 <body>
@@ -227,6 +293,8 @@
     </div>
 
     <div id="viewer"></div>
+
+    <div id="stats-box"></div>
 
     <div id="rotate-box">
         <div class="ctrl-row">
@@ -314,14 +382,70 @@
         const doc = new DOMParser().parseFromString(text, 'application/xml');
         const pts = [];
         for (const tp of doc.querySelectorAll('trkpt')) {
+            const timeEl = tp.querySelector('time');
             pts.push({
                 lat: +tp.getAttribute('lat'),
                 lon: +tp.getAttribute('lon'),
                 ele: tp.querySelector('ele') ? +tp.querySelector('ele').textContent : null,
+                time: timeEl ? new Date(timeEl.textContent) : null,
             });
         }
         const n = doc.querySelector('trk > name, metadata > name');
         return { points: pts, name: n ? n.textContent : 'GPX Track' };
+    }
+
+    function smoothPoints(points, windowSize) {
+        if (windowSize <= 0) return points;
+        const half = Math.floor(windowSize / 2);
+        return points.map((p, i) => {
+            const start = Math.max(0, i - half);
+            const end = Math.min(points.length - 1, i + half);
+            let lat = 0, lon = 0, ele = 0, eleCount = 0;
+            for (let j = start; j <= end; j++) {
+                lat += points[j].lat;
+                lon += points[j].lon;
+                if (points[j].ele != null) { ele += points[j].ele; eleCount++; }
+            }
+            const n = end - start + 1;
+            return { lat: lat / n, lon: lon / n, ele: eleCount > 0 ? ele / eleCount : p.ele, time: p.time };
+        });
+    }
+
+    function haversine(lat1, lon1, lat2, lon2) {
+        const R = 6371000;
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function computeTrackStats(points) {
+        let dist = 0, elevGain = 0, elapsedSec = 0;
+        let date = null;
+        if (points[0]?.time) date = points[0].time;
+        for (let i = 1; i < points.length; i++) {
+            dist += haversine(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
+            if (points[i].ele != null && points[i - 1].ele != null) {
+                const diff = points[i].ele - points[i - 1].ele;
+                if (diff > 0) elevGain += diff;
+            }
+        }
+        if (points[0]?.time && points[points.length - 1]?.time) {
+            elapsedSec = (points[points.length - 1].time - points[0].time) / 1000;
+        }
+        return { dist, elevGain, elapsedSec, date };
+    }
+
+    function formatDuration(sec) {
+        if (!sec || sec <= 0) return '—';
+        const h = Math.floor(sec / 3600);
+        const m = Math.floor((sec % 3600) / 60);
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    function formatDate(d) {
+        if (!d) return '—';
+        return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
     // ── Bounding Box ────────────────────────────────────────────
@@ -696,6 +820,7 @@
         labelRenderer.domElement.style.position = 'absolute';
         labelRenderer.domElement.style.top = '0';
         labelRenderer.domElement.style.pointerEvents = 'none';
+        labelRenderer.domElement.style.zIndex = '5';
         $viewer.appendChild(labelRenderer.domElement);
 
         for (const lm of LANDMARKS) {
@@ -760,7 +885,12 @@
             for (const file of sorted) {
                 const text = await file.text();
                 const { points, name } = parseGPX(text);
-                if (points.length) { tracks.push(points); trackNames.push(name); allPoints.push(...points); }
+                if (points.length) {
+                    const smoothed = smoothPoints(points, 5);
+                    tracks.push(smoothed);
+                    trackNames.push(name);
+                    allPoints.push(...smoothed);
+                }
             }
             if (!allPoints.length) throw new Error('No track points found in GPX files');
             prog('Step 1/4 — Parsing GPX files...', 5, `${sorted.length} files, ${allPoints.length} total points`);
@@ -797,6 +927,51 @@
                 opt.textContent = n;
                 $sel.appendChild(opt);
             });
+
+            const perTrack = tracks.map((pts, i) => ({ name: trackNames[i], ...computeTrackStats(pts) }));
+            const totalDist = perTrack.reduce((s, t) => s + t.dist, 0);
+            const totalGain = perTrack.reduce((s, t) => s + t.elevGain, 0);
+            const totalTime = perTrack.reduce((s, t) => s + t.elapsedSec, 0);
+            const $stats = document.getElementById('stats-box');
+
+            if (tracks.length === 1) {
+                const t = perTrack[0];
+                $stats.innerHTML = `
+                    <div class="stat-title">${t.name}</div>
+                    <div class="stat-row"><span class="stat-label">Date</span><span class="stat-value">${formatDate(t.date)}</span></div>
+                    <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-value">${(t.dist / 1000).toFixed(2)} km</span></div>
+                    <div class="stat-row"><span class="stat-label">Elevation gain</span><span class="stat-value">${Math.round(t.elevGain)} m</span></div>
+                    <div class="stat-row"><span class="stat-label">Time</span><span class="stat-value">${formatDuration(t.elapsedSec)}</span></div>`;
+            } else {
+                let tableHTML = `<table id="stats-table"><thead><tr>
+                    <th>Name</th><th>Date</th><th>Distance</th><th>Gain</th><th>Time</th>
+                    </tr></thead><tbody>`;
+                for (const t of perTrack) {
+                    tableHTML += `<tr>
+                        <td>${t.name}</td>
+                        <td>${formatDate(t.date)}</td>
+                        <td>${(t.dist / 1000).toFixed(2)} km</td>
+                        <td>${Math.round(t.elevGain)} m</td>
+                        <td>${formatDuration(t.elapsedSec)}</td></tr>`;
+                }
+                tableHTML += '</tbody></table>';
+                $stats.innerHTML = `
+                    <div class="stat-title">${tracks.length} Activities</div>
+                    <div class="stat-row"><span class="stat-label">Total distance</span><span class="stat-value">${(totalDist / 1000).toFixed(2)} km</span></div>
+                    <div class="stat-row"><span class="stat-label">Total elevation</span><span class="stat-value">${Math.round(totalGain)} m</span></div>
+                    <div class="stat-row"><span class="stat-label">Total time</span><span class="stat-value">${formatDuration(totalTime)}</span></div>
+                    <button id="btn-details">&#9662; Details</button>
+                    <div id="stats-details" style="display:none;overflow-x:auto">${tableHTML}</div>`;
+                document.getElementById('btn-details').addEventListener('click', () => {
+                    const det = document.getElementById('stats-details');
+                    const btn = document.getElementById('btn-details');
+                    const open = det.style.display !== 'none';
+                    det.style.display = open ? 'none' : 'block';
+                    btn.innerHTML = open ? '&#9662; Details' : '&#9652; Details';
+                    $stats.classList.toggle('expanded', !open);
+                });
+            }
+            $stats.classList.add('active');
         } catch (err) {
             prog('Error', 0, err.message);
             console.error(err);
@@ -887,6 +1062,9 @@
         }
         if (e.key === 'p' || e.key === 'P') {
             $btnPlay.click();
+        }
+        if (e.key === 's' || e.key === 'S') {
+            document.getElementById('stats-box').classList.toggle('active');
         }
         if (!controls) return;
         const sphere = new THREE.Spherical().setFromVector3(
