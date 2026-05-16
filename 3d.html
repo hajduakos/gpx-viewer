@@ -788,7 +788,7 @@
         $viewer.appendChild(renderer.domElement);
 
         controls = new OrbitControls(camera, renderer.domElement);
-        controls.target.set(0, (maxE - meanE) * scale * exag * 0.25, 0);
+        controls.target.set(0, (maxE - meanE) * scale * exag * -0.1, 0);
         origTarget = controls.target.clone();
         controls.enableDamping = true;
         controls.dampingFactor = 0.06;
