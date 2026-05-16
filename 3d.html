@@ -207,6 +207,10 @@
         <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
             <input type="checkbox" id="chk-texture" checked> Texture
         </label>
+        <span style="color:#666">|</span>
+        <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="chk-tracks" checked> Tracks
+        </label>
     </div>
 
 
@@ -779,6 +783,11 @@
         terrain.material.map = e.target.checked ? terrainTex : null;
         terrain.material.color.set(e.target.checked ? 0xffffff : 0x5A8C32);
         terrain.material.needsUpdate = true;
+    });
+
+    document.getElementById('chk-tracks').addEventListener('change', e => {
+        if (!scene) return;
+        scene.traverse(o => { if (o.name === 'gpx-track') o.visible = e.target.checked; });
     });
 
     document.getElementById('sel-highlight').addEventListener('change', e => {
