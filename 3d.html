@@ -311,6 +311,10 @@
         <div id="advanced-settings">
             <div class="ctrl-row">
                 <label><input type="checkbox" id="chk-landmarks" checked> Landmarks</label>
+                <span class="ctrl-label">Size</span>
+                <input type="range" id="sld-landmark-size" min="6" max="20" value="11" step="1" style="flex:1">
+            </div>
+            <div class="ctrl-row">
                 <label><input type="checkbox" id="chk-tracks" checked> Tracks</label>
                 <label><input type="checkbox" id="chk-wireframe"> Wireframe</label>
                 <label><input type="checkbox" id="chk-texture" checked> Texture</label>
@@ -1018,6 +1022,12 @@
         if (!scene) return;
         scene.traverse(o => { if (o.name === 'landmark') o.visible = e.target.checked; });
     });
+
+    document.getElementById('sld-landmark-size').addEventListener('input', e => {
+        if (!scene) return;
+        scene.traverse(o => { if (o.name === 'landmark') o.element.style.fontSize = e.target.value + 'px'; });
+    });
+
 
     document.getElementById('chk-wireframe').addEventListener('change', e => {
         if (!scene) return;
