@@ -199,6 +199,10 @@
         <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
             <input type="checkbox" id="chk-landmarks" checked> Landmarks
         </label>
+        <span style="color:#666">|</span>
+        <label style="font-size:0.8rem;color:#999;display:flex;align-items:center;gap:4px;cursor:pointer">
+            <input type="checkbox" id="chk-wireframe"> Wireframe
+        </label>
     </div>
 
 
@@ -759,6 +763,11 @@
     document.getElementById('chk-landmarks').addEventListener('change', e => {
         if (!scene) return;
         scene.traverse(o => { if (o.name === 'landmark') o.visible = e.target.checked; });
+    });
+
+    document.getElementById('chk-wireframe').addEventListener('change', e => {
+        if (!scene) return;
+        scene.traverse(o => { if (o.isMesh && o.material) o.material.wireframe = e.target.checked; });
     });
 
     document.getElementById('sel-highlight').addEventListener('change', e => {
