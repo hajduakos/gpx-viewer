@@ -177,6 +177,17 @@
             transition: color 0.2s;
         }
         #btn-advanced:hover { color: #bbb; }
+        .ctrl-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            color: #ccc;
+            font-size: 0.8rem;
+            padding: 5px 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .ctrl-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
         #advanced-settings {
             display: none;
             flex-direction: column;
@@ -266,6 +277,10 @@
             <span>Browse or drop GPX files</span>
             <input type="file" accept=".gpx" id="file-input" multiple>
         </div>
+        <div class="file-picker" id="import-zone" style="padding:14px 32px;font-size:0.85rem;border-style:solid;color:#777">
+            <span>or import saved scene data (.json)</span>
+            <input type="file" accept=".json" id="import-input">
+        </div>
         <div class="settings">
             <label>
                 Grid resolution
@@ -326,6 +341,9 @@
             <div class="ctrl-row">
                 <span class="ctrl-label">Elevation</span>
                 <input type="range" id="sld-phi" min="0.1" max="2.67" value="1" step="0.01" style="flex:1">
+            </div>
+            <div class="ctrl-row">
+                <button id="btn-export" class="ctrl-btn">Export scene data</button>
             </div>
         </div>
     </div>
@@ -638,6 +656,7 @@
     let origTarget = null;
     const exag = 1.0;
     let animId = null;
+    let cachedTerrainData = null;
 
     function setTerrainY(geom, elev, meanE, scale, ex) {
         const pos = geom.attributes.position;
@@ -870,6 +889,68 @@
     }
 
 
+    function showViewer(tracks, trackNames) {
+        $progress.classList.remove('active');
+        $viewer.classList.add('active');
+        document.getElementById('rotate-box').classList.add('active');
+
+        const $sel = document.getElementById('sel-highlight');
+        $sel.innerHTML = '<option value="">-- none --</option>';
+        trackNames.forEach((n, i) => {
+            const opt = document.createElement('option');
+            opt.value = i;
+            opt.textContent = n;
+            $sel.appendChild(opt);
+        });
+
+        if (!tracks.length) return;
+
+        const perTrack = tracks.map((pts, i) => ({ name: trackNames[i], ...computeTrackStats(pts) }));
+        const totalDist = perTrack.reduce((s, t) => s + t.dist, 0);
+        const totalGain = perTrack.reduce((s, t) => s + t.elevGain, 0);
+        const totalTime = perTrack.reduce((s, t) => s + t.elapsedSec, 0);
+        const $stats = document.getElementById('stats-box');
+
+        if (tracks.length === 1) {
+            const t = perTrack[0];
+            $stats.innerHTML = `
+                <div class="stat-title">${t.name}</div>
+                <div class="stat-row"><span class="stat-label">Date</span><span class="stat-value">${formatDate(t.date)}</span></div>
+                <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-value">${(t.dist / 1000).toFixed(2)} km</span></div>
+                <div class="stat-row"><span class="stat-label">Elevation gain</span><span class="stat-value">${Math.round(t.elevGain)} m</span></div>
+                <div class="stat-row"><span class="stat-label">Time</span><span class="stat-value">${formatDuration(t.elapsedSec)}</span></div>`;
+        } else {
+            let tableHTML = `<table id="stats-table"><thead><tr>
+                <th>Name</th><th>Date</th><th>Distance</th><th>Gain</th><th>Time</th>
+                </tr></thead><tbody>`;
+            for (const t of perTrack) {
+                tableHTML += `<tr>
+                    <td>${t.name}</td>
+                    <td>${formatDate(t.date)}</td>
+                    <td>${(t.dist / 1000).toFixed(2)} km</td>
+                    <td>${Math.round(t.elevGain)} m</td>
+                    <td>${formatDuration(t.elapsedSec)}</td></tr>`;
+            }
+            tableHTML += '</tbody></table>';
+            $stats.innerHTML = `
+                <div class="stat-title">${tracks.length} Activities</div>
+                <div class="stat-row"><span class="stat-label">Total distance</span><span class="stat-value">${(totalDist / 1000).toFixed(2)} km</span></div>
+                <div class="stat-row"><span class="stat-label">Total elevation</span><span class="stat-value">${Math.round(totalGain)} m</span></div>
+                <div class="stat-row"><span class="stat-label">Total time</span><span class="stat-value">${formatDuration(totalTime)}</span></div>
+                <button id="btn-details">&#9662; Details</button>
+                <div id="stats-details" style="display:none;overflow-x:auto">${tableHTML}</div>`;
+            document.getElementById('btn-details').addEventListener('click', () => {
+                const det = document.getElementById('stats-details');
+                const btn = document.getElementById('btn-details');
+                const open = det.style.display !== 'none';
+                det.style.display = open ? 'none' : 'block';
+                btn.innerHTML = open ? '&#9662; Details' : '&#9652; Details';
+                $stats.classList.toggle('expanded', !open);
+            });
+        }
+        $stats.classList.add('active');
+    }
+
     // ── Main Flow ───────────────────────────────────────────────
 
     async function processFiles(files) {
@@ -912,6 +993,8 @@
                 prog('Step 3/4 — Loading satellite imagery...', 66 + (d / t) * 27, `Tile ${d} / ${t}`);
             });
 
+            cachedTerrainData = { elev: Array.from(elev), texDataURL: texCv.toDataURL('image/png'), bb, gw, gh, tracks, trackNames };
+
             prog('Step 4/4 — Building 3D scene...', 95);
             await new Promise(r => setTimeout(r, 80));
             buildScene(elev, texCv, tracks, bb, gw, gh);
@@ -919,63 +1002,7 @@
             prog('Done!', 100);
             await new Promise(r => setTimeout(r, 350));
 
-            $progress.classList.remove('active');
-            $viewer.classList.add('active');
-            $rotBox.classList.add('active');
-
-            const $sel = document.getElementById('sel-highlight');
-            $sel.innerHTML = '<option value="">-- none --</option>';
-            trackNames.forEach((n, i) => {
-                const opt = document.createElement('option');
-                opt.value = i;
-                opt.textContent = n;
-                $sel.appendChild(opt);
-            });
-
-            const perTrack = tracks.map((pts, i) => ({ name: trackNames[i], ...computeTrackStats(pts) }));
-            const totalDist = perTrack.reduce((s, t) => s + t.dist, 0);
-            const totalGain = perTrack.reduce((s, t) => s + t.elevGain, 0);
-            const totalTime = perTrack.reduce((s, t) => s + t.elapsedSec, 0);
-            const $stats = document.getElementById('stats-box');
-
-            if (tracks.length === 1) {
-                const t = perTrack[0];
-                $stats.innerHTML = `
-                    <div class="stat-title">${t.name}</div>
-                    <div class="stat-row"><span class="stat-label">Date</span><span class="stat-value">${formatDate(t.date)}</span></div>
-                    <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-value">${(t.dist / 1000).toFixed(2)} km</span></div>
-                    <div class="stat-row"><span class="stat-label">Elevation gain</span><span class="stat-value">${Math.round(t.elevGain)} m</span></div>
-                    <div class="stat-row"><span class="stat-label">Time</span><span class="stat-value">${formatDuration(t.elapsedSec)}</span></div>`;
-            } else {
-                let tableHTML = `<table id="stats-table"><thead><tr>
-                    <th>Name</th><th>Date</th><th>Distance</th><th>Gain</th><th>Time</th>
-                    </tr></thead><tbody>`;
-                for (const t of perTrack) {
-                    tableHTML += `<tr>
-                        <td>${t.name}</td>
-                        <td>${formatDate(t.date)}</td>
-                        <td>${(t.dist / 1000).toFixed(2)} km</td>
-                        <td>${Math.round(t.elevGain)} m</td>
-                        <td>${formatDuration(t.elapsedSec)}</td></tr>`;
-                }
-                tableHTML += '</tbody></table>';
-                $stats.innerHTML = `
-                    <div class="stat-title">${tracks.length} Activities</div>
-                    <div class="stat-row"><span class="stat-label">Total distance</span><span class="stat-value">${(totalDist / 1000).toFixed(2)} km</span></div>
-                    <div class="stat-row"><span class="stat-label">Total elevation</span><span class="stat-value">${Math.round(totalGain)} m</span></div>
-                    <div class="stat-row"><span class="stat-label">Total time</span><span class="stat-value">${formatDuration(totalTime)}</span></div>
-                    <button id="btn-details">&#9662; Details</button>
-                    <div id="stats-details" style="display:none;overflow-x:auto">${tableHTML}</div>`;
-                document.getElementById('btn-details').addEventListener('click', () => {
-                    const det = document.getElementById('stats-details');
-                    const btn = document.getElementById('btn-details');
-                    const open = det.style.display !== 'none';
-                    det.style.display = open ? 'none' : 'block';
-                    btn.innerHTML = open ? '&#9662; Details' : '&#9652; Details';
-                    $stats.classList.toggle('expanded', !open);
-                });
-            }
-            $stats.classList.add('active');
+            showViewer(tracks, trackNames);
         } catch (err) {
             prog('Error', 0, err.message);
             console.error(err);
@@ -1097,6 +1124,61 @@
         e.preventDefault();
         $dropzone.classList.remove('dragover');
         if (e.dataTransfer.files.length) processFiles(e.dataTransfer.files);
+    });
+
+    document.getElementById('btn-export').addEventListener('click', () => {
+        if (!cachedTerrainData) return;
+        const json = JSON.stringify(cachedTerrainData);
+        const blob = new Blob([json], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'scene-data.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+    });
+
+    document.getElementById('import-input').addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        $landing.style.display = 'none';
+        $progress.classList.add('active');
+        prog('Loading terrain data...', 30);
+        try {
+            const data = JSON.parse(await file.text());
+            const elev = new Float64Array(data.elev);
+            const bb = data.bb;
+            const gw = data.gw, gh = data.gh;
+
+            prog('Restoring texture...', 60);
+            const img = await new Promise((res, rej) => {
+                const i = new Image();
+                i.onload = () => res(i);
+                i.onerror = rej;
+                i.src = data.texDataURL;
+            });
+            const texCv = document.createElement('canvas');
+            texCv.width = img.width;
+            texCv.height = img.height;
+            texCv.getContext('2d').drawImage(img, 0, 0);
+
+            const tracks = (data.tracks || []).map(pts =>
+                pts.map(p => ({ ...p, time: p.time ? new Date(p.time) : null }))
+            );
+            const trackNames = data.trackNames || [];
+
+            cachedTerrainData = data;
+
+            prog('Building 3D scene...', 90);
+            await new Promise(r => setTimeout(r, 80));
+            buildScene(elev, texCv, tracks, bb, gw, gh);
+
+            prog('Done!', 100);
+            await new Promise(r => setTimeout(r, 350));
+            showViewer(tracks, trackNames);
+        } catch (err) {
+            prog('Error', 0, err.message);
+            console.error(err);
+        }
     });
 
     </script>
