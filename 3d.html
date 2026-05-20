@@ -325,12 +325,16 @@
         <button id="btn-advanced">&#9662; Advanced settings</button>
         <div id="advanced-settings">
             <div class="ctrl-row">
+                <label><input type="checkbox" id="chk-tracks" checked> Tracks</label>
+                <span class="ctrl-label">Offset</span>
+                <input type="range" id="sld-track-offset" min="0" max="1" value="0.05" step="0.01" style="flex:1">
+            </div>
+            <div class="ctrl-row">
                 <label><input type="checkbox" id="chk-landmarks" checked> Landmarks</label>
                 <span class="ctrl-label">Size</span>
                 <input type="range" id="sld-landmark-size" min="6" max="20" value="11" step="1" style="flex:1">
             </div>
             <div class="ctrl-row">
-                <label><input type="checkbox" id="chk-tracks" checked> Tracks</label>
                 <label><input type="checkbox" id="chk-wireframe"> Wireframe</label>
                 <label><input type="checkbox" id="chk-texture" checked> Texture</label>
             </div>
@@ -667,12 +671,11 @@
 
     function addTrackLine(pts, bb, elev, gw, gh, scale, meanE, ex, sw, sd, color, idx) {
         const arr = [];
-        const offset = 0.05;
         for (const p of pts) {
             const x = ((p.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
             const z = ((bb.maxLat - p.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
             const e = interpElev(p.lat, p.lon, bb, elev, gw, gh);
-            arr.push(x, (e - meanE) * scale * ex + offset, z);
+            arr.push(x, (e - meanE) * scale * ex, z);
         }
         const geom = new LineGeometry();
         geom.setPositions(arr);
@@ -680,6 +683,7 @@
         const line = new Line2(geom, mat);
         line.name = 'gpx-track';
         line.userData.trackIdx = idx;
+        line.position.y = +document.getElementById('sld-track-offset').value;
         scene.add(line);
     }
 
@@ -1073,6 +1077,12 @@
         scene.traverse(o => { if (o.name === 'gpx-track') o.visible = e.target.checked; });
     });
 
+    document.getElementById('sld-track-offset').addEventListener('input', e => {
+        if (!scene) return;
+        const off = +e.target.value;
+        scene.traverse(o => { if (o.name === 'gpx-track') o.position.y = off; });
+    });
+
     document.getElementById('sel-highlight').addEventListener('change', e => {
         if (!scene) return;
         const idx = e.target.value;
@@ -1080,7 +1090,8 @@
             if (o.name === 'gpx-track') {
                 const hit = idx !== '' && o.userData.trackIdx === +idx;
                 o.material.color.set(hit ? 0xffee00 : 0xff3333);
-                o.position.y = hit ? 0.02 : 0;
+                const baseOff = +document.getElementById('sld-track-offset').value;
+                o.position.y = baseOff + (hit ? 0.02 : 0);
             }
         });
         if (idx !== '' && trackMidpoints[+idx]) {
