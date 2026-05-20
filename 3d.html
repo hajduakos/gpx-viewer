@@ -330,6 +330,12 @@
                 <input type="range" id="sld-track-offset" min="0" max="1" value="0.05" step="0.01" style="flex:1">
             </div>
             <div class="ctrl-row">
+                <span class="ctrl-label">Track color</span>
+                <input type="color" id="clr-track" value="#ff3333">
+                <span class="ctrl-label">Highlight</span>
+                <input type="color" id="clr-highlight" value="#ffee00">
+            </div>
+            <div class="ctrl-row">
                 <label><input type="checkbox" id="chk-landmarks" checked> Landmarks</label>
                 <span class="ctrl-label">Size</span>
                 <input type="range" id="sld-landmark-size" min="6" max="20" value="11" step="1" style="flex:1">
@@ -840,7 +846,7 @@
 
         buildBox(elev, gw, gh, sw, sd, meanE, scale, exag, minE);
 
-        tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd, 0xff3333, i));
+        tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd, document.getElementById('clr-track').value, i));
 
         labelRenderer = new CSS2DRenderer();
         labelRenderer.setSize(innerWidth, innerHeight);
@@ -1083,13 +1089,31 @@
         scene.traverse(o => { if (o.name === 'gpx-track') o.position.y = off; });
     });
 
+    document.getElementById('clr-track').addEventListener('input', e => {
+        if (!scene) return;
+        const hlIdx = document.getElementById('sel-highlight').value;
+        scene.traverse(o => {
+            if (o.name === 'gpx-track' && !(hlIdx !== '' && o.userData.trackIdx === +hlIdx))
+                o.material.color.set(e.target.value);
+        });
+    });
+
+    document.getElementById('clr-highlight').addEventListener('input', e => {
+        if (!scene) return;
+        const hlIdx = document.getElementById('sel-highlight').value;
+        scene.traverse(o => {
+            if (o.name === 'gpx-track' && hlIdx !== '' && o.userData.trackIdx === +hlIdx)
+                o.material.color.set(e.target.value);
+        });
+    });
+
     document.getElementById('sel-highlight').addEventListener('change', e => {
         if (!scene) return;
         const idx = e.target.value;
         scene.traverse(o => {
             if (o.name === 'gpx-track') {
                 const hit = idx !== '' && o.userData.trackIdx === +idx;
-                o.material.color.set(hit ? 0xffee00 : 0xff3333);
+                o.material.color.set(hit ? document.getElementById('clr-highlight').value : document.getElementById('clr-track').value);
                 const baseOff = +document.getElementById('sld-track-offset').value;
                 o.position.y = baseOff + (hit ? 0.02 : 0);
             }
