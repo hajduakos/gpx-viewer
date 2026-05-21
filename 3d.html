@@ -202,6 +202,18 @@
             gap: 6px;
             cursor: pointer;
         }
+        .adv-section-title {
+            font-size: 0.75rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+        .adv-divider {
+            border: none;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            margin: 4px 0 2px;
+        }
 
         #stats-box {
             display: none;
@@ -324,8 +336,9 @@
         </div>
         <button id="btn-advanced">&#9662; Advanced settings</button>
         <div id="advanced-settings">
+            <div class="adv-section-title">Tracks</div>
             <div class="ctrl-row">
-                <label><input type="checkbox" id="chk-tracks" checked> Tracks</label>
+                <label><input type="checkbox" id="chk-tracks" checked> Show tracks</label>
                 <span class="ctrl-label">Offset</span>
                 <input type="range" id="sld-track-offset" min="0" max="1" value="0.05" step="0.01" style="flex:1">
             </div>
@@ -335,15 +348,21 @@
                 <span class="ctrl-label">Highlight</span>
                 <input type="color" id="clr-highlight" value="#ffee00">
             </div>
-            <div class="ctrl-row">
-                <label><input type="checkbox" id="chk-landmarks" checked> Landmarks</label>
-                <span class="ctrl-label">Size</span>
-                <input type="range" id="sld-landmark-size" min="6" max="20" value="11" step="1" style="flex:1">
-            </div>
+            <hr class="adv-divider">
+            <div class="adv-section-title">Terrain</div>
             <div class="ctrl-row">
                 <label><input type="checkbox" id="chk-wireframe"> Wireframe</label>
                 <label><input type="checkbox" id="chk-texture" checked> Texture</label>
             </div>
+            <hr class="adv-divider">
+            <div class="adv-section-title">Landmarks</div>
+            <div class="ctrl-row">
+                <label><input type="checkbox" id="chk-landmarks" checked> Show landmarks</label>
+                <span class="ctrl-label">Size</span>
+                <input type="range" id="sld-landmark-size" min="6" max="20" value="11" step="1" style="flex:1">
+            </div>
+            <hr class="adv-divider">
+            <div class="adv-section-title">Camera</div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Azimuth</span>
                 <input type="range" id="sld-theta" min="-3.1416" max="3.1416" value="0" step="0.01" style="flex:1">
@@ -352,6 +371,7 @@
                 <span class="ctrl-label">Elevation</span>
                 <input type="range" id="sld-phi" min="0.1" max="2.67" value="1" step="0.01" style="flex:1">
             </div>
+            <hr class="adv-divider">
             <div class="ctrl-row">
                 <button id="btn-export" class="ctrl-btn">Export scene data</button>
             </div>
