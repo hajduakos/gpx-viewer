@@ -339,8 +339,14 @@
             <div class="adv-section-title">Tracks</div>
             <div class="ctrl-row">
                 <label><input type="checkbox" id="chk-tracks" checked> Show tracks</label>
+            </div>
+            <div class="ctrl-row">
                 <span class="ctrl-label">Offset</span>
                 <input type="range" id="sld-track-offset" min="0" max="1" value="0.05" step="0.01" style="flex:1">
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Width</span>
+                <input type="range" id="sld-track-width" min="1" max="10" value="3" step="0.5" style="flex:1">
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Track color</span>
@@ -705,7 +711,7 @@
         }
         const geom = new LineGeometry();
         geom.setPositions(arr);
-        const mat = new LineMaterial({ color, linewidth: 3, resolution: new THREE.Vector2(innerWidth, innerHeight) });
+        const mat = new LineMaterial({ color, linewidth: +document.getElementById('sld-track-width').value, resolution: new THREE.Vector2(innerWidth, innerHeight) });
         const line = new Line2(geom, mat);
         line.name = 'gpx-track';
         line.userData.trackIdx = idx;
@@ -1107,6 +1113,12 @@
         if (!scene) return;
         const off = +e.target.value;
         scene.traverse(o => { if (o.name === 'gpx-track') o.position.y = off; });
+    });
+
+    document.getElementById('sld-track-width').addEventListener('input', e => {
+        if (!scene) return;
+        const w = +e.target.value;
+        scene.traverse(o => { if (o.name === 'gpx-track') o.material.linewidth = w; });
     });
 
     document.getElementById('clr-track').addEventListener('input', e => {
