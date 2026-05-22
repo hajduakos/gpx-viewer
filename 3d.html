@@ -156,6 +156,26 @@
         #btn-play:hover { background: rgba(255,255,255,0.1); color: #fff; }
         #btn-play.playing { color: #4facfe; border-color: #4facfe; }
         #rot-speed { width: 80px; flex: 1; }
+        .mode-toggle {
+            display: flex;
+        }
+        .mode-btn {
+            border: 1px solid rgba(255,255,255,0.15);
+            background: rgba(255,255,255,0.04);
+            color: #999;
+            font-size: 0.7rem;
+            padding: 3px 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .mode-btn:first-child { border-radius: 4px 0 0 4px; }
+        .mode-btn:last-child { border-radius: 0 4px 4px 0; border-left: none; }
+        .mode-btn.active {
+            background: rgba(79,172,254,0.2);
+            color: #4facfe;
+            border-color: #4facfe;
+        }
+        .mode-btn.active + .mode-btn { border-left: none; }
         #sel-highlight {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
@@ -325,8 +345,12 @@
 
     <div id="rotate-box">
         <div class="ctrl-row">
-            <span class="ctrl-label">Orbit</span>
-            <button id="btn-play" title="Auto-rotate">&#9654;</button>
+            <span class="ctrl-label">Camera</span>
+            <div class="mode-toggle">
+                <button id="btn-mode-orbit" class="mode-btn active">Orbit</button>
+                <button id="btn-mode-forward" class="mode-btn">Forward</button>
+            </div>
+            <button id="btn-play" title="Play">&#9654;</button>
             <span class="ctrl-label">Speed</span>
             <input type="range" id="rot-speed" min="0.5" max="10" value="2" step="0.5">
         </div>
@@ -856,8 +880,22 @@
         const $sldTheta = document.getElementById('sld-theta');
         const $sldPhi = document.getElementById('sld-phi');
 
-        function animate() {
+        function animate(now) {
             animId = requestAnimationFrame(animate);
+            if (cameraMode === 'forward' && forwardPlaying) {
+                const delta = (now - lastFrameTime) / 1000;
+                lastFrameTime = now;
+                if (delta > 0 && delta < 0.5) {
+                    const dir = new THREE.Vector3();
+                    camera.getWorldDirection(dir);
+                    dir.y = 0;
+                    dir.normalize();
+                    const speed = +$rotSpd.value * 2;
+                    const move = dir.multiplyScalar(speed * delta);
+                    camera.position.add(move);
+                    controls.target.add(move);
+                }
+            }
             controls.update();
             const sph = new THREE.Spherical().setFromVector3(
                 camera.position.clone().sub(controls.target)
@@ -1001,17 +1039,52 @@
         }
     }
 
-    // ── Auto-rotate ─────────────────────────────────────────────
+    // ── Camera modes ────────────────────────────────────────────
 
     const $rotBox  = document.getElementById('rotate-box');
     const $btnPlay = document.getElementById('btn-play');
     const $rotSpd  = document.getElementById('rot-speed');
+    const $btnOrbit = document.getElementById('btn-mode-orbit');
+    const $btnForward = document.getElementById('btn-mode-forward');
+
+    let cameraMode = 'orbit';
+    let forwardPlaying = false;
+    let lastFrameTime = 0;
+
+    function stopAllCameraMotion() {
+        if (controls) controls.autoRotate = false;
+        forwardPlaying = false;
+        $btnPlay.classList.remove('playing');
+        $btnPlay.innerHTML = '&#9654;';
+    }
+
+    $btnOrbit.addEventListener('click', () => {
+        if (cameraMode === 'orbit') return;
+        stopAllCameraMotion();
+        cameraMode = 'orbit';
+        $btnOrbit.classList.add('active');
+        $btnForward.classList.remove('active');
+    });
+
+    $btnForward.addEventListener('click', () => {
+        if (cameraMode === 'forward') return;
+        stopAllCameraMotion();
+        cameraMode = 'forward';
+        $btnForward.classList.add('active');
+        $btnOrbit.classList.remove('active');
+    });
 
     $btnPlay.addEventListener('click', () => {
         if (!controls) return;
-        controls.autoRotate = !controls.autoRotate;
-        $btnPlay.classList.toggle('playing', controls.autoRotate);
-        $btnPlay.innerHTML = controls.autoRotate ? '&#9646;&#9646;' : '&#9654;';
+        if (cameraMode === 'orbit') {
+            controls.autoRotate = !controls.autoRotate;
+        } else {
+            forwardPlaying = !forwardPlaying;
+            lastFrameTime = performance.now();
+        }
+        const playing = controls.autoRotate || forwardPlaying;
+        $btnPlay.classList.toggle('playing', playing);
+        $btnPlay.innerHTML = playing ? '&#9646;&#9646;' : '&#9654;';
     });
 
     document.getElementById('btn-advanced').addEventListener('click', () => {
