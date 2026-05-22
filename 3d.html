@@ -394,6 +394,7 @@
 
 
 
+    <script src="gpx-utils.js"></script>
     <script type="importmap">
     {
         "imports": {
@@ -444,47 +445,6 @@
 
     // ── GPX Parser ──────────────────────────────────────────────
 
-    function parseGPX(text) {
-        const doc = new DOMParser().parseFromString(text, 'application/xml');
-        const pts = [];
-        for (const tp of doc.querySelectorAll('trkpt')) {
-            const timeEl = tp.querySelector('time');
-            pts.push({
-                lat: +tp.getAttribute('lat'),
-                lon: +tp.getAttribute('lon'),
-                ele: tp.querySelector('ele') ? +tp.querySelector('ele').textContent : null,
-                time: timeEl ? new Date(timeEl.textContent) : null,
-            });
-        }
-        const n = doc.querySelector('trk > name, metadata > name');
-        return { points: pts, name: n ? n.textContent : 'GPX Track' };
-    }
-
-    function smoothPoints(points, windowSize) {
-        if (windowSize <= 0) return points;
-        const half = Math.floor(windowSize / 2);
-        return points.map((p, i) => {
-            const start = Math.max(0, i - half);
-            const end = Math.min(points.length - 1, i + half);
-            let lat = 0, lon = 0, ele = 0, eleCount = 0;
-            for (let j = start; j <= end; j++) {
-                lat += points[j].lat;
-                lon += points[j].lon;
-                if (points[j].ele != null) { ele += points[j].ele; eleCount++; }
-            }
-            const n = end - start + 1;
-            return { lat: lat / n, lon: lon / n, ele: eleCount > 0 ? ele / eleCount : p.ele, time: p.time };
-        });
-    }
-
-    function haversine(lat1, lon1, lat2, lon2) {
-        const R = 6371000;
-        const dLat = (lat2 - lat1) * Math.PI / 180;
-        const dLon = (lon2 - lon1) * Math.PI / 180;
-        const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    }
-
     function computeTrackStats(points) {
         let dist = 0, elevGain = 0, elapsedSec = 0;
         let date = null;
@@ -500,18 +460,6 @@
             elapsedSec = (points[points.length - 1].time - points[0].time) / 1000;
         }
         return { dist, elevGain, elapsedSec, date };
-    }
-
-    function formatDuration(sec) {
-        if (!sec || sec <= 0) return '—';
-        const h = Math.floor(sec / 3600);
-        const m = Math.floor((sec % 3600) / 60);
-        return h > 0 ? `${h}h ${m}m` : `${m}m`;
-    }
-
-    function formatDate(d) {
-        if (!d) return '—';
-        return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
     // ── Bounding Box ────────────────────────────────────────────
@@ -1013,7 +961,7 @@
             const allPoints = [];
             for (const file of sorted) {
                 const text = await file.text();
-                const { points, name } = parseGPX(text);
+                const { points, name } = parseGPXPoints(text);
                 if (points.length) {
                     const smoothed = smoothPoints(points, 5);
                     tracks.push(smoothed);
