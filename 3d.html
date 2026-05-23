@@ -399,6 +399,10 @@
                 <span class="ctrl-label">Size</span>
                 <input type="range" id="sld-label-size" min="6" max="20" value="11" step="1" style="flex:1">
             </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Lift</span>
+                <input type="range" id="sld-label-lift" min="0" max="3" value="0.8" step="0.1" style="flex:1">
+            </div>
             <hr class="adv-divider">
             <div class="adv-section-title">Camera</div>
             <div class="ctrl-row">
@@ -868,13 +872,16 @@
             const x = ((lb.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
             const z = ((bb.maxLat - lb.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
             const e = interpElev(lb.lat, lb.lon, bb, elev, gw, gh);
-            const y = (e - meanE) * scale * exag + LABEL_BASE_LIFT + (lb.lift ?? 0);
+            const baseY = (e - meanE) * scale * exag;
+            const extraLift = lb.lift ?? 0;
             const div = document.createElement('div');
             div.textContent = lb.name;
             div.style.cssText = 'color:#fff;font-size:11px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;';
             const label = new CSS2DObject(div);
-            label.position.set(x, y, z);
+            label.position.set(x, baseY + LABEL_BASE_LIFT + extraLift, z);
             label.name = 'label';
+            label.userData.baseY = baseY;
+            label.userData.extraLift = extraLift;
             scene.add(label);
         }
 
@@ -1136,6 +1143,14 @@
     document.getElementById('sld-label-size').addEventListener('input', e => {
         if (!scene) return;
         scene.traverse(o => { if (o.name === 'label') o.element.style.fontSize = e.target.value + 'px'; });
+    });
+
+    document.getElementById('sld-label-lift').addEventListener('input', e => {
+        if (!scene) return;
+        const baseLift = +e.target.value;
+        scene.traverse(o => {
+            if (o.name === 'label') o.position.y = o.userData.baseY + baseLift + o.userData.extraLift;
+        });
     });
 
 
