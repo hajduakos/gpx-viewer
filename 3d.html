@@ -628,6 +628,7 @@
 
     // ── 3D Scene ────────────────────────────────────────────────
 
+    const LABEL_BASE_LIFT = 0.8;
     const LABELS = [
         { name: 'Mt Everest', lat: 27.9881, lon: 86.9250 },
         { name: 'Lhotse', lat: 27.9617, lon: 86.9336 },
@@ -648,21 +649,21 @@
         { name: 'Gyachung Kang', lat: 28.0975, lon: 86.7426 },
         { name: 'Hungchi', lat: 28.0350, lon: 86.7589 },
         { name: 'Kang Thari', lat: 27.8142, lon: 86.8335 },
-        { name: 'Lukla', lat: 27.6859, lon: 86.7291, lift: 1.5 },
-        { name: 'Phakding', lat: 27.7435, lon: 86.7131, lift: 1.5 },
-        { name: 'Namche Bazaar', lat: 27.8046, lon: 86.7106, lift: 1.5 },
-        { name: 'Dole', lat: 27.8666, lon: 86.7309, lift: 1.5 },
-        { name: 'Machhermo', lat: 27.9034, lon: 86.7143, lift: 1.5 },
-        { name: 'Gokyo', lat: 27.9537, lon: 86.6943, lift: 1.5 },
-        { name: 'Thagnak', lat: 27.9406, lon: 86.7203, lift: 1.5 },
-        { name: 'Lobuche', lat: 27.9486, lon: 86.8104, lift: 1.5 },
-        { name: 'Gorakshep', lat: 27.9810, lon: 86.8290, lift: 1.5 },
-        { name: 'Somare', lat: 27.8677, lon: 86.8054, lift: 1.5 },
+        { name: 'Lukla', lat: 27.6859, lon: 86.7291, lift: 0.7 },
+        { name: 'Phakding', lat: 27.7435, lon: 86.7131, lift: 0.7 },
+        { name: 'Namche Bazaar', lat: 27.8046, lon: 86.7106, lift: 0.7 },
+        { name: 'Dole', lat: 27.8666, lon: 86.7309, lift: 0.7 },
+        { name: 'Machhermo', lat: 27.9034, lon: 86.7143, lift: 0.7 },
+        { name: 'Gokyo', lat: 27.9537, lon: 86.6943, lift: 0.7 },
+        { name: 'Thagnak', lat: 27.9406, lon: 86.7203, lift: 0.7 },
+        { name: 'Lobuche', lat: 27.9486, lon: 86.8104, lift: 0.7 },
+        { name: 'Gorakshep', lat: 27.9810, lon: 86.8290, lift: 0.7 },
+        { name: 'Somare', lat: 27.8677, lon: 86.8054, lift: 0.7 },
         { name: 'Kala Patthar', lat: 27.9957, lon: 86.8285 },
         { name: 'Cho La Pass', lat: 27.9617, lon: 86.7518 },
         { name: 'Gokyo Ri', lat: 27.9612, lon: 86.6817 },
         { name: 'EBC', lat: 27.9972, lon: 86.8471 },
-        { name: 'Dzongla', lat: 27.9397, lon: 86.7736, lift: 1.5 },
+        { name: 'Dzongla', lat: 27.9397, lon: 86.7736, lift: 0.7 },
     ];
 
     let renderer, labelRenderer, scene, camera, controls, terrain, terrainTex;
@@ -867,7 +868,7 @@
             const x = ((lb.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
             const z = ((bb.maxLat - lb.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
             const e = interpElev(lb.lat, lb.lon, bb, elev, gw, gh);
-            const y = (e - meanE) * scale * exag + (lb.lift ?? 0.8);
+            const y = (e - meanE) * scale * exag + LABEL_BASE_LIFT + (lb.lift ?? 0);
             const div = document.createElement('div');
             div.textContent = lb.name;
             div.style.cssText = 'color:#fff;font-size:11px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;';
