@@ -395,9 +395,9 @@
             <hr class="adv-divider">
             <div class="adv-section-title">Labels</div>
             <div class="ctrl-row">
-                <label><input type="checkbox" id="chk-landmarks" checked> Show labels</label>
+                <label><input type="checkbox" id="chk-labels" checked> Show labels</label>
                 <span class="ctrl-label">Size</span>
-                <input type="range" id="sld-landmark-size" min="6" max="20" value="11" step="1" style="flex:1">
+                <input type="range" id="sld-label-size" min="6" max="20" value="11" step="1" style="flex:1">
             </div>
             <hr class="adv-divider">
             <div class="adv-section-title">Camera</div>
@@ -628,7 +628,7 @@
 
     // ── 3D Scene ────────────────────────────────────────────────
 
-    const LANDMARKS = [
+    const LABELS = [
         { name: 'Mt Everest', lat: 27.9881, lon: 86.9250 },
         { name: 'Lhotse', lat: 27.9617, lon: 86.9336 },
         { name: 'Ama Dablam', lat: 27.8614, lon: 86.8614 },
@@ -862,18 +862,18 @@
         labelRenderer.domElement.style.zIndex = '5';
         $viewer.appendChild(labelRenderer.domElement);
 
-        for (const lm of LANDMARKS) {
-            if (lm.lat < bb.minLat || lm.lat > bb.maxLat || lm.lon < bb.minLon || lm.lon > bb.maxLon) continue;
-            const x = ((lm.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
-            const z = ((bb.maxLat - lm.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
-            const e = interpElev(lm.lat, lm.lon, bb, elev, gw, gh);
-            const y = (e - meanE) * scale * exag + (lm.lift ?? 0.8);
+        for (const lb of LABELS) {
+            if (lb.lat < bb.minLat || lb.lat > bb.maxLat || lb.lon < bb.minLon || lb.lon > bb.maxLon) continue;
+            const x = ((lb.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
+            const z = ((bb.maxLat - lb.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
+            const e = interpElev(lb.lat, lb.lon, bb, elev, gw, gh);
+            const y = (e - meanE) * scale * exag + (lb.lift ?? 0.8);
             const div = document.createElement('div');
-            div.textContent = lm.name;
+            div.textContent = lb.name;
             div.style.cssText = 'color:#fff;font-size:11px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;';
             const label = new CSS2DObject(div);
             label.position.set(x, y, z);
-            label.name = 'landmark';
+            label.name = 'label';
             scene.add(label);
         }
 
@@ -1127,14 +1127,14 @@
         }
     });
 
-    document.getElementById('chk-landmarks').addEventListener('change', e => {
+    document.getElementById('chk-labels').addEventListener('change', e => {
         if (!scene) return;
-        scene.traverse(o => { if (o.name === 'landmark') o.visible = e.target.checked; });
+        scene.traverse(o => { if (o.name === 'label') o.visible = e.target.checked; });
     });
 
-    document.getElementById('sld-landmark-size').addEventListener('input', e => {
+    document.getElementById('sld-label-size').addEventListener('input', e => {
         if (!scene) return;
-        scene.traverse(o => { if (o.name === 'landmark') o.element.style.fontSize = e.target.value + 'px'; });
+        scene.traverse(o => { if (o.name === 'label') o.element.style.fontSize = e.target.value + 'px'; });
     });
 
 
