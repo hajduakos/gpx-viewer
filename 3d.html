@@ -403,6 +403,11 @@
                 <span class="ctrl-label">Offset</span>
                 <input type="range" id="sld-label-offset" min="0" max="3" value="0.8" step="0.1" style="flex:1">
             </div>
+            <div class="ctrl-row">
+                <button id="btn-load-labels" class="ctrl-btn">Load labels CSV</button>
+                <input type="file" id="input-labels-csv" accept=".csv" style="display:none">
+                <span id="labels-count" class="ctrl-label"></span>
+            </div>
             <hr class="adv-divider">
             <div class="adv-section-title">Camera</div>
             <div class="ctrl-row">
@@ -633,42 +638,45 @@
     // ── 3D Scene ────────────────────────────────────────────────
 
     const LABEL_BASE_OFFSET = 0.8;
-    const LABELS = [
-        { name: 'Mt Everest', lat: 27.9881, lon: 86.9250 },
-        { name: 'Lhotse', lat: 27.9617, lon: 86.9336 },
-        { name: 'Ama Dablam', lat: 27.8614, lon: 86.8614 },
-        { name: 'Cho Oyu', lat: 28.0941, lon: 86.6608 },
-        { name: 'Makalu', lat: 27.8897, lon: 87.0886 },
-        { name: 'Pumori', lat: 28.0153, lon: 86.8263 },
-        { name: 'Nuptse', lat: 27.9664, lon: 86.8900 },
-        { name: 'Tobuche', lat: 27.8967, lon: 86.7776 },
-        { name: 'Cholatse', lat: 27.9179, lon: 86.7667 },
-        { name: 'Kangtega', lat: 27.7995, lon: 86.8082 },
-        { name: 'Thamserku', lat: 27.7903, lon: 86.7875 },
-        { name: 'Numbur', lat: 27.7539, lon: 86.5737 },
-        { name: 'Lobuche East', lat: 27.9595, lon: 86.7899 },
-        { name: 'Nupla', lat: 27.7720, lon: 86.6607 },
-        { name: 'Phari Lapcha', lat: 27.9296, lon: 86.6808 },
-        { name: 'Kyajori', lat: 27.9095, lon: 86.6700 },
-        { name: 'Gyachung Kang', lat: 28.0975, lon: 86.7426 },
-        { name: 'Hungchi', lat: 28.0350, lon: 86.7589 },
-        { name: 'Kang Thari', lat: 27.8142, lon: 86.8335 },
-        { name: 'Lukla', lat: 27.6859, lon: 86.7291, offset: 0.7 },
-        { name: 'Phakding', lat: 27.7435, lon: 86.7131, offset: 0.7 },
-        { name: 'Namche Bazaar', lat: 27.8046, lon: 86.7106, offset: 0.7 },
-        { name: 'Dole', lat: 27.8666, lon: 86.7309, offset: 0.7 },
-        { name: 'Machhermo', lat: 27.9034, lon: 86.7143, offset: 0.7 },
-        { name: 'Gokyo', lat: 27.9537, lon: 86.6943, offset: 0.7 },
-        { name: 'Thagnak', lat: 27.9406, lon: 86.7203, offset: 0.7 },
-        { name: 'Lobuche', lat: 27.9486, lon: 86.8104, offset: 0.7 },
-        { name: 'Gorakshep', lat: 27.9810, lon: 86.8290, offset: 0.7 },
-        { name: 'Somare', lat: 27.8677, lon: 86.8054, offset: 0.7 },
-        { name: 'Kala Patthar', lat: 27.9957, lon: 86.8285 },
-        { name: 'Cho La Pass', lat: 27.9617, lon: 86.7518 },
-        { name: 'Gokyo Ri', lat: 27.9612, lon: 86.6817 },
-        { name: 'EBC', lat: 27.9972, lon: 86.8471 },
-        { name: 'Dzongla', lat: 27.9397, lon: 86.7736, offset: 0.7 },
-    ];
+
+    function parseLabelsCSV(text) {
+        const lines = text.trim().split('\n');
+        const headers = lines[0].split(',').map(h => h.trim());
+        return lines.slice(1).filter(l => l.trim()).map(line => {
+            const cols = line.split(',').map(c => c.trim());
+            const obj = {};
+            for (let i = 0; i < headers.length; i++) obj[headers[i]] = cols[i] ?? '';
+            return { name: obj.name, lat: +obj.lat, lon: +obj.lon, offset: obj.offset ? +obj.offset : 0 };
+        });
+    }
+
+    function addLabelsToScene(labels) {
+        if (!scene || !S || !D) return;
+        const toRemove = [];
+        scene.traverse(o => { if (o.name === 'label') toRemove.push(o); });
+        toRemove.forEach(o => { o.removeFromParent(); if (o.element) o.element.remove(); });
+        const baseOffset = +document.getElementById('sld-label-offset').value;
+        const fontSize = document.getElementById('sld-label-size').value + 'px';
+        const visible = document.getElementById('chk-labels').checked;
+        for (const lb of labels) {
+            if (lb.lat < D.bb.minLat || lb.lat > D.bb.maxLat || lb.lon < D.bb.minLon || lb.lon > D.bb.maxLon) continue;
+            const x = ((lb.lon - D.bb.minLon) / (D.bb.maxLon - D.bb.minLon) - 0.5) * S.sw;
+            const z = ((D.bb.maxLat - lb.lat) / (D.bb.maxLat - D.bb.minLat) - 0.5) * S.sd;
+            const e = interpElev(lb.lat, lb.lon, D.bb, D.elev, D.gw, D.gh);
+            const baseY = (e - S.meanE) * S.scale * exag;
+            const extraOffset = lb.offset ?? 0;
+            const div = document.createElement('div');
+            div.textContent = lb.name;
+            div.style.cssText = `color:#fff;font-size:${fontSize};padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;`;
+            const label = new CSS2DObject(div);
+            label.position.set(x, baseY + baseOffset + extraOffset, z);
+            label.name = 'label';
+            label.visible = visible;
+            label.userData.baseY = baseY;
+            label.userData.extraOffset = extraOffset;
+            scene.add(label);
+        }
+    }
 
     let renderer, labelRenderer, scene, camera, controls, terrain, terrainTex;
     let S = null;
@@ -867,23 +875,7 @@
         labelRenderer.domElement.style.zIndex = '5';
         $viewer.appendChild(labelRenderer.domElement);
 
-        for (const lb of LABELS) {
-            if (lb.lat < bb.minLat || lb.lat > bb.maxLat || lb.lon < bb.minLon || lb.lon > bb.maxLon) continue;
-            const x = ((lb.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
-            const z = ((bb.maxLat - lb.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
-            const e = interpElev(lb.lat, lb.lon, bb, elev, gw, gh);
-            const baseY = (e - meanE) * scale * exag;
-            const extraOffset = lb.offset ?? 0;
-            const div = document.createElement('div');
-            div.textContent = lb.name;
-            div.style.cssText = 'color:#fff;font-size:11px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;';
-            const label = new CSS2DObject(div);
-            label.position.set(x, baseY + LABEL_BASE_OFFSET + extraOffset, z);
-            label.name = 'label';
-            label.userData.baseY = baseY;
-            label.userData.extraOffset = extraOffset;
-            scene.add(label);
-        }
+        addLabelsToScene([]);
 
         const $sldTheta = document.getElementById('sld-theta');
         const $sldPhi = document.getElementById('sld-phi');
@@ -1153,6 +1145,17 @@
         });
     });
 
+    const $btnLoadLabels = document.getElementById('btn-load-labels');
+    const $inputLabelsCSV = document.getElementById('input-labels-csv');
+    $btnLoadLabels.addEventListener('click', () => $inputLabelsCSV.click());
+    $inputLabelsCSV.addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const labels = parseLabelsCSV(await file.text());
+        addLabelsToScene(labels);
+        document.getElementById('labels-count').textContent = labels.length + ' loaded';
+        $inputLabelsCSV.value = '';
+    });
 
     document.getElementById('chk-wireframe').addEventListener('change', e => {
         if (!scene) return;
