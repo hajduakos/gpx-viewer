@@ -125,7 +125,7 @@
             z-index: 10;
             flex-direction: column;
             gap: 10px;
-            min-width: 220px;
+            min-width: 280px;
         }
         #rotate-box.active { display: flex; }
         .ctrl-row {
@@ -346,6 +346,7 @@
     <div id="rotate-box">
         <div class="ctrl-row">
             <span class="ctrl-label">Camera</span>
+            <button id="btn-recenter" class="ctrl-btn">Re-center</button>
             <div class="mode-toggle">
                 <button id="btn-mode-orbit" class="mode-btn active">Orbit</button>
                 <button id="btn-mode-forward" class="mode-btn">Forward</button>
@@ -355,8 +356,9 @@
             <input type="range" id="rot-speed" min="0.5" max="10" value="2" step="0.5">
         </div>
         <div class="ctrl-row">
-            <span class="ctrl-label">Focus on track:</span>
+            <span class="ctrl-label">Highlight</span>
             <select id="sel-highlight"></select>
+            <button id="btn-center" class="ctrl-btn" disabled>Center</button>
         </div>
         <button id="btn-advanced">&#9662; Advanced settings</button>
         <div id="advanced-settings">
@@ -1204,9 +1206,12 @@
         });
     });
 
+    const $btnCenter = document.getElementById('btn-center');
+
     document.getElementById('sel-highlight').addEventListener('change', e => {
         if (!scene) return;
         const idx = e.target.value;
+        $btnCenter.disabled = idx === '';
         scene.traverse(o => {
             if (o.name === 'gpx-track') {
                 const hit = idx !== '' && o.userData.trackIdx === +idx;
@@ -1215,11 +1220,19 @@
                 o.position.y = baseOff + (hit ? 0.02 : 0);
             }
         });
+    });
+
+    $btnCenter.addEventListener('click', () => {
+        if (!controls) return;
+        const idx = document.getElementById('sel-highlight').value;
         if (idx !== '' && trackMidpoints[+idx]) {
             controls.target.copy(trackMidpoints[+idx]);
-        } else if (origTarget) {
-            controls.target.copy(origTarget);
         }
+    });
+
+    document.getElementById('btn-recenter').addEventListener('click', () => {
+        if (!controls || !origTarget) return;
+        controls.target.copy(origTarget);
     });
 
     // ── Keyboard Shortcuts ────────────────────────────────────────
