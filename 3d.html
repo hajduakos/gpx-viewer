@@ -153,8 +153,18 @@
             transition: all 0.2s;
             flex-shrink: 0;
         }
-        #btn-play:hover { background: rgba(255,255,255,0.1); color: #fff; }
-        #btn-play.playing { color: #4facfe; border-color: #4facfe; }
+        #btn-play:hover, #btn-animate:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        #btn-play.playing, #btn-animate.playing { color: #4facfe; border-color: #4facfe; }
+        #btn-animate {
+            width: 32px; height: 32px;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            background: rgba(255,255,255,0.04);
+            color: #ccc; font-size: 14px;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; flex-shrink: 0;
+        }
         #rot-speed { width: 80px; flex: 1; }
         .mode-toggle {
             display: flex;
@@ -359,6 +369,13 @@
             <span class="ctrl-label">Highlight</span>
             <select id="sel-highlight"></select>
             <button id="btn-center" class="ctrl-btn" disabled>Center</button>
+        </div>
+        <div class="ctrl-row">
+            <span class="ctrl-label">Animate</span>
+            <button id="btn-animate" title="Animate tracks">&#9654;</button>
+            <span class="ctrl-label">Duration</span>
+            <input type="range" id="sld-animate-dur" min="3" max="30" value="10" step="1" style="flex:1">
+            <span class="ctrl-label" id="animate-dur-val">10s</span>
         </div>
         <button id="btn-advanced">&#9662; Advanced settings</button>
         <div id="advanced-settings">
@@ -710,6 +727,7 @@
         const line = new Line2(geom, mat);
         line.name = 'gpx-track';
         line.userData.trackIdx = idx;
+        line.userData.totalSegments = pts.length - 1;
         line.position.y = +document.getElementById('sld-track-offset').value;
         scene.add(line);
     }
@@ -896,6 +914,32 @@
                     const move = dir.multiplyScalar(speed * delta);
                     camera.position.add(move);
                     controls.target.add(move);
+                }
+            }
+            if (trackAnimating) {
+                const duration = +document.getElementById('sld-animate-dur').value * 1000;
+                const progress = ((now - trackAnimStart) % duration) / duration;
+                const hlIdx = document.getElementById('sel-highlight').value;
+                const hlColor = document.getElementById('clr-highlight').value;
+                const normColor = document.getElementById('clr-track').value;
+                const tracks = [];
+                scene.traverse(o => { if (o.name === 'gpx-track') tracks.push(o); });
+                tracks.sort((a, b) => a.userData.trackIdx - b.userData.trackIdx);
+                const totalSegs = tracks.reduce((s, t) => s + t.userData.totalSegments, 0);
+                let remaining = progress * totalSegs;
+                for (const t of tracks) {
+                    const segs = t.userData.totalSegments;
+                    if (remaining >= segs) {
+                        t.geometry.instanceCount = segs;
+                        t.material.color.set(hlIdx !== '' && t.userData.trackIdx === +hlIdx ? hlColor : normColor);
+                        remaining -= segs;
+                    } else if (remaining > 0) {
+                        t.geometry.instanceCount = Math.max(1, Math.floor(remaining));
+                        t.material.color.set(hlIdx !== '' && t.userData.trackIdx === +hlIdx ? hlColor : normColor);
+                        remaining = 0;
+                    } else {
+                        t.geometry.instanceCount = 0;
+                    }
                 }
             }
             controls.update();
@@ -1233,6 +1277,35 @@
     document.getElementById('btn-recenter').addEventListener('click', () => {
         if (!controls || !origTarget) return;
         controls.target.copy(origTarget);
+    });
+
+    // ── Track animation ─────────────────────────────────────────
+
+    let trackAnimating = false;
+    let trackAnimStart = 0;
+    const $btnAnimate = document.getElementById('btn-animate');
+
+    $btnAnimate.addEventListener('click', () => {
+        if (!scene) return;
+        trackAnimating = !trackAnimating;
+        $btnAnimate.classList.toggle('playing', trackAnimating);
+        $btnAnimate.innerHTML = trackAnimating ? '&#9646;&#9646;' : '&#9654;';
+        if (trackAnimating) {
+            trackAnimStart = performance.now();
+        } else {
+            const hlIdx = document.getElementById('sel-highlight').value;
+            scene.traverse(o => {
+                if (o.name === 'gpx-track') {
+                    o.geometry.instanceCount = o.userData.totalSegments;
+                    const hit = hlIdx !== '' && o.userData.trackIdx === +hlIdx;
+                    o.material.color.set(hit ? document.getElementById('clr-highlight').value : document.getElementById('clr-track').value);
+                }
+            });
+        }
+    });
+
+    document.getElementById('sld-animate-dur').addEventListener('input', e => {
+        document.getElementById('animate-dur-val').textContent = e.target.value + 's';
     });
 
     // ── Keyboard Shortcuts ────────────────────────────────────────
