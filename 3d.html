@@ -397,7 +397,7 @@
                 <span class="ctrl-label">Highlight</span>
                 <input type="color" id="clr-highlight" value="#ffee00">
                 <span class="ctrl-label">Marker</span>
-                <input type="color" id="clr-marker" value="#ff0000">
+                <input type="color" id="clr-marker" value="#8b0000">
             </div>
             <hr class="adv-divider">
             <div class="adv-section-title">Scene</div>
@@ -890,10 +890,9 @@
 
         tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd, document.getElementById('clr-track').value, i));
 
-        animDot = new THREE.Mesh(
-            new THREE.SphereGeometry(0.25, 12, 12),
-            new THREE.MeshBasicMaterial()
-        );
+        const dotDiv = document.createElement('div');
+        dotDiv.style.cssText = 'width:10px;height:10px;border-radius:50%;';
+        animDot = new CSS2DObject(dotDiv);
         animDot.visible = false;
         scene.add(animDot);
 
@@ -956,7 +955,7 @@
                             p[i+1] + (p[i+4] - p[i+1]) * frac + 0.3,
                             p[i+2] + (p[i+5] - p[i+2]) * frac
                         );
-                        animDot.material.color.set(document.getElementById('clr-marker').value);
+                        animDot.element.style.background = document.getElementById('clr-marker').value;
                         animDot.visible = true;
                         remaining = 0;
                     } else {
