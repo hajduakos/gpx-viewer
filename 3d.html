@@ -396,6 +396,8 @@
                 <input type="color" id="clr-track" value="#ff3333">
                 <span class="ctrl-label">Highlight</span>
                 <input type="color" id="clr-highlight" value="#ffee00">
+                <span class="ctrl-label">Marker</span>
+                <input type="color" id="clr-marker" value="#ff0000">
             </div>
             <hr class="adv-divider">
             <div class="adv-section-title">Scene</div>
@@ -697,7 +699,7 @@
         }
     }
 
-    let renderer, labelRenderer, scene, camera, controls, terrain, terrainTex;
+    let renderer, labelRenderer, scene, camera, controls, terrain, terrainTex, animDot;
     let S = null;
     let D = null;
     let trackMidpoints = [];
@@ -728,6 +730,7 @@
         line.name = 'gpx-track';
         line.userData.trackIdx = idx;
         line.userData.totalSegments = pts.length - 1;
+        line.userData.positions = arr;
         line.position.y = +document.getElementById('sld-track-offset').value;
         scene.add(line);
     }
@@ -887,6 +890,13 @@
 
         tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd, document.getElementById('clr-track').value, i));
 
+        animDot = new THREE.Mesh(
+            new THREE.SphereGeometry(0.25, 12, 12),
+            new THREE.MeshBasicMaterial()
+        );
+        animDot.visible = false;
+        scene.add(animDot);
+
         labelRenderer = new CSS2DRenderer();
         labelRenderer.setSize(innerWidth, innerHeight);
         labelRenderer.domElement.style.position = 'absolute';
@@ -929,13 +939,25 @@
                 let remaining = progress * totalSegs;
                 for (const t of tracks) {
                     const segs = t.userData.totalSegments;
+                    const color = hlIdx !== '' && t.userData.trackIdx === +hlIdx ? hlColor : normColor;
                     if (remaining >= segs) {
                         t.geometry.instanceCount = segs;
-                        t.material.color.set(hlIdx !== '' && t.userData.trackIdx === +hlIdx ? hlColor : normColor);
+                        t.material.color.set(color);
                         remaining -= segs;
                     } else if (remaining > 0) {
                         t.geometry.instanceCount = Math.max(1, Math.floor(remaining));
-                        t.material.color.set(hlIdx !== '' && t.userData.trackIdx === +hlIdx ? hlColor : normColor);
+                        t.material.color.set(color);
+                        const seg = Math.floor(remaining);
+                        const frac = remaining - seg;
+                        const p = t.userData.positions;
+                        const i = seg * 3;
+                        animDot.position.set(
+                            p[i] + (p[i+3] - p[i]) * frac,
+                            p[i+1] + (p[i+4] - p[i+1]) * frac + 0.3,
+                            p[i+2] + (p[i+5] - p[i+2]) * frac
+                        );
+                        animDot.material.color.set(document.getElementById('clr-marker').value);
+                        animDot.visible = true;
                         remaining = 0;
                     } else {
                         t.geometry.instanceCount = 0;
@@ -1293,6 +1315,7 @@
         if (trackAnimating) {
             trackAnimStart = performance.now();
         } else {
+            if (animDot) animDot.visible = false;
             const hlIdx = document.getElementById('sel-highlight').value;
             scene.traverse(o => {
                 if (o.name === 'gpx-track') {
