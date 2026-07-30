@@ -767,6 +767,19 @@ function computeMovingTime(points) {
 
 let lastElevationData = null;
 
+// Elevation-profile slope colouring (grade = rise / run).
+// green: downhill/flat | yellow: 0-10% | orange: 10-20% | red: 20-30% | dark red: >30%
+const SLOPE_MED = 0.10;     // 10% grade
+const SLOPE_STEEP = 0.20;   // 20% grade
+const SLOPE_VSTEEP = 0.30;  // 30% grade
+function slopeColor(grade) {
+  if (grade > SLOPE_VSTEEP) return '#8b0000'; // dark red
+  if (grade > SLOPE_STEEP)  return '#e53935'; // red
+  if (grade > SLOPE_MED)    return '#fb8c00'; // orange
+  if (grade > 0)            return '#ffb300'; // yellow
+  return '#4caf50';                           // green (downhill / flat)
+}
+
 function drawElevationChart(segments) {
   lastElevationData = segments;
 
@@ -829,12 +842,17 @@ function drawElevationChart(segments) {
     ctx.fillStyle = grad;
     ctx.fill();
 
-    // Line
-    ctx.beginPath();
-    coords.forEach((c, i) => i === 0 ? ctx.moveTo(c.x, c.y) : ctx.lineTo(c.x, c.y));
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
+    // Slope-coloured line on top
+    for (let i = 0; i < coords.length - 1; i++) {
+      const rise = (seg.points[i + 1].ele ?? 0) - (seg.points[i].ele ?? 0);
+      const run = seg.distances[i + 1] - seg.distances[i];
+      ctx.beginPath();
+      ctx.moveTo(coords[i].x, coords[i].y);
+      ctx.lineTo(coords[i + 1].x, coords[i + 1].y);
+      ctx.strokeStyle = slopeColor(run > 0 ? rise / run : 0);
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
 
     cumPxOffset += segW + gapPx;
   });
