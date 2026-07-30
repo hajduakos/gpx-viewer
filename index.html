@@ -445,6 +445,23 @@ showHighest.addEventListener('change', () => {
   else map.removeLayer(markerHighest);
 });
 
+// Apply marker visibility for a given highlighted track index. When a track is
+// highlighted, only its own start/end markers are shown (all others, plus the
+// highest-point marker, are hidden); when idx is null, fall back to the settings.
+function updateMarkerVisibility(idx) {
+  allTracks.forEach((t, j) => {
+    const show = idx == null ? showMarkers.checked : (j === idx);
+    [t.markerStart, t.markerEnd].forEach(m => {
+      if (!m) return;
+      if (show) m.addTo(map); else map.removeLayer(m);
+    });
+  });
+  if (markerHighest) {
+    const showHigh = idx == null ? showHighest.checked : false;
+    if (showHigh) markerHighest.addTo(map); else map.removeLayer(markerHighest);
+  }
+}
+
 document.getElementById('file-input').addEventListener('change', e => {
   const files = Array.from(e.target.files);
   if (files.length === 0) return;
@@ -757,11 +774,13 @@ function renderAllTracks({ fitBounds = true } = {}) {
       const i = parseInt(row.dataset.trackIdx);
       allTracks.forEach((t, j) => setLayerWeight(t.trackLayer, j === i ? baseWeight * 2 : baseWeight));
       profileHighlight = i;
+      updateMarkerVisibility(i);
       if (lastElevationData) drawElevationChart(lastElevationData);
     });
     row.addEventListener('mouseleave', () => {
       allTracks.forEach(t => setLayerWeight(t.trackLayer, baseWeight));
       profileHighlight = null;
+      updateMarkerVisibility(null);
       if (lastElevationData) drawElevationChart(lastElevationData);
     });
   });
