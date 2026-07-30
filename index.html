@@ -490,6 +490,27 @@ function lerpColor(hex1, hex2, t) {
   return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
 }
 
+// Downsample an elevation segment by averaging every `factor` points (computed
+// once at load time so redraws — resize, highlight — stay fast). Elevation is
+// averaged over each bucket; the bucket's distance is its last point's cumulative
+// distance, which keeps the segment's total distance exact.
+const ELEVATION_DOWNSAMPLE = 10;
+function downsampleElevation(points, distances, factor) {
+  if (points.length <= factor) return { points, distances };
+  const outPoints = [];
+  const outDist = [];
+  for (let i = 0; i < points.length; i += factor) {
+    const end = Math.min(i + factor, points.length);
+    let sum = 0, count = 0;
+    for (let j = i; j < end; j++) {
+      if (points[j].ele != null) { sum += points[j].ele; count++; }
+    }
+    outPoints.push({ ele: count > 0 ? sum / count : null });
+    outDist.push(distances[end - 1]);
+  }
+  return { points: outPoints, distances: outDist };
+}
+
 function renderAllTracks({ fitBounds = true } = {}) {
   clearAllTracks();
   console.log(`Rendering ${allTracks.length} track(s)...`);
@@ -614,7 +635,8 @@ function renderAllTracks({ fitBounds = true } = {}) {
     }
 
     types.add(track.type);
-    elevationSegments.push({ points, distances });
+    const ds = downsampleElevation(points, distances, ELEVATION_DOWNSAMPLE);
+    elevationSegments.push({ points: ds.points, distances: ds.distances });
 
     // Store per-track stats for table
     track._stats = {
@@ -734,9 +756,13 @@ function renderAllTracks({ fitBounds = true } = {}) {
     row.addEventListener('mouseenter', () => {
       const i = parseInt(row.dataset.trackIdx);
       allTracks.forEach((t, j) => setLayerWeight(t.trackLayer, j === i ? baseWeight * 2 : baseWeight));
+      profileHighlight = i;
+      if (lastElevationData) drawElevationChart(lastElevationData);
     });
     row.addEventListener('mouseleave', () => {
       allTracks.forEach(t => setLayerWeight(t.trackLayer, baseWeight));
+      profileHighlight = null;
+      if (lastElevationData) drawElevationChart(lastElevationData);
     });
   });
 
@@ -772,13 +798,17 @@ let lastElevationData = null;
 const SLOPE_MED = 0.10;     // 10% grade
 const SLOPE_STEEP = 0.20;   // 20% grade
 const SLOPE_VSTEEP = 0.30;  // 30% grade
-function slopeColor(grade) {
+function slopeColor(grade, dim) {
+  if (dim) return 'rgba(255,255,255,0.2)';
   if (grade > SLOPE_VSTEEP) return '#8b0000'; // dark red
   if (grade > SLOPE_STEEP)  return '#e53935'; // red
   if (grade > SLOPE_MED)    return '#fb8c00'; // orange
   if (grade > 0)            return '#ffb300'; // yellow
   return '#4caf50';                           // green (downhill / flat)
 }
+
+// Index of the track to emphasise in the elevation chart (null = none dimmed).
+let profileHighlight = null;
 
 function drawElevationChart(segments) {
   lastElevationData = segments;
@@ -821,6 +851,7 @@ function drawElevationChart(segments) {
 
   let cumPxOffset = 0;
   segments.forEach((seg, segIdx) => {
+    const dim = profileHighlight != null && segIdx !== profileHighlight;
     const segMaxD = seg.distances[seg.distances.length - 1];
     const segW = totalSegDist > 0 ? (segMaxD / totalSegDist) * usableW : 0;
 
@@ -837,8 +868,8 @@ function drawElevationChart(segments) {
     ctx.lineTo(cumPxOffset + segW, H);
     ctx.closePath();
     const grad = ctx.createLinearGradient(0, 0, 0, H);
-    grad.addColorStop(0, 'rgba(255,255,255,0.4)');
-    grad.addColorStop(1, 'rgba(255,255,255,0.05)');
+    grad.addColorStop(0, dim ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.4)');
+    grad.addColorStop(1, dim ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)');
     ctx.fillStyle = grad;
     ctx.fill();
 
@@ -849,7 +880,7 @@ function drawElevationChart(segments) {
       ctx.beginPath();
       ctx.moveTo(coords[i].x, coords[i].y);
       ctx.lineTo(coords[i + 1].x, coords[i + 1].y);
-      ctx.strokeStyle = slopeColor(run > 0 ? rise / run : 0);
+      ctx.strokeStyle = slopeColor(run > 0 ? rise / run : 0, dim);
       ctx.lineWidth = 2.5;
       ctx.stroke();
     }
