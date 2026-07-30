@@ -801,7 +801,7 @@ function drawElevationChart(segments) {
     totalSegDist += lastD;
   });
   const numGaps = segments.length > 1 ? segments.length - 1 : 0;
-  const gapPx = 1;
+  const gapPx = 0;
   const usableW = W - numGaps * gapPx;
 
   ctx.clearRect(0, 0, W, H);
