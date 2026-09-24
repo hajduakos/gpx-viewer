@@ -228,14 +228,17 @@
 
 <script src="gpx-utils.js"></script>
 <script>
+// CARTO Basemaps API key — restricted to hajduakos.github.io
+const CARTO_KEY = 'cb1_3wjg_1_9b50a454edfc928382af748b';
+
 const tileLayers = {
   'OpenTopoMap': { url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', maxZoom: 17, attr: '&copy; OpenTopoMap' },
   'OpenStreetMap': { url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', maxZoom: 19, attr: '&copy; OpenStreetMap contributors' },
   'OSM Hot': { url: 'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', maxZoom: 19, attr: '&copy; OpenStreetMap contributors, HOT style' },
   'CyclOSM': { url: 'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', maxZoom: 20, attr: '&copy; CyclOSM / OpenStreetMap' },
-  'CartoDB Positron': { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', maxZoom: 20, attr: '&copy; CARTO, OSM' },
-  'CartoDB Dark Matter': { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', maxZoom: 20, attr: '&copy; CARTO, OSM' },
-  'CartoDB Voyager': { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', maxZoom: 20, attr: '&copy; CARTO, OSM' },
+  'CartoDB Positron': { url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png?key=' + CARTO_KEY, maxZoom: 20, attr: '&copy; CARTO, OSM' },
+  'CartoDB Dark Matter': { url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png?key=' + CARTO_KEY, maxZoom: 20, attr: '&copy; CARTO, OSM' },
+  'CartoDB Voyager': { url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png?key=' + CARTO_KEY, maxZoom: 20, attr: '&copy; CARTO, OSM' },
   'Esri World Street Map': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, attr: '&copy; Esri' },
   'Esri World Topo': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, attr: '&copy; Esri' },
   'Esri World Imagery': { url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', maxZoom: 19, attr: '&copy; Esri' },
