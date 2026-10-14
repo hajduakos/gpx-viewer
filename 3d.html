@@ -1307,9 +1307,11 @@
 
     // ── Track animation ─────────────────────────────────────────
 
-    // Timeline: camera-only lead-in → start marker → pulse (slider duration) → end marker → camera-only tail
+    // Timeline: camera-only lead-in → start marker → pause → end marker → pulse (slider duration) → camera-only tail.
+    // The camera keeps moving throughout.
     const ANIM_LEAD_MS = 1000;
     const MARKER_MS = 500;
+    const MARKER_GAP_MS = 500;
     const ANIM_TAIL_MS = 1000;
     let trackAnimating = false;
     let trackAnimStart = 0;
@@ -1438,16 +1440,17 @@
     }
 
     function animTotalMs(duration) {
-        return ANIM_LEAD_MS + MARKER_MS + duration + MARKER_MS + ANIM_TAIL_MS;
+        return ANIM_LEAD_MS + MARKER_MS + MARKER_GAP_MS + MARKER_MS + duration + ANIM_TAIL_MS;
     }
 
     function updateTrackAnimation(t, duration) {
         const clamp01 = x => Math.min(Math.max(x, 0), 1);
-        const pulseStart = ANIM_LEAD_MS + MARKER_MS, pulseEnd = pulseStart + duration;
+        const endMarkerStart = ANIM_LEAD_MS + MARKER_MS + MARKER_GAP_MS;
+        const pulseStart = endMarkerStart + MARKER_MS, pulseEnd = pulseStart + duration;
         updateTrailMarker(animMarkers[0], clamp01((t - ANIM_LEAD_MS) / MARKER_MS));
+        updateTrailMarker(animMarkers[1], clamp01((t - endMarkerStart) / MARKER_MS));
         updatePulse(clamp01((t - pulseStart) / duration));
         pulse.visible = animTrack.visible && t >= pulseStart && t < pulseEnd;
-        updateTrailMarker(animMarkers[1], clamp01((t - pulseEnd) / MARKER_MS));
     }
 
     function stopTrackAnimation() {
