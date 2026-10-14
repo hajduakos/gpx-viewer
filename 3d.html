@@ -687,6 +687,7 @@
     let D = null;
     let trackMidpoints = [];
     let trackHeads = [];
+    let trackFarthest = [];
     let origTarget = null;
     let animId = null;
     let cachedTerrainData = null;
@@ -836,6 +837,14 @@
             return toScene(mLa / pts.length, mLo / pts.length);
         });
         trackHeads = tracks.map(pts => toScene(pts[0].lat, pts[0].lon));
+        trackFarthest = tracks.map(pts => {
+            let far = pts[0], farDist = 0;
+            for (const p of pts) {
+                const d = haversine(pts[0].lat, pts[0].lon, p.lat, p.lon);
+                if (d > farDist) { far = p; farDist = d; }
+            }
+            return toScene(far.lat, far.lon);
+        });
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color(document.getElementById('clr-background').value);
@@ -1285,9 +1294,15 @@
     $btnHead.addEventListener('click', () => {
         if (!controls) return;
         const idx = document.getElementById('sel-highlight').value;
-        if (idx !== '' && trackHeads[+idx]) {
-            controls.target.copy(trackHeads[+idx]);
-        }
+        if (idx === '' || !trackHeads[+idx]) return;
+        const head = trackHeads[+idx], far = trackFarthest[+idx];
+        const sph = new THREE.Spherical().setFromVector3(
+            camera.position.clone().sub(controls.target)
+        );
+        // Place the camera behind the head so the view runs through it toward the farthest point
+        if (far.x !== head.x || far.z !== head.z) sph.theta = Math.atan2(head.x - far.x, head.z - far.z);
+        controls.target.copy(head);
+        camera.position.copy(new THREE.Vector3().setFromSpherical(sph).add(head));
     });
 
     document.getElementById('btn-recenter').addEventListener('click', () => {
