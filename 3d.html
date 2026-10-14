@@ -962,9 +962,9 @@
                 }
             }
             const animDuration = +document.getElementById('sld-animate-dur').value * 1000;
-            if (trackAnimating && now - trackAnimStart >= animDuration) stopTrackAnimation();
+            if (trackAnimating && now - trackAnimStart >= ANIM_LEAD_MS + animDuration + ANIM_TAIL_MS) stopTrackAnimation();
             if (trackAnimating) {
-                const progress = (now - trackAnimStart) / animDuration;
+                const progress = Math.min(Math.max((now - trackAnimStart - ANIM_LEAD_MS) / animDuration, 0), 1);
                 const hlIdx = document.getElementById('sel-highlight').value;
                 const hlColor = document.getElementById('clr-highlight').value;
                 const normColor = document.getElementById('clr-track').value;
@@ -1349,6 +1349,9 @@
 
     // ── Track animation ─────────────────────────────────────────
 
+    // The camera moves alone for a moment before the tracks start drawing and after they finish
+    const ANIM_LEAD_MS = 1000;
+    const ANIM_TAIL_MS = 1000;
     let trackAnimating = false;
     let trackAnimStart = 0;
     const $btnAnimate = document.getElementById('btn-animate');
