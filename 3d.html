@@ -1324,15 +1324,17 @@
 
     // ── Track animation ─────────────────────────────────────────
 
-    // Timeline: camera-only lead-in → start marker → pause → end marker → pulse (slider duration) → camera-only tail.
+    // Timeline: camera-only lead-in → start marker → pulse (slider duration) → end marker → camera-only tail.
+    // With the end marker at the farthest point, the pulse instead holds there while the marker appears.
     // The camera keeps moving throughout.
     const ANIM_LEAD_MS = 1000;
     const MARKER_MS = 500;
-    const MARKER_GAP_MS = 500;
     const ANIM_TAIL_MS = 1000;
     let trackAnimating = false;
     let trackAnimStart = 0;
     let animTrack = null;
+    let animEndMode = 'end';
+    let animFarFrac = 0;  // Fraction of the track's length at which the farthest point lies
     const $btnAnimate = document.getElementById('btn-animate');
 
     // ── Pulse ──
@@ -1457,20 +1459,27 @@
         animMarkers = [];
     }
 
-    // Phase start times (ms from animation start); the pause and end marker are skipped when there is no end marker
+    // Phase start times in ms from animation start
     function animPhases(duration) {
-        const endMarkerStart = ANIM_LEAD_MS + MARKER_MS + MARKER_GAP_MS;
-        const pulseStart = animMarkers.length > 1 ? endMarkerStart + MARKER_MS : ANIM_LEAD_MS + MARKER_MS;
-        const pulseEnd = pulseStart + duration;
-        return { endMarkerStart, pulseStart, pulseEnd, total: pulseEnd + ANIM_TAIL_MS };
+        const pulseStart = ANIM_LEAD_MS + MARKER_MS;
+        const pulseEnd = pulseStart + duration + (animEndMode === 'farthest' ? MARKER_MS : 0);
+        const endMarkerStart = animEndMode === 'farthest' ? pulseStart + animFarFrac * duration : pulseEnd;
+        const total = pulseEnd + (animEndMode === 'end' ? MARKER_MS : 0) + ANIM_TAIL_MS;
+        return { pulseStart, pulseEnd, endMarkerStart, total };
     }
 
     function updateTrackAnimation(t, duration) {
         const clamp01 = x => Math.min(Math.max(x, 0), 1);
-        const { endMarkerStart, pulseStart, pulseEnd } = animPhases(duration);
+        const { pulseStart, pulseEnd, endMarkerStart } = animPhases(duration);
         updateTrailMarker(animMarkers[0], clamp01((t - ANIM_LEAD_MS) / MARKER_MS));
         if (animMarkers[1]) updateTrailMarker(animMarkers[1], clamp01((t - endMarkerStart) / MARKER_MS));
-        updatePulse(clamp01((t - pulseStart) / duration));
+        // Pulse clock, held still at the farthest point while its marker appears
+        let pt = t - pulseStart;
+        if (animEndMode === 'farthest') {
+            const holdAt = animFarFrac * duration;
+            if (pt > holdAt) pt = Math.max(holdAt, pt - MARKER_MS);
+        }
+        updatePulse(clamp01(pt / duration));
         pulse.visible = animTrack.visible && t >= pulseStart && t < pulseEnd;
     }
 
@@ -1496,11 +1505,12 @@
         trackAnimStart = performance.now();
         startPulse();
         animMarkers = [makeTrailMarker(0, document.getElementById('txt-start-label').value)];
-        const endMode = document.getElementById('sel-end-marker').value;
-        if (endMode !== 'none') {
-            const endIdx = endMode === 'farthest'
-                ? trackFarthestIdx[animTrack.userData.trackIdx]
-                : animTrack.userData.positions.length / 3 - 1;
+        animEndMode = document.getElementById('sel-end-marker').value;
+        if (animEndMode !== 'none') {
+            const farIdx = trackFarthestIdx[animTrack.userData.trackIdx];
+            const totalDist = pulseCum[pulseCum.length - 1];
+            animFarFrac = totalDist > 0 ? pulseCum[farIdx] / totalDist : 0;
+            const endIdx = animEndMode === 'farthest' ? farIdx : animTrack.userData.positions.length / 3 - 1;
             animMarkers.push(makeTrailMarker(endIdx, document.getElementById('txt-end-label').value));
         }
         startCameraMotion();
