@@ -151,7 +151,7 @@
             transition: all 0.2s; flex-shrink: 0;
         }
         #rot-speed { width: 80px; flex: 1; }
-        #sel-highlight, #sel-camera-mode, #txt-start-label, #txt-end-label {
+        #sel-highlight, #sel-camera-mode, #sel-end-marker, #txt-start-label, #txt-end-label {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 4px;
@@ -356,6 +356,14 @@
             <input type="text" id="txt-start-label" value="Start">
             <span class="ctrl-label">End label</span>
             <input type="text" id="txt-end-label" value="End">
+        </div>
+        <div class="ctrl-row">
+            <span class="ctrl-label">End marker</span>
+            <select id="sel-end-marker">
+                <option value="none">None (short out and back)</option>
+                <option value="end" selected>Track end (linear)</option>
+                <option value="farthest">Farthest point (long out and back)</option>
+            </select>
         </div>
         <button id="btn-advanced">&#9662; Advanced settings</button>
         <div id="advanced-settings">
@@ -708,6 +716,7 @@
     let trackMidpoints = [];
     let trackHeads = [];
     let trackFarthest = [];
+    let trackFarthestIdx = [];
     let origTarget = null;
     let animId = null;
     let cachedTerrainData = null;
@@ -857,14 +866,15 @@
             return toScene(mLa / pts.length, mLo / pts.length);
         });
         trackHeads = tracks.map(pts => toScene(pts[0].lat, pts[0].lon));
-        trackFarthest = tracks.map(pts => {
-            let far = pts[0], farDist = 0;
-            for (const p of pts) {
-                const d = haversine(pts[0].lat, pts[0].lon, p.lat, p.lon);
-                if (d > farDist) { far = p; farDist = d; }
+        trackFarthestIdx = tracks.map(pts => {
+            let far = 0, farDist = 0;
+            for (let k = 0; k < pts.length; k++) {
+                const d = haversine(pts[0].lat, pts[0].lon, pts[k].lat, pts[k].lon);
+                if (d > farDist) { far = k; farDist = d; }
             }
-            return toScene(far.lat, far.lon);
+            return far;
         });
+        trackFarthest = tracks.map((pts, i) => toScene(pts[trackFarthestIdx[i]].lat, pts[trackFarthestIdx[i]].lon));
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color(document.getElementById('clr-background').value);
@@ -961,7 +971,7 @@
                 }
             }
             const animDuration = +document.getElementById('sld-animate-dur').value * 1000;
-            if (trackAnimating && now - trackAnimStart >= animTotalMs(animDuration)) stopTrackAnimation();
+            if (trackAnimating && now - trackAnimStart >= animPhases(animDuration).total) stopTrackAnimation();
             if (trackAnimating) updateTrackAnimation(now - trackAnimStart, animDuration);
             controls.update();
             const sph = new THREE.Spherical().setFromVector3(
@@ -1446,16 +1456,19 @@
         animMarkers = [];
     }
 
-    function animTotalMs(duration) {
-        return ANIM_LEAD_MS + MARKER_MS + MARKER_GAP_MS + MARKER_MS + duration + ANIM_TAIL_MS;
+    // Phase start times (ms from animation start); the pause and end marker are skipped when there is no end marker
+    function animPhases(duration) {
+        const endMarkerStart = ANIM_LEAD_MS + MARKER_MS + MARKER_GAP_MS;
+        const pulseStart = animMarkers.length > 1 ? endMarkerStart + MARKER_MS : ANIM_LEAD_MS + MARKER_MS;
+        const pulseEnd = pulseStart + duration;
+        return { endMarkerStart, pulseStart, pulseEnd, total: pulseEnd + ANIM_TAIL_MS };
     }
 
     function updateTrackAnimation(t, duration) {
         const clamp01 = x => Math.min(Math.max(x, 0), 1);
-        const endMarkerStart = ANIM_LEAD_MS + MARKER_MS + MARKER_GAP_MS;
-        const pulseStart = endMarkerStart + MARKER_MS, pulseEnd = pulseStart + duration;
+        const { endMarkerStart, pulseStart, pulseEnd } = animPhases(duration);
         updateTrailMarker(animMarkers[0], clamp01((t - ANIM_LEAD_MS) / MARKER_MS));
-        updateTrailMarker(animMarkers[1], clamp01((t - endMarkerStart) / MARKER_MS));
+        if (animMarkers[1]) updateTrailMarker(animMarkers[1], clamp01((t - endMarkerStart) / MARKER_MS));
         updatePulse(clamp01((t - pulseStart) / duration));
         pulse.visible = animTrack.visible && t >= pulseStart && t < pulseEnd;
     }
@@ -1481,10 +1494,14 @@
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
         startPulse();
-        animMarkers = [
-            makeTrailMarker(0, document.getElementById('txt-start-label').value),
-            makeTrailMarker(animTrack.userData.positions.length / 3 - 1, document.getElementById('txt-end-label').value),
-        ];
+        animMarkers = [makeTrailMarker(0, document.getElementById('txt-start-label').value)];
+        const endMode = document.getElementById('sel-end-marker').value;
+        if (endMode !== 'none') {
+            const endIdx = endMode === 'farthest'
+                ? trackFarthestIdx[animTrack.userData.trackIdx]
+                : animTrack.userData.positions.length / 3 - 1;
+            animMarkers.push(makeTrailMarker(endIdx, document.getElementById('txt-end-label').value));
+        }
         startCameraMotion();
     });
 
