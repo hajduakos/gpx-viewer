@@ -1330,7 +1330,18 @@
     // ── Keyboard Shortcuts ────────────────────────────────────────
 
     const KEY_ROT = 0.03;
+
+    // Let focused form controls keep keys they use natively (type-ahead, arrow stepping)
+    function isKeyClaimedByFocus(e) {
+        const el = e.target;
+        if (el.isContentEditable || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') return true;
+        if (el.tagName !== 'INPUT') return false;
+        if (el.type === 'range') return e.key.startsWith('Arrow');
+        return !['checkbox', 'color', 'file', 'button'].includes(el.type);
+    }
+
     document.addEventListener('keydown', e => {
+        if (isKeyClaimedByFocus(e)) return;
         if (e.key === 'c' || e.key === 'C') {
             $rotBox.classList.toggle('active');
         }
