@@ -658,8 +658,6 @@
 
     // ── 3D Scene ────────────────────────────────────────────────
 
-    const LABEL_BASE_OFFSET = 0.8;
-
     function parseLabelsCSV(text) {
         const lines = text.trim().split('\n');
         const headers = lines[0].split(',').map(h => h.trim());
@@ -684,7 +682,7 @@
             const x = ((lb.lon - D.bb.minLon) / (D.bb.maxLon - D.bb.minLon) - 0.5) * S.sw;
             const z = ((D.bb.maxLat - lb.lat) / (D.bb.maxLat - D.bb.minLat) - 0.5) * S.sd;
             const e = interpElev(lb.lat, lb.lon, D.bb, D.elev, D.gw, D.gh);
-            const baseY = (e - S.meanE) * S.scale * exag;
+            const baseY = (e - S.meanE) * S.scale;
             const extraOffset = lb.offset ?? 0;
             const div = document.createElement('div');
             div.textContent = lb.name;
@@ -704,24 +702,23 @@
     let D = null;
     let trackMidpoints = [];
     let origTarget = null;
-    const exag = 1.0;
     let animId = null;
     let cachedTerrainData = null;
 
-    function setTerrainY(geom, elev, meanE, scale, ex) {
+    function setTerrainY(geom, elev, meanE, scale) {
         const pos = geom.attributes.position;
-        for (let i = 0; i < pos.count; i++) pos.setY(i, (elev[i] - meanE) * scale * ex);
+        for (let i = 0; i < pos.count; i++) pos.setY(i, (elev[i] - meanE) * scale);
         pos.needsUpdate = true;
         geom.computeVertexNormals();
     }
 
-    function addTrackLine(pts, bb, elev, gw, gh, scale, meanE, ex, sw, sd, color, idx) {
+    function addTrackLine(pts, bb, elev, gw, gh, scale, meanE, sw, sd, color, idx) {
         const arr = [];
         for (const p of pts) {
             const x = ((p.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
             const z = ((bb.maxLat - p.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
             const e = interpElev(p.lat, p.lon, bb, elev, gw, gh);
-            arr.push(x, (e - meanE) * scale * ex, z);
+            arr.push(x, (e - meanE) * scale, z);
         }
         const geom = new LineGeometry();
         geom.setPositions(arr);
@@ -754,8 +751,8 @@
         return tex;
     }
 
-    function buildBox(elev, gw, gh, sw, sd, meanE, scale, ex, minE) {
-        const bottomY = (minE - 200 - meanE) * scale * ex;
+    function buildBox(elev, gw, gh, sw, sd, meanE, scale, minE) {
+        const bottomY = (minE - 200 - meanE) * scale;
         const earthTex = makeEarthTexture(512, 512);
         const brownMat = new THREE.MeshStandardMaterial({
             map: earthTex, roughness: 0.95, metalness: 0
@@ -793,25 +790,25 @@
 
         scene.add(makeSide(gw, c => [
             (c / (gw - 1) - 0.5) * sw,
-            (elev[c] - meanE) * scale * ex,
+            (elev[c] - meanE) * scale,
             -sd / 2
         ], false));
 
         scene.add(makeSide(gw, c => [
             (c / (gw - 1) - 0.5) * sw,
-            (elev[(gh - 1) * gw + c] - meanE) * scale * ex,
+            (elev[(gh - 1) * gw + c] - meanE) * scale,
             sd / 2
         ], true));
 
         scene.add(makeSide(gh, r => [
             -sw / 2,
-            (elev[r * gw] - meanE) * scale * ex,
+            (elev[r * gw] - meanE) * scale,
             (r / (gh - 1) - 0.5) * sd
         ], true));
 
         scene.add(makeSide(gh, r => [
             sw / 2,
-            (elev[r * gw + gw - 1] - meanE) * scale * ex,
+            (elev[r * gw + gw - 1] - meanE) * scale,
             (r / (gh - 1) - 0.5) * sd
         ], false));
 
@@ -847,14 +844,14 @@
             const x = ((mLo - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
             const z = ((bb.maxLat - mLa) / (bb.maxLat - bb.minLat) - 0.5) * sd;
             const e = interpElev(mLa, mLo, bb, elev, gw, gh);
-            return new THREE.Vector3(x, (e - meanE) * scale * exag, z);
+            return new THREE.Vector3(x, (e - meanE) * scale, z);
         });
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color(document.getElementById('clr-background').value);
 
         camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
-        camera.position.set(sw * 0.6, (maxE - meanE) * scale * exag + 25, sd * 0.6);
+        camera.position.set(sw * 0.6, (maxE - meanE) * scale + 25, sd * 0.6);
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(innerWidth, innerHeight);
@@ -863,7 +860,7 @@
         $viewer.appendChild(renderer.domElement);
 
         controls = new OrbitControls(camera, renderer.domElement);
-        controls.target.set(0, (maxE - meanE) * scale * exag * -0.1, 0);
+        controls.target.set(0, (maxE - meanE) * scale * -0.1, 0);
         origTarget = controls.target.clone();
         controls.enableDamping = true;
         controls.dampingFactor = 0.06;
@@ -877,7 +874,7 @@
 
         const geom = new THREE.PlaneGeometry(sw, sd, gw - 1, gh - 1);
         geom.rotateX(-Math.PI / 2);
-        setTerrainY(geom, elev, meanE, scale, exag);
+        setTerrainY(geom, elev, meanE, scale);
 
         terrainTex = new THREE.CanvasTexture(texCv);
         terrainTex.minFilter = THREE.LinearFilter;
@@ -886,9 +883,9 @@
         terrain = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ map: terrainTex, roughness: 0.85, metalness: 0 }));
         scene.add(terrain);
 
-        buildBox(elev, gw, gh, sw, sd, meanE, scale, exag, minE);
+        buildBox(elev, gw, gh, sw, sd, meanE, scale, minE);
 
-        tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, exag, sw, sd, document.getElementById('clr-track').value, i));
+        tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, sw, sd, document.getElementById('clr-track').value, i));
 
         const dotDiv = document.createElement('div');
         dotDiv.style.cssText = 'width:10px;height:10px;border-radius:50%;';
