@@ -311,7 +311,12 @@
                 <span class="val" id="set-grid-v">600</span>
             </label>
             <label>
-                Texture resolution
+                Texture tiles
+                <input type="range" id="set-tiles" min="1" max="4" value="1" step="1">
+                <span class="val" id="set-tiles-v">1×1</span>
+            </label>
+            <label>
+                Resolution per tile
                 <input type="range" id="set-tex" min="1024" max="8192" value="2048" step="1024">
                 <span class="val" id="set-tex-v">2048</span>
             </label>
@@ -469,10 +474,13 @@
     const $setGridV  = document.getElementById('set-grid-v');
     const $setTex    = document.getElementById('set-tex');
     const $setTexV   = document.getElementById('set-tex-v');
+    const $setTiles  = document.getElementById('set-tiles');
+    const $setTilesV = document.getElementById('set-tiles-v');
     const $setPad    = document.getElementById('set-pad');
     const $setPadV   = document.getElementById('set-pad-v');
     $setGrid.oninput = () => $setGridV.textContent = $setGrid.value;
     $setTex.oninput  = () => $setTexV.textContent = $setTex.value;
+    $setTiles.oninput = () => $setTilesV.textContent = `${$setTiles.value}×${$setTiles.value}`;
     $setPad.oninput  = () => $setPadV.textContent = $setPad.value + '%';
 
     function prog(step, pct, detail = '') {
@@ -588,27 +596,60 @@
 
     // ── Satellite Tiles ─────────────────────────────────────────
 
-    async function fetchTexture(bb, texRes, onProg) {
+    // Grid row/column where texture tile i of n starts; neighbouring tiles share the edge row/column
+    const tileEdge = (i, n, size) => Math.round(i * (size - 1) / n);
+
+    async function fetchTexture(bb, texRes, n, gw, gh, onProg) {
         const mid = (bb.maxLat + bb.minLat) / 2;
         const mw = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
-        let z = Math.round(Math.log2(156543 * Math.cos(mid * Math.PI / 180) / (mw / texRes)));
+        let z = Math.round(Math.log2(156543 * Math.cos(mid * Math.PI / 180) / (mw / (texRes * n))));
         z = Math.max(10, Math.min(z, 19));
 
         const tx0 = lon2t(bb.minLon, z), tx1 = lon2t(bb.maxLon, z);
         const ty0 = lat2t(bb.maxLat, z), ty1 = lat2t(bb.minLat, z);
         const tw = tx1 - tx0 + 1, th = ty1 - ty0 + 1, total = tw * th;
 
-        const cv = document.createElement('canvas');
-        cv.width = tw * TILE_PX; cv.height = th * TILE_PX;
-        const cx = cv.getContext('2d');
+        const nn = 1 << z;
+        const lo2px = lo => ((lo + 180) / 360 * nn - tx0) * TILE_PX;
+        const la2px = la => { const r = la * Math.PI / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * nn - ty0) * TILE_PX; };
+
+        // Each texture tile is a canvas aligned to whole map pixels, slightly larger than its share
+        // of the terrain, so map tiles are drawn unscaled and edge texels hold real imagery.
+        // offset/repeat then map exactly that share onto the terrain chunk's UVs.
+        const texTiles = [];
+        for (let i = 0; i < n; i++) {
+            const latTop = bb.maxLat - tileEdge(i, n, gh) / (gh - 1) * (bb.maxLat - bb.minLat);
+            const latBot = bb.maxLat - tileEdge(i + 1, n, gh) / (gh - 1) * (bb.maxLat - bb.minLat);
+            for (let j = 0; j < n; j++) {
+                const lonL = bb.minLon + tileEdge(j, n, gw) / (gw - 1) * (bb.maxLon - bb.minLon);
+                const lonR = bb.minLon + tileEdge(j + 1, n, gw) / (gw - 1) * (bb.maxLon - bb.minLon);
+                const sx = lo2px(lonL), ex = lo2px(lonR), sy = la2px(latTop), ey = la2px(latBot);
+                const ox = Math.floor(sx), oy = Math.floor(sy);
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.ceil(ex) - ox; canvas.height = Math.ceil(ey) - oy;
+                const w = canvas.width, h = canvas.height;
+                texTiles.push({
+                    canvas, ctx: canvas.getContext('2d'), ox, oy,
+                    offset: [(sx - ox) / w, 1 - (ey - oy) / h],
+                    repeat: [(ex - sx) / w, (ey - sy) / h],
+                });
+            }
+        }
 
         let loaded = 0;
         const proms = [];
         for (let ty = ty0; ty <= ty1; ty++) {
             for (let tx = tx0; tx <= tx1; tx++) {
+                const px = (tx - tx0) * TILE_PX, py = (ty - ty0) * TILE_PX;
                 proms.push(
                     loadTileImage(`${SAT_TILE_URL}/${z}/${ty}/${tx}`)
-                        .then(img => { cx.drawImage(img, (tx - tx0) * TILE_PX, (ty - ty0) * TILE_PX); })
+                        .then(img => {
+                            for (const t of texTiles) {
+                                if (px < t.ox + t.canvas.width && px + TILE_PX > t.ox &&
+                                    py < t.oy + t.canvas.height && py + TILE_PX > t.oy)
+                                    t.ctx.drawImage(img, px - t.ox, py - t.oy);
+                            }
+                        })
                         .catch(() => {})
                         .finally(() => { loaded++; onProg(loaded, total); })
                 );
@@ -616,17 +657,7 @@
         }
         await Promise.all(proms);
 
-        const nn = 1 << z;
-        const lo2px = lo => ((lo + 180) / 360 * nn - tx0) * TILE_PX;
-        const la2px = la => { const r = la * Math.PI / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * nn - ty0) * TILE_PX; };
-
-        const sx = lo2px(bb.minLon), sy = la2px(bb.maxLat);
-        const sw = lo2px(bb.maxLon) - sx, sh = la2px(bb.minLat) - sy;
-
-        const out = document.createElement('canvas');
-        out.width = Math.round(sw); out.height = Math.round(sh);
-        out.getContext('2d').drawImage(cv, -sx, -sy);
-        return out;
+        return texTiles.map(({ canvas, offset, repeat }) => ({ canvas, offset, repeat }));
     }
 
     // ── Interpolation ───────────────────────────────────────────
@@ -682,7 +713,8 @@
         }
     }
 
-    let renderer, labelRenderer, scene, camera, controls, terrain, terrainTex, animDot;
+    let renderer, labelRenderer, scene, camera, controls, animDot;
+    let terrainChunks = [];
     let S = null;
     let D = null;
     let trackMidpoints = [];
@@ -806,7 +838,7 @@
         scene.add(new THREE.Mesh(bGeom, brownMat));
     }
 
-    function buildScene(elev, texCv, tracks, bb, gw, gh) {
+    function buildScene(elev, texTiles, tracks, bb, gw, gh) {
         const mid = (bb.maxLat + bb.minLat) / 2;
         const wm = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
         const dm = (bb.maxLat - bb.minLat) * 110540;
@@ -875,12 +907,35 @@
         geom.rotateX(-Math.PI / 2);
         setTerrainY(geom, elev, meanE, scale);
 
-        terrainTex = new THREE.CanvasTexture(texCv);
-        terrainTex.minFilter = THREE.LinearFilter;
-        terrainTex.magFilter = THREE.LinearFilter;
+        // One terrain chunk per texture tile. Positions and normals are copied from the full mesh
+        // so vertices on shared chunk edges match exactly and shading shows no seams.
+        const n = Math.round(Math.sqrt(texTiles.length));
+        const fullPos = geom.attributes.position, fullNorm = geom.attributes.normal;
+        terrainChunks = texTiles.map((tile, k) => {
+            const r0 = tileEdge(Math.floor(k / n), n, gh), r1 = tileEdge(Math.floor(k / n) + 1, n, gh);
+            const c0 = tileEdge(k % n, n, gw), c1 = tileEdge(k % n + 1, n, gw);
+            const cGeom = new THREE.PlaneGeometry(1, 1, c1 - c0, r1 - r0);
+            const pos = cGeom.attributes.position, norm = cGeom.attributes.normal;
+            for (let r = r0; r <= r1; r++) {
+                for (let c = c0; c <= c1; c++) {
+                    const i = (r - r0) * (c1 - c0 + 1) + (c - c0), j = r * gw + c;
+                    pos.setXYZ(i, fullPos.getX(j), fullPos.getY(j), fullPos.getZ(j));
+                    norm.setXYZ(i, fullNorm.getX(j), fullNorm.getY(j), fullNorm.getZ(j));
+                }
+            }
 
-        terrain = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({ map: terrainTex, roughness: 0.85, metalness: 0 }));
-        scene.add(terrain);
+            const tex = new THREE.CanvasTexture(tile.canvas);
+            tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            tex.offset.set(...tile.offset);
+            tex.repeat.set(...tile.repeat);
+
+            const chunk = new THREE.Mesh(cGeom, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 }));
+            chunk.userData.tex = tex;
+            scene.add(chunk);
+            return chunk;
+        });
+        geom.dispose();
 
         buildBox(elev, gw, gh, sw, sd, meanE, scale, minE);
 
@@ -1053,6 +1108,7 @@
 
         const gridSize = +$setGrid.value;
         const texRes = +$setTex.value;
+        const texTileCount = +$setTiles.value;
         const padding = +$setPad.value / 100;
 
         try {
@@ -1083,15 +1139,15 @@
             });
 
             prog('Step 3/4 — Loading satellite imagery...', 66);
-            const texCv = await fetchTexture(bb, texRes, (d, t) => {
+            const texTiles = await fetchTexture(bb, texRes, texTileCount, gw, gh, (d, t) => {
                 prog('Step 3/4 — Loading satellite imagery...', 66 + (d / t) * 27, `Tile ${d} / ${t}`);
             });
 
-            cachedTerrainData = { elev: Array.from(elev), texDataURL: texCv.toDataURL('image/png'), bb, gw, gh, tracks, trackNames };
+            cachedTerrainData = { elev: Array.from(elev), texTiles, bb, gw, gh, tracks, trackNames };
 
             prog('Step 4/4 — Building 3D scene...', 95);
             await new Promise(r => setTimeout(r, 80));
-            buildScene(elev, texCv, tracks, bb, gw, gh);
+            buildScene(elev, texTiles, tracks, bb, gw, gh);
 
             prog('Done!', 100);
             await new Promise(r => setTimeout(r, 350));
@@ -1218,10 +1274,11 @@
     });
 
     document.getElementById('chk-texture').addEventListener('change', e => {
-        if (!terrain) return;
-        terrain.material.map = e.target.checked ? terrainTex : null;
-        terrain.material.color.set(e.target.checked ? 0xffffff : 0x5A8C32);
-        terrain.material.needsUpdate = true;
+        for (const chunk of terrainChunks) {
+            chunk.material.map = e.target.checked ? chunk.userData.tex : null;
+            chunk.material.color.set(e.target.checked ? 0xffffff : 0x5A8C32);
+            chunk.material.needsUpdate = true;
+        }
     });
 
     document.getElementById('chk-tracks').addEventListener('change', e => {
@@ -1392,7 +1449,12 @@
 
     document.getElementById('btn-export').addEventListener('click', () => {
         if (!cachedTerrainData) return;
-        const json = JSON.stringify(cachedTerrainData);
+        // JPEG keeps large multi-tile exports manageable; the satellite source tiles are JPEG anyway
+        const { texTiles, ...rest } = cachedTerrainData;
+        const json = JSON.stringify({
+            ...rest,
+            texTiles: texTiles.map(t => ({ dataURL: t.canvas.toDataURL('image/jpeg', 0.92), offset: t.offset, repeat: t.repeat })),
+        });
         const blob = new Blob([json], { type: 'application/json' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -1414,27 +1476,31 @@
             const gw = data.gw, gh = data.gh;
 
             prog('Restoring texture...', 60);
-            const img = await new Promise((res, rej) => {
-                const i = new Image();
-                i.onload = () => res(i);
-                i.onerror = rej;
-                i.src = data.texDataURL;
-            });
-            const texCv = document.createElement('canvas');
-            texCv.width = img.width;
-            texCv.height = img.height;
-            texCv.getContext('2d').drawImage(img, 0, 0);
+            const { texTiles: savedTiles, ...rest } = data;
+            const texTiles = await Promise.all(savedTiles.map(async t => {
+                const img = await new Promise((res, rej) => {
+                    const i = new Image();
+                    i.onload = () => res(i);
+                    i.onerror = rej;
+                    i.src = t.dataURL;
+                });
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                canvas.getContext('2d').drawImage(img, 0, 0);
+                return { canvas, offset: t.offset, repeat: t.repeat };
+            }));
 
             const tracks = (data.tracks || []).map(pts =>
                 pts.map(p => ({ ...p, time: p.time ? new Date(p.time) : null }))
             );
             const trackNames = data.trackNames || [];
 
-            cachedTerrainData = data;
+            cachedTerrainData = { ...rest, texTiles };
 
             prog('Building 3D scene...', 90);
             await new Promise(r => setTimeout(r, 80));
-            buildScene(elev, texCv, tracks, bb, gw, gh);
+            buildScene(elev, texTiles, tracks, bb, gw, gh);
 
             prog('Done!', 100);
             await new Promise(r => setTimeout(r, 350));
