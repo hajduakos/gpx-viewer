@@ -151,7 +151,7 @@
             transition: all 0.2s; flex-shrink: 0;
         }
         #rot-speed { width: 80px; flex: 1; }
-        #sel-highlight, #sel-camera-mode {
+        #sel-highlight, #sel-camera-mode, #txt-start-label, #txt-end-label {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 4px;
@@ -350,6 +350,12 @@
             <span class="ctrl-label">Duration</span>
             <input type="range" id="sld-animate-dur" min="1" max="10" value="2" step="1" style="flex:1">
             <span class="ctrl-label" id="animate-dur-val">2s</span>
+        </div>
+        <div class="ctrl-row">
+            <span class="ctrl-label">Start label</span>
+            <input type="text" id="txt-start-label" value="Start">
+            <span class="ctrl-label">End label</span>
+            <input type="text" id="txt-end-label" value="End">
         </div>
         <button id="btn-advanced">&#9662; Advanced settings</button>
         <div id="advanced-settings">
@@ -1427,7 +1433,7 @@
         m.line.visible = growth > 0;
         m.line.material.resolution.set(innerWidth, innerHeight);
         m.label.position.set(p[i], baseY + h, p[i+2]);
-        m.label.visible = growth >= 1;
+        m.label.visible = growth >= 1 && m.label.element.textContent !== '';
     }
 
     function removeTrailMarkers() {
@@ -1475,7 +1481,10 @@
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
         startPulse();
-        animMarkers = [makeTrailMarker(0, 'Start'), makeTrailMarker(animTrack.userData.positions.length / 3 - 1, 'End')];
+        animMarkers = [
+            makeTrailMarker(0, document.getElementById('txt-start-label').value),
+            makeTrailMarker(animTrack.userData.positions.length / 3 - 1, document.getElementById('txt-end-label').value),
+        ];
         startCameraMotion();
     });
 
