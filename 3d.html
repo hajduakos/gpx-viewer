@@ -1423,7 +1423,7 @@
 
     function makeTrailMarker(pointIdx, text) {
         const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
-            new LineMaterial({ color: 0x999999, linewidth: 2, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
+            new LineMaterial({ linewidth: 4, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
         div.textContent = text;
         div.style.cssText = `color:#fff;font-size:${document.getElementById('sld-label-size').value}px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;`;
@@ -1442,6 +1442,7 @@
         m.line.scale.y = Math.max(growth, 1e-4) * h;
         m.line.visible = growth > 0;
         m.line.material.resolution.set(innerWidth, innerHeight);
+        m.line.material.color.set(document.getElementById('clr-highlight').value);
         m.label.position.set(p[i], baseY + h, p[i+2]);
         m.label.visible = growth >= 1 && m.label.element.textContent !== '';
     }
