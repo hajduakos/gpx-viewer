@@ -138,23 +138,8 @@
             color: #999;
             white-space: nowrap;
         }
-        #btn-play {
-            width: 32px;
-            height: 32px;
-            border: 1px solid rgba(255,255,255,0.15);
-            border-radius: 6px;
-            background: rgba(255,255,255,0.04);
-            color: #ccc;
-            font-size: 14px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            flex-shrink: 0;
-        }
-        #btn-play:hover, #btn-animate:hover { background: rgba(255,255,255,0.1); color: #fff; }
-        #btn-play.playing, #btn-animate.playing { color: #4facfe; border-color: #4facfe; }
+        #btn-animate:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        #btn-animate.playing { color: #4facfe; border-color: #4facfe; }
         #btn-animate {
             width: 32px; height: 32px;
             border: 1px solid rgba(255,255,255,0.15);
@@ -350,7 +335,6 @@
                 <option value="left">Left</option>
                 <option value="right">Right</option>
             </select>
-            <button id="btn-play" title="Play">&#9654;</button>
             <span class="ctrl-label">Speed</span>
             <input type="range" id="rot-speed" min="0.5" max="10" value="2" step="0.5">
         </div>
@@ -977,9 +961,10 @@
                     controls.target.add(move);
                 }
             }
+            const animDuration = +document.getElementById('sld-animate-dur').value * 1000;
+            if (trackAnimating && now - trackAnimStart >= animDuration) stopTrackAnimation();
             if (trackAnimating) {
-                const duration = +document.getElementById('sld-animate-dur').value * 1000;
-                const progress = ((now - trackAnimStart) % duration) / duration;
+                const progress = (now - trackAnimStart) / animDuration;
                 const hlIdx = document.getElementById('sel-highlight').value;
                 const hlColor = document.getElementById('clr-highlight').value;
                 const normColor = document.getElementById('clr-track').value;
@@ -1161,7 +1146,6 @@
     // ── Camera modes ────────────────────────────────────────────
 
     const $rotBox  = document.getElementById('rotate-box');
-    const $btnPlay = document.getElementById('btn-play');
     const $rotSpd  = document.getElementById('rot-speed');
     const $selCameraMode = document.getElementById('sel-camera-mode');
 
@@ -1172,29 +1156,26 @@
     let movePlaying = false;
     let lastFrameTime = 0;
 
+    // Camera motion runs only while the track animation plays
+    function startCameraMotion() {
+        if (!controls) return;
+        if (cameraMode === 'orbit') {
+            controls.autoRotate = true;
+        } else {
+            movePlaying = true;
+            lastFrameTime = performance.now();
+        }
+    }
+
     function stopAllCameraMotion() {
         if (controls) controls.autoRotate = false;
         movePlaying = false;
-        $btnPlay.classList.remove('playing');
-        $btnPlay.innerHTML = '&#9654;';
     }
 
     $selCameraMode.addEventListener('change', e => {
         stopAllCameraMotion();
         cameraMode = e.target.value;
-    });
-
-    $btnPlay.addEventListener('click', () => {
-        if (!controls) return;
-        if (cameraMode === 'orbit') {
-            controls.autoRotate = !controls.autoRotate;
-        } else {
-            movePlaying = !movePlaying;
-            lastFrameTime = performance.now();
-        }
-        const playing = controls.autoRotate || movePlaying;
-        $btnPlay.classList.toggle('playing', playing);
-        $btnPlay.innerHTML = playing ? '&#9646;&#9646;' : '&#9654;';
+        if (trackAnimating) startCameraMotion();
     });
 
     document.getElementById('btn-advanced').addEventListener('click', () => {
@@ -1372,24 +1353,30 @@
     let trackAnimStart = 0;
     const $btnAnimate = document.getElementById('btn-animate');
 
+    function stopTrackAnimation() {
+        trackAnimating = false;
+        $btnAnimate.classList.remove('playing');
+        $btnAnimate.innerHTML = '&#9654;';
+        stopAllCameraMotion();
+        if (animDot) animDot.visible = false;
+        const hlIdx = document.getElementById('sel-highlight').value;
+        scene.traverse(o => {
+            if (o.name === 'gpx-track') {
+                o.geometry.instanceCount = o.userData.totalSegments;
+                const hit = hlIdx !== '' && o.userData.trackIdx === +hlIdx;
+                o.material.color.set(hit ? document.getElementById('clr-highlight').value : document.getElementById('clr-track').value);
+            }
+        });
+    }
+
     $btnAnimate.addEventListener('click', () => {
         if (!scene) return;
-        trackAnimating = !trackAnimating;
-        $btnAnimate.classList.toggle('playing', trackAnimating);
-        $btnAnimate.innerHTML = trackAnimating ? '&#9646;&#9646;' : '&#9654;';
-        if (trackAnimating) {
-            trackAnimStart = performance.now();
-        } else {
-            if (animDot) animDot.visible = false;
-            const hlIdx = document.getElementById('sel-highlight').value;
-            scene.traverse(o => {
-                if (o.name === 'gpx-track') {
-                    o.geometry.instanceCount = o.userData.totalSegments;
-                    const hit = hlIdx !== '' && o.userData.trackIdx === +hlIdx;
-                    o.material.color.set(hit ? document.getElementById('clr-highlight').value : document.getElementById('clr-track').value);
-                }
-            });
-        }
+        if (trackAnimating) { stopTrackAnimation(); return; }
+        trackAnimating = true;
+        $btnAnimate.classList.add('playing');
+        $btnAnimate.innerHTML = '&#9646;&#9646;';
+        trackAnimStart = performance.now();
+        startCameraMotion();
     });
 
     document.getElementById('sld-animate-dur').addEventListener('input', e => {
@@ -1413,9 +1400,6 @@
         if (isKeyClaimedByFocus(e)) return;
         if (e.key === 'c' || e.key === 'C') {
             $rotBox.classList.toggle('active');
-        }
-        if (e.key === 'p' || e.key === 'P') {
-            $btnPlay.click();
         }
         if (e.key === 'a' || e.key === 'A') {
             $btnAnimate.click();
