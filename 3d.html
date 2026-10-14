@@ -704,6 +704,7 @@
     let origTarget = null;
     let animId = null;
     let cachedTerrainData = null;
+    const HIGHLIGHT_LIFT = 0.02;
 
     function setTerrainY(geom, elev, meanE, scale) {
         const pos = geom.attributes.position;
@@ -1241,7 +1242,13 @@
     document.getElementById('sld-track-offset').addEventListener('input', e => {
         if (!scene) return;
         const off = +e.target.value;
-        scene.traverse(o => { if (o.name === 'gpx-track') o.position.y = off; });
+        const hlIdx = document.getElementById('sel-highlight').value;
+        scene.traverse(o => {
+            if (o.name === 'gpx-track') {
+                const hit = hlIdx !== '' && o.userData.trackIdx === +hlIdx;
+                o.position.y = off + (hit ? HIGHLIGHT_LIFT : 0);
+            }
+        });
     });
 
     document.getElementById('sld-track-width').addEventListener('input', e => {
@@ -1279,7 +1286,7 @@
                 const hit = idx !== '' && o.userData.trackIdx === +idx;
                 o.material.color.set(hit ? document.getElementById('clr-highlight').value : document.getElementById('clr-track').value);
                 const baseOff = +document.getElementById('sld-track-offset').value;
-                o.position.y = baseOff + (hit ? 0.02 : 0);
+                o.position.y = baseOff + (hit ? HIGHLIGHT_LIFT : 0);
             }
         });
     });
