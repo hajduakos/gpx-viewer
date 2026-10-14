@@ -346,7 +346,7 @@
         </div>
         <div class="ctrl-row">
             <span class="ctrl-label">Animate</span>
-            <button id="btn-animate" title="Animate tracks">&#9654;</button>
+            <button id="btn-animate" title="Animate selected track" disabled>&#9654;</button>
             <span class="ctrl-label">Duration</span>
             <input type="range" id="sld-animate-dur" min="3" max="60" value="10" step="1" style="flex:1">
             <span class="ctrl-label" id="animate-dur-val">10s</span>
@@ -370,8 +370,6 @@
                 <input type="color" id="clr-track" value="#ff3333">
                 <span class="ctrl-label">Highlight</span>
                 <input type="color" id="clr-highlight" value="#ffee00">
-                <span class="ctrl-label">Marker</span>
-                <input type="color" id="clr-marker" value="#8b0000">
             </div>
             <hr class="adv-divider">
             <div class="adv-section-title">Scene</div>
@@ -697,7 +695,7 @@
         }
     }
 
-    let renderer, labelRenderer, scene, camera, controls, animDot;
+    let renderer, labelRenderer, scene, camera, controls;
     let terrainChunks = [];
     let S = null;
     let D = null;
@@ -925,12 +923,6 @@
 
         tracks.forEach((pts, i) => addTrackLine(pts, bb, elev, gw, gh, scale, meanE, sw, sd, document.getElementById('clr-track').value, i));
 
-        const dotDiv = document.createElement('div');
-        dotDiv.style.cssText = 'width:10px;height:10px;border-radius:50%;';
-        animDot = new CSS2DObject(dotDiv);
-        animDot.visible = false;
-        scene.add(animDot);
-
         labelRenderer = new CSS2DRenderer();
         labelRenderer.setSize(innerWidth, innerHeight);
         labelRenderer.domElement.style.position = 'absolute';
@@ -964,41 +956,7 @@
             const animDuration = +document.getElementById('sld-animate-dur').value * 1000;
             if (trackAnimating && now - trackAnimStart >= ANIM_LEAD_MS + animDuration + ANIM_TAIL_MS) stopTrackAnimation();
             if (trackAnimating) {
-                const progress = Math.min(Math.max((now - trackAnimStart - ANIM_LEAD_MS) / animDuration, 0), 1);
-                const hlIdx = document.getElementById('sel-highlight').value;
-                const hlColor = document.getElementById('clr-highlight').value;
-                const normColor = document.getElementById('clr-track').value;
-                const tracks = [];
-                scene.traverse(o => { if (o.name === 'gpx-track') tracks.push(o); });
-                tracks.sort((a, b) => a.userData.trackIdx - b.userData.trackIdx);
-                const totalSegs = tracks.reduce((s, t) => s + t.userData.totalSegments, 0);
-                let remaining = progress * totalSegs;
-                for (const t of tracks) {
-                    const segs = t.userData.totalSegments;
-                    const color = hlIdx !== '' && t.userData.trackIdx === +hlIdx ? hlColor : normColor;
-                    if (remaining >= segs) {
-                        t.geometry.instanceCount = segs;
-                        t.material.color.set(color);
-                        remaining -= segs;
-                    } else if (remaining > 0) {
-                        t.geometry.instanceCount = Math.max(1, Math.floor(remaining));
-                        t.material.color.set(color);
-                        const seg = Math.floor(remaining);
-                        const frac = remaining - seg;
-                        const p = t.userData.positions;
-                        const i = seg * 3;
-                        animDot.position.set(
-                            p[i] + (p[i+3] - p[i]) * frac,
-                            p[i+1] + (p[i+4] - p[i+1]) * frac + 0.3,
-                            p[i+2] + (p[i+5] - p[i+2]) * frac
-                        );
-                        animDot.element.style.background = document.getElementById('clr-marker').value;
-                        animDot.visible = true;
-                        remaining = 0;
-                    } else {
-                        t.geometry.instanceCount = 0;
-                    }
-                }
+                updatePulse(Math.min(Math.max((now - trackAnimStart - ANIM_LEAD_MS) / animDuration, 0), 1));
             }
             controls.update();
             const sph = new THREE.Spherical().setFromVector3(
@@ -1310,6 +1268,8 @@
         const idx = e.target.value;
         $btnCenter.disabled = idx === '';
         $btnHead.disabled = idx === '';
+        $btnAnimate.disabled = idx === '';
+        if (trackAnimating) stopTrackAnimation();
         scene.traverse(o => {
             if (o.name === 'gpx-track') {
                 const hit = idx !== '' && o.userData.trackIdx === +idx;
@@ -1354,31 +1314,111 @@
     const ANIM_TAIL_MS = 1000;
     let trackAnimating = false;
     let trackAnimStart = 0;
+    let animTrack = null;
     const $btnAnimate = document.getElementById('btn-animate');
+
+    // ── Pulse ──
+    // A short overlay line rides along the animated track: highlight color at the current point,
+    // fading to the track color PULSE_RADIUS_M before and after it. It sits slightly above the track
+    // so it stays on top where an out-and-back track overlaps itself.
+    const PULSE_RADIUS_M = 100;
+    const PULSE_LIFT = 0.02;
+    let pulse = null;
+    let pulseCum = null;
+
+    function startPulse() {
+        const p = animTrack.userData.positions, n = p.length / 3;
+        pulseCum = new Float64Array(n);
+        for (let k = 1; k < n; k++) {
+            const dx = p[k*3] - p[k*3-3], dy = p[k*3+1] - p[k*3-2], dz = p[k*3+2] - p[k*3-1];
+            pulseCum[k] = pulseCum[k-1] + Math.hypot(dx, dy, dz) / S.scale;
+        }
+        // Capacity: every track point plus the interpolated start, center and end of the window
+        const geom = new LineGeometry();
+        geom.setPositions(new Float32Array((n + 3) * 3));
+        geom.setColors(new Float32Array((n + 3) * 3));
+        pulse = new Line2(geom, new LineMaterial({ vertexColors: true, linewidth: animTrack.material.linewidth, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
+        pulse.frustumCulled = false;
+        scene.add(pulse);
+        animTrack.material.color.set(document.getElementById('clr-track').value);
+    }
+
+    function updatePulse(progress) {
+        const p = animTrack.userData.positions, cum = pulseCum, n = cum.length, total = cum[n - 1];
+        const dCur = progress * total;
+        const d0 = Math.max(0, dCur - PULSE_RADIUS_M), d1 = Math.min(total, dCur + PULSE_RADIUS_M);
+
+        // Index of the last track point at or before distance d
+        const indexAt = d => {
+            let lo = 0, hi = n - 1;
+            while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (cum[mid] <= d) lo = mid; else hi = mid - 1; }
+            return lo;
+        };
+        const samples = [d0];
+        for (let k = indexAt(d0) + 1; k < n && cum[k] < d1; k++) {
+            if (cum[k] > dCur && samples[samples.length - 1] < dCur) samples.push(dCur);
+            samples.push(cum[k]);
+        }
+        if (samples[samples.length - 1] < dCur) samples.push(dCur);
+        samples.push(d1);
+
+        const base = new THREE.Color(document.getElementById('clr-track').value);
+        const peak = new THREE.Color(document.getElementById('clr-highlight').value);
+        const posBuf = pulse.geometry.attributes.instanceStart.data;
+        const colBuf = pulse.geometry.attributes.instanceColorStart.data;
+        let prevPos = null, prevCol = null;
+        samples.forEach((d, s) => {
+            const k = indexAt(d), k1 = Math.min(k + 1, n - 1);
+            const f = cum[k1] > cum[k] ? (d - cum[k]) / (cum[k1] - cum[k]) : 0;
+            const pos = [0, 1, 2].map(a => p[k*3+a] + (p[k1*3+a] - p[k*3+a]) * f);
+            const c = base.clone().lerp(peak, Math.max(0, 1 - Math.abs(d - dCur) / PULSE_RADIUS_M));
+            const col = [c.r, c.g, c.b];
+            if (prevPos) {
+                posBuf.array.set(prevPos, (s - 1) * 6); posBuf.array.set(pos, (s - 1) * 6 + 3);
+                colBuf.array.set(prevCol, (s - 1) * 6); colBuf.array.set(col, (s - 1) * 6 + 3);
+            }
+            prevPos = pos; prevCol = col;
+        });
+        posBuf.needsUpdate = true;
+        colBuf.needsUpdate = true;
+        pulse.geometry.instanceCount = samples.length - 1;
+
+        // Follow live track settings (offset, width, visibility, window size)
+        pulse.position.y = animTrack.position.y + PULSE_LIFT;
+        pulse.material.linewidth = animTrack.material.linewidth;
+        pulse.material.resolution.set(innerWidth, innerHeight);
+        pulse.visible = animTrack.visible;
+    }
+
+    function stopPulse() {
+        if (!pulse) return;
+        scene.remove(pulse);
+        pulse.geometry.dispose();
+        pulse.material.dispose();
+        pulse = null;
+        animTrack.material.color.set(document.getElementById('clr-highlight').value);
+    }
 
     function stopTrackAnimation() {
         trackAnimating = false;
         $btnAnimate.classList.remove('playing');
         $btnAnimate.innerHTML = '&#9654;';
         stopAllCameraMotion();
-        if (animDot) animDot.visible = false;
-        const hlIdx = document.getElementById('sel-highlight').value;
-        scene.traverse(o => {
-            if (o.name === 'gpx-track') {
-                o.geometry.instanceCount = o.userData.totalSegments;
-                const hit = hlIdx !== '' && o.userData.trackIdx === +hlIdx;
-                o.material.color.set(hit ? document.getElementById('clr-highlight').value : document.getElementById('clr-track').value);
-            }
-        });
+        stopPulse();
     }
 
     $btnAnimate.addEventListener('click', () => {
         if (!scene) return;
         if (trackAnimating) { stopTrackAnimation(); return; }
+        const hlIdx = document.getElementById('sel-highlight').value;
+        animTrack = null;
+        scene.traverse(o => { if (o.name === 'gpx-track' && o.userData.trackIdx === +hlIdx) animTrack = o; });
+        if (hlIdx === '' || !animTrack) return;
         trackAnimating = true;
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
+        startPulse();
         startCameraMotion();
     });
 
