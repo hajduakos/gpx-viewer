@@ -954,10 +954,8 @@
                 }
             }
             const animDuration = +document.getElementById('sld-animate-dur').value * 1000;
-            if (trackAnimating && now - trackAnimStart >= ANIM_LEAD_MS + animDuration + ANIM_TAIL_MS) stopTrackAnimation();
-            if (trackAnimating) {
-                updatePulse(Math.min(Math.max((now - trackAnimStart - ANIM_LEAD_MS) / animDuration, 0), 1));
-            }
+            if (trackAnimating && now - trackAnimStart >= animTotalMs(animDuration)) stopTrackAnimation();
+            if (trackAnimating) updateTrackAnimation(now - trackAnimStart, animDuration);
             controls.update();
             const sph = new THREE.Spherical().setFromVector3(
                 camera.position.clone().sub(controls.target)
@@ -1309,8 +1307,9 @@
 
     // ── Track animation ─────────────────────────────────────────
 
-    // The camera moves alone for a moment before the tracks start drawing and after they finish
+    // Timeline: camera-only lead-in → start marker → pulse (slider duration) → end marker → camera-only tail
     const ANIM_LEAD_MS = 1000;
+    const MARKER_MS = 500;
     const ANIM_TAIL_MS = 1000;
     let trackAnimating = false;
     let trackAnimStart = 0;
@@ -1387,7 +1386,6 @@
         pulse.position.y = animTrack.position.y + PULSE_LIFT;
         pulse.material.linewidth = animTrack.material.linewidth;
         pulse.material.resolution.set(innerWidth, innerHeight);
-        pulse.visible = animTrack.visible;
     }
 
     function stopPulse() {
@@ -1399,12 +1397,66 @@
         animTrack.material.color.set(document.getElementById('clr-highlight').value);
     }
 
+    // ── Start/end markers ──
+    // A vertical line grows up from the track's start (or end) point, then a label appears on top
+    const MARKER_HEIGHT_M = 1000;
+    let animMarkers = [];
+
+    function makeTrailMarker(pointIdx, text) {
+        const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
+            new LineMaterial({ color: 0x999999, linewidth: 2, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
+        const div = document.createElement('div');
+        div.textContent = text;
+        div.style.cssText = `color:#fff;font-size:${document.getElementById('sld-label-size').value}px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;`;
+        const label = new CSS2DObject(div);
+        label.center.set(0.5, 1);
+        line.visible = label.visible = false;
+        scene.add(line, label);
+        return { line, label, pointIdx };
+    }
+
+    function updateTrailMarker(m, growth) {
+        const p = animTrack.userData.positions, i = m.pointIdx * 3;
+        const h = MARKER_HEIGHT_M * S.scale;
+        const baseY = p[i+1] + animTrack.position.y;
+        m.line.position.set(p[i], baseY, p[i+2]);
+        m.line.scale.y = Math.max(growth, 1e-4) * h;
+        m.line.visible = growth > 0;
+        m.line.material.resolution.set(innerWidth, innerHeight);
+        m.label.position.set(p[i], baseY + h, p[i+2]);
+        m.label.visible = growth >= 1;
+    }
+
+    function removeTrailMarkers() {
+        for (const m of animMarkers) {
+            scene.remove(m.line, m.label);
+            m.line.geometry.dispose();
+            m.line.material.dispose();
+            m.label.element.remove();
+        }
+        animMarkers = [];
+    }
+
+    function animTotalMs(duration) {
+        return ANIM_LEAD_MS + MARKER_MS + duration + MARKER_MS + ANIM_TAIL_MS;
+    }
+
+    function updateTrackAnimation(t, duration) {
+        const clamp01 = x => Math.min(Math.max(x, 0), 1);
+        const pulseStart = ANIM_LEAD_MS + MARKER_MS, pulseEnd = pulseStart + duration;
+        updateTrailMarker(animMarkers[0], clamp01((t - ANIM_LEAD_MS) / MARKER_MS));
+        updatePulse(clamp01((t - pulseStart) / duration));
+        pulse.visible = animTrack.visible && t >= pulseStart && t < pulseEnd;
+        updateTrailMarker(animMarkers[1], clamp01((t - pulseEnd) / MARKER_MS));
+    }
+
     function stopTrackAnimation() {
         trackAnimating = false;
         $btnAnimate.classList.remove('playing');
         $btnAnimate.innerHTML = '&#9654;';
         stopAllCameraMotion();
         stopPulse();
+        removeTrailMarkers();
     }
 
     $btnAnimate.addEventListener('click', () => {
@@ -1419,6 +1471,7 @@
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
         startPulse();
+        animMarkers = [makeTrailMarker(0, 'Start'), makeTrailMarker(animTrack.userData.positions.length / 3 - 1, 'End')];
         startCameraMotion();
     });
 
