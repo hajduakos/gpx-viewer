@@ -369,6 +369,7 @@
             <span class="ctrl-label">Highlight</span>
             <select id="sel-highlight"></select>
             <button id="btn-center" class="ctrl-btn" disabled>Center</button>
+            <button id="btn-head" class="ctrl-btn" disabled>Head</button>
         </div>
         <div class="ctrl-row">
             <span class="ctrl-label">Animate</span>
@@ -701,6 +702,7 @@
     let S = null;
     let D = null;
     let trackMidpoints = [];
+    let trackHeads = [];
     let origTarget = null;
     let animId = null;
     let cachedTerrainData = null;
@@ -838,15 +840,18 @@
         S = { scale, meanE, sw, sd };
         D = { elev, bb, gw, gh };
 
+        const toScene = (lat, lon) => {
+            const x = ((lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
+            const z = ((bb.maxLat - lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
+            const e = interpElev(lat, lon, bb, elev, gw, gh);
+            return new THREE.Vector3(x, (e - meanE) * scale, z);
+        };
         trackMidpoints = tracks.map(pts => {
             let mLa = 0, mLo = 0;
             for (const p of pts) { mLa += p.lat; mLo += p.lon; }
-            mLa /= pts.length; mLo /= pts.length;
-            const x = ((mLo - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
-            const z = ((bb.maxLat - mLa) / (bb.maxLat - bb.minLat) - 0.5) * sd;
-            const e = interpElev(mLa, mLo, bb, elev, gw, gh);
-            return new THREE.Vector3(x, (e - meanE) * scale, z);
+            return toScene(mLa / pts.length, mLo / pts.length);
         });
+        trackHeads = tracks.map(pts => toScene(pts[0].lat, pts[0].lon));
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color(document.getElementById('clr-background').value);
@@ -1276,11 +1281,13 @@
     });
 
     const $btnCenter = document.getElementById('btn-center');
+    const $btnHead = document.getElementById('btn-head');
 
     document.getElementById('sel-highlight').addEventListener('change', e => {
         if (!scene) return;
         const idx = e.target.value;
         $btnCenter.disabled = idx === '';
+        $btnHead.disabled = idx === '';
         scene.traverse(o => {
             if (o.name === 'gpx-track') {
                 const hit = idx !== '' && o.userData.trackIdx === +idx;
@@ -1296,6 +1303,14 @@
         const idx = document.getElementById('sel-highlight').value;
         if (idx !== '' && trackMidpoints[+idx]) {
             controls.target.copy(trackMidpoints[+idx]);
+        }
+    });
+
+    $btnHead.addEventListener('click', () => {
+        if (!controls) return;
+        const idx = document.getElementById('sel-highlight').value;
+        if (idx !== '' && trackHeads[+idx]) {
+            controls.target.copy(trackHeads[+idx]);
         }
     });
 
