@@ -415,7 +415,7 @@
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Offset</span>
-                <input type="range" id="sld-track-offset" min="0" max="1" value="0.05" step="0.01" style="flex:1">
+                <input type="range" id="sld-track-offset" min="0" max="1" value="0.06" step="0.01" style="flex:1">
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Width</span>
@@ -763,7 +763,7 @@
     let origTarget = null;
     let animId = null;
     let cachedTerrainData = null;
-    const HIGHLIGHT_LIFT = 0.02;
+    const HIGHLIGHT_LIFT = 0.01;
 
     function setTerrainY(geom, elev, meanE, scale) {
         const pos = geom.attributes.position;
