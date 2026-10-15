@@ -276,6 +276,23 @@
             white-space: nowrap;
         }
         #stats-table tr:hover td { background: rgba(255,255,255,0.05); }
+
+        #anim-stats {
+            display: none;
+            position: fixed;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 15;
+            pointer-events: none;
+            padding: 6px 14px;
+            border-radius: 8px;
+            background: rgba(0,0,0,0.55);
+            color: #fff;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 22px;
+            white-space: pre;
+        }
     </style>
 </head>
 <body>
@@ -323,6 +340,8 @@
     <div id="viewer"></div>
 
     <div id="stats-box"></div>
+
+    <div id="anim-stats"></div>
 
     <div id="rotate-box">
         <div class="ctrl-row">
@@ -718,6 +737,7 @@
     let trackHeads = [];
     let trackFarthest = [];
     let trackFarthestIdx = [];
+    let trackCumStats = [];
     let origTarget = null;
     let animId = null;
     let cachedTerrainData = null;
@@ -876,6 +896,16 @@
             return far;
         });
         trackFarthest = tracks.map((pts, i) => toScene(pts[trackFarthestIdx[i]].lat, pts[trackFarthestIdx[i]].lon));
+        // Cumulative distance and ascent at each track point, measured like computeTrackStats
+        trackCumStats = tracks.map(pts => {
+            const dist = new Float64Array(pts.length), gain = new Float64Array(pts.length);
+            for (let k = 1; k < pts.length; k++) {
+                dist[k] = dist[k-1] + haversine(pts[k-1].lat, pts[k-1].lon, pts[k].lat, pts[k].lon);
+                const up = pts[k].ele != null && pts[k-1].ele != null ? pts[k].ele - pts[k-1].ele : 0;
+                gain[k] = gain[k-1] + Math.max(up, 0);
+            }
+            return { dist, gain };
+        });
 
         scene = new THREE.Scene();
         scene.background = new THREE.Color(document.getElementById('clr-background').value);
@@ -1003,10 +1033,11 @@
     function parseTrackName(raw) {
         const tag = /\s*\[farthest\]\s*$/i;
         const farthest = tag.test(raw);
+        const day = (raw.match(/^(D\d+)\s/) || [])[1] || '';
         const display = raw.replace(/^D\d+\s+/, '').replace(tag, '');
         const parts = display.split(' to ');
-        if (parts.length < 2) return { display, start: display, end: '', endMode: 'none' };
-        return { display, start: parts[0], end: parts.slice(1).join(' to '), endMode: farthest ? 'farthest' : 'end' };
+        if (parts.length < 2) return { display, day, start: display, end: '', endMode: 'none' };
+        return { display, day, start: parts[0], end: parts.slice(1).join(' to '), endMode: farthest ? 'farthest' : 'end' };
     }
 
     function showViewer(tracks, trackNames) {
@@ -1350,10 +1381,11 @@
 
     // ── Track animation ─────────────────────────────────────────
 
-    // Timeline: camera-only lead-in → start marker → pulse (slider duration) → end marker → camera-only tail.
-    // With the end marker at the farthest point, the pulse instead holds there while the marker appears.
-    // The camera keeps moving throughout.
+    // Timeline: camera-only lead-in → stats box fades in → start marker → pulse (slider duration) → end marker
+    // → camera-only tail. With the end marker at the farthest point, the pulse instead holds there while the
+    // marker appears. The camera keeps moving and the stats box stays up until the very end.
     const ANIM_LEAD_MS = 1000;
+    const STATS_FADE_MS = 500;
     const MARKER_MS = 500;
     const ANIM_TAIL_MS = 1000;
     let trackAnimating = false;
@@ -1478,19 +1510,53 @@
         animMarkers = [];
     }
 
+    // ── Distance/ascent box ──
+    // Shows the day with the distance and ascent covered so far, following the pulse
+    const $animStats = document.getElementById('anim-stats');
+    let animStatsText = null;
+
+    function startAnimStats() {
+        const i = animTrack.userData.trackIdx, cum = trackCumStats[i], last = cum.dist.length - 1;
+        const km = d => (d / 1000).toFixed(1), m = g => String(Math.round(g));
+        // Pad to the width of the day's totals so the text keeps its width while counting up
+        const kmWidth = km(cum.dist[last]).length, mWidth = m(cum.gain[last]).length;
+        const day = trackLabels[i].day;
+        animStatsText = (d, g) => `${day ? day + ' ' : ''}${km(d).padStart(kmWidth)}km ${m(g).padStart(mWidth)}m`;
+        $animStats.style.opacity = 0;
+        $animStats.style.display = 'block';
+    }
+
+    function updateAnimStats(progress, opacity) {
+        const cum = trackCumStats[animTrack.userData.trackIdx], pc = pulseCum, n = pc.length;
+        // Find where the pulse is between track points k and k1, then interpolate the stats there
+        const d = progress * pc[n - 1];
+        let k = 0, hi = n - 1;
+        while (k < hi) { const mid = (k + hi + 1) >> 1; if (pc[mid] <= d) k = mid; else hi = mid - 1; }
+        const k1 = Math.min(k + 1, n - 1);
+        const f = pc[k1] > pc[k] ? (d - pc[k]) / (pc[k1] - pc[k]) : 0;
+        const at = a => a[k] + (a[k1] - a[k]) * f;
+        $animStats.textContent = animStatsText(at(cum.dist), at(cum.gain));
+        $animStats.style.opacity = opacity;
+    }
+
+    function stopAnimStats() {
+        $animStats.style.display = 'none';
+    }
+
     // Phase start times in ms from animation start
     function animPhases(duration) {
-        const pulseStart = ANIM_LEAD_MS + MARKER_MS;
+        const startMarkerStart = ANIM_LEAD_MS + STATS_FADE_MS;
+        const pulseStart = startMarkerStart + MARKER_MS;
         const pulseEnd = pulseStart + duration + (animEndMode === 'farthest' ? MARKER_MS : 0);
         const endMarkerStart = animEndMode === 'farthest' ? pulseStart + animFarFrac * duration : pulseEnd;
         const total = pulseEnd + (animEndMode === 'end' ? MARKER_MS : 0) + ANIM_TAIL_MS;
-        return { pulseStart, pulseEnd, endMarkerStart, total };
+        return { startMarkerStart, pulseStart, pulseEnd, endMarkerStart, total };
     }
 
     function updateTrackAnimation(t, duration) {
         const clamp01 = x => Math.min(Math.max(x, 0), 1);
-        const { pulseStart, pulseEnd, endMarkerStart } = animPhases(duration);
-        updateTrailMarker(animMarkers[0], clamp01((t - ANIM_LEAD_MS) / MARKER_MS));
+        const { startMarkerStart, pulseStart, pulseEnd, endMarkerStart } = animPhases(duration);
+        updateTrailMarker(animMarkers[0], clamp01((t - startMarkerStart) / MARKER_MS));
         if (animMarkers[1]) updateTrailMarker(animMarkers[1], clamp01((t - endMarkerStart) / MARKER_MS));
         // Pulse clock, held still at the farthest point while its marker appears
         let pt = t - pulseStart;
@@ -1498,7 +1564,9 @@
             const holdAt = animFarFrac * duration;
             if (pt > holdAt) pt = Math.max(holdAt, pt - MARKER_MS);
         }
-        updatePulse(clamp01(pt / duration), t >= pulseStart && t < pulseEnd);
+        const progress = clamp01(pt / duration);
+        updatePulse(progress, t >= pulseStart && t < pulseEnd);
+        updateAnimStats(progress, clamp01((t - ANIM_LEAD_MS) / STATS_FADE_MS));
     }
 
     function stopTrackAnimation() {
@@ -1508,6 +1576,7 @@
         stopAllCameraMotion();
         stopPulse();
         removeTrailMarkers();
+        stopAnimStats();
     }
 
     $btnAnimate.addEventListener('click', () => {
@@ -1522,6 +1591,7 @@
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
         startPulse();
+        startAnimStats();
         animMarkers = [makeTrailMarker(0, document.getElementById('txt-start-label').value)];
         animEndMode = document.getElementById('sel-end-marker').value;
         if (animEndMode !== 'none') {
