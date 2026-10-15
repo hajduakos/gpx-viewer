@@ -1342,13 +1342,21 @@
     const $btnAnimate = document.getElementById('btn-animate');
 
     // ── Pulse ──
-    // A short overlay line rides along the animated track: highlight color at the current point,
-    // fading to the track color PULSE_RADIUS_M before and after it. It sits slightly above the track
-    // so it stays on top where an out-and-back track overlaps itself.
+    // Recolors the animated track itself: highlight color at the current point, fading to the track
+    // color PULSE_RADIUS_M before and after it. Those points are also raised (up to PULSE_LIFT at the
+    // current point) so the pulse stays on top where an out-and-back track overlaps itself.
     const PULSE_RADIUS_M = 1000;
-    const PULSE_LIFT = 0.02;
-    let pulse = null;
+    const PULSE_LIFT = 0.005;
     let pulseCum = null;
+    let pulseRange = null;  // [first, last] track point currently recolored and raised
+
+    // Track point k is the end of segment k-1 and the start of segment k in Line2's interleaved buffers
+    function setTrackPoint(k, xyz, rgb) {
+        const g = animTrack.geometry, last = pulseCum.length - 1;
+        const pos = g.attributes.instanceStart.data.array, col = g.attributes.instanceColorStart.data.array;
+        if (k > 0) { pos.set(xyz, (k - 1) * 6 + 3); col.set(rgb, (k - 1) * 6 + 3); }
+        if (k < last) { pos.set(xyz, k * 6); col.set(rgb, k * 6); }
+    }
 
     function startPulse() {
         const p = animTrack.userData.positions, n = p.length / 3;
@@ -1357,69 +1365,54 @@
             const dx = p[k*3] - p[k*3-3], dy = p[k*3+1] - p[k*3-2], dz = p[k*3+2] - p[k*3-1];
             pulseCum[k] = pulseCum[k-1] + Math.hypot(dx, dy, dz) / S.scale;
         }
-        // Capacity: every track point plus the interpolated start, center and end of the window
-        const geom = new LineGeometry();
-        geom.setPositions(new Float32Array((n + 3) * 3));
-        geom.setColors(new Float32Array((n + 3) * 3));
-        pulse = new Line2(geom, new LineMaterial({ vertexColors: true, linewidth: animTrack.material.linewidth, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
-        pulse.frustumCulled = false;
-        scene.add(pulse);
-        animTrack.material.color.set(document.getElementById('clr-track').value);
+        pulseRange = null;
+
+        const g = animTrack.geometry;
+        if (!g.attributes.instanceColorStart) g.setColors(new Float32Array(n * 3));
+        const base = new THREE.Color(document.getElementById('clr-track').value);
+        const col = g.attributes.instanceColorStart.data;
+        for (let i = 0; i < col.array.length; i += 3) col.array.set([base.r, base.g, base.b], i);
+        col.needsUpdate = true;
+        animTrack.material.vertexColors = true;
+        animTrack.material.needsUpdate = true;
     }
 
-    function updatePulse(progress) {
-        const p = animTrack.userData.positions, cum = pulseCum, n = cum.length, total = cum[n - 1];
-        const dCur = progress * total;
-        const d0 = Math.max(0, dCur - PULSE_RADIUS_M), d1 = Math.min(total, dCur + PULSE_RADIUS_M);
-
-        // Index of the last track point at or before distance d
-        const indexAt = d => {
-            let lo = 0, hi = n - 1;
-            while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (cum[mid] <= d) lo = mid; else hi = mid - 1; }
-            return lo;
-        };
-        const samples = [d0];
-        for (let k = indexAt(d0) + 1; k < n && cum[k] < d1; k++) {
-            if (cum[k] > dCur && samples[samples.length - 1] < dCur) samples.push(dCur);
-            samples.push(cum[k]);
-        }
-        if (samples[samples.length - 1] < dCur) samples.push(dCur);
-        samples.push(d1);
-
+    function updatePulse(progress, active) {
+        const p = animTrack.userData.positions, cum = pulseCum, n = cum.length;
         const base = new THREE.Color(document.getElementById('clr-track').value);
         const peak = new THREE.Color(document.getElementById('clr-highlight').value);
-        const posBuf = pulse.geometry.attributes.instanceStart.data;
-        const colBuf = pulse.geometry.attributes.instanceColorStart.data;
-        let prevPos = null, prevCol = null;
-        samples.forEach((d, s) => {
-            const k = indexAt(d), k1 = Math.min(k + 1, n - 1);
-            const f = cum[k1] > cum[k] ? (d - cum[k]) / (cum[k1] - cum[k]) : 0;
-            const pos = [0, 1, 2].map(a => p[k*3+a] + (p[k1*3+a] - p[k*3+a]) * f);
-            const c = base.clone().lerp(peak, Math.max(0, 1 - Math.abs(d - dCur) / PULSE_RADIUS_M));
-            const col = [c.r, c.g, c.b];
-            if (prevPos) {
-                posBuf.array.set(prevPos, (s - 1) * 6); posBuf.array.set(pos, (s - 1) * 6 + 3);
-                colBuf.array.set(prevCol, (s - 1) * 6); colBuf.array.set(col, (s - 1) * 6 + 3);
-            }
-            prevPos = pos; prevCol = col;
-        });
-        posBuf.needsUpdate = true;
-        colBuf.needsUpdate = true;
-        pulse.geometry.instanceCount = samples.length - 1;
 
-        // Follow live track settings (offset, width, visibility, window size)
-        pulse.position.y = animTrack.position.y + PULSE_LIFT;
-        pulse.material.linewidth = animTrack.material.linewidth;
-        pulse.material.resolution.set(innerWidth, innerHeight);
+        // Put last frame's points back to their original height and the track color
+        if (pulseRange) {
+            for (let k = pulseRange[0]; k <= pulseRange[1]; k++) setTrackPoint(k, [p[k*3], p[k*3+1], p[k*3+2]], [base.r, base.g, base.b]);
+            pulseRange = null;
+        }
+
+        if (active && n > 1) {
+            const dCur = progress * cum[n - 1];
+            let k = 0, hi = n;
+            while (k < hi) { const mid = (k + hi) >> 1; if (cum[mid] < dCur - PULSE_RADIUS_M) k = mid + 1; else hi = mid; }
+            const first = k;
+            for (; k < n && cum[k] <= dCur + PULSE_RADIUS_M; k++) {
+                const t = Math.max(0, 1 - Math.abs(cum[k] - dCur) / PULSE_RADIUS_M);
+                const c = base.clone().lerp(peak, t);
+                setTrackPoint(k, [p[k*3], p[k*3+1] + PULSE_LIFT * t, p[k*3+2]], [c.r, c.g, c.b]);
+            }
+            if (k > first) pulseRange = [first, k - 1];
+        }
+
+        animTrack.geometry.attributes.instanceStart.data.needsUpdate = true;
+        animTrack.geometry.attributes.instanceColorStart.data.needsUpdate = true;
+        animTrack.material.color.setRGB(1, 1, 1);  // vertex colors carry the color; keep the tint neutral
     }
 
     function stopPulse() {
-        if (!pulse) return;
-        scene.remove(pulse);
-        pulse.geometry.dispose();
-        pulse.material.dispose();
-        pulse = null;
+        if (!pulseCum) return;
+        updatePulse(0, false);
+        animTrack.material.vertexColors = false;
+        animTrack.material.needsUpdate = true;
         animTrack.material.color.set(document.getElementById('clr-highlight').value);
+        pulseCum = null;
     }
 
     // ── Start/end markers ──
@@ -1483,8 +1476,7 @@
             const holdAt = animFarFrac * duration;
             if (pt > holdAt) pt = Math.max(holdAt, pt - MARKER_MS);
         }
-        updatePulse(clamp01(pt / duration));
-        pulse.visible = animTrack.visible && t >= pulseStart && t < pulseEnd;
+        updatePulse(clamp01(pt / duration), t >= pulseStart && t < pulseEnd);
     }
 
     function stopTrackAnimation() {
