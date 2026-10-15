@@ -303,8 +303,8 @@
             <input type="file" accept=".gpx" id="file-input" multiple>
         </div>
         <div class="file-picker" id="import-zone" style="padding:14px 32px;font-size:0.85rem;border-style:solid;color:#777">
-            <span>or import saved scene data (.json)</span>
-            <input type="file" accept=".json" id="import-input">
+            <span>or import saved scene data (.gpx3d)</span>
+            <input type="file" accept=".gpx3d,.json" id="import-input">
         </div>
         <div class="settings">
             <label>
@@ -1147,7 +1147,7 @@
                 prog('Step 3/4 — Loading satellite imagery...', 66 + (d / t) * 27, `Tile ${d} / ${t}`);
             });
 
-            cachedTerrainData = { elev: Array.from(elev), texTiles, bb, gw, gh, tracks, trackNames };
+            cachedTerrainData = { elev, texTiles, bb, gw, gh, tracks, trackNames };
 
             prog('Step 4/4 — Building 3D scene...', 95);
             await new Promise(r => setTimeout(r, 80));
@@ -1655,56 +1655,111 @@
         if (e.dataTransfer.files.length) processFiles(e.dataTransfer.files);
     });
 
-    document.getElementById('btn-export').addEventListener('click', () => {
-        if (!cachedTerrainData) return;
+    // ── Scene export/import ──
+    // Scene file layout: magic, uint32 header length, JSON header, elevation grid (Float64), then one JPEG per
+    // texture tile. Keeping the bulky parts binary avoids building one huge string: browsers cap strings at about
+    // 512M characters, which multi-tile high-resolution scenes exceed as base64 JSON.
+    const SCENE_MAGIC = 'GPX3DSCN';
+
+    function encodeTile(canvas) {
         // JPEG keeps large multi-tile exports manageable; the satellite source tiles are JPEG anyway
-        const { texTiles, ...rest } = cachedTerrainData;
-        const json = JSON.stringify({
-            ...rest,
-            texTiles: texTiles.map(t => ({ dataURL: t.canvas.toDataURL('image/jpeg', 0.92), offset: t.offset, repeat: t.repeat })),
-        });
-        const blob = new Blob([json], { type: 'application/json' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = 'scene-data.json';
-        a.click();
-        URL.revokeObjectURL(a.href);
+        return new Promise((res, rej) => canvas.toBlob(b => b ? res(b) : rej(new Error('Could not encode texture tile')), 'image/jpeg', 0.92));
+    }
+
+    const $btnExport = document.getElementById('btn-export');
+    $btnExport.addEventListener('click', async () => {
+        if (!cachedTerrainData) return;
+        $btnExport.disabled = true;
+        $btnExport.textContent = 'Exporting…';
+        try {
+            const { texTiles, elev, ...rest } = cachedTerrainData;
+            const tileBlobs = [];
+            for (const t of texTiles) tileBlobs.push(await encodeTile(t.canvas));  // one at a time to limit memory
+            const header = new TextEncoder().encode(JSON.stringify({
+                ...rest,
+                elevBytes: elev.byteLength,
+                texTiles: texTiles.map((t, i) => ({ offset: t.offset, repeat: t.repeat, bytes: tileBlobs[i].size })),
+            }));
+            const headerLen = new Uint8Array(4);
+            new DataView(headerLen.buffer).setUint32(0, header.length, true);
+            const blob = new Blob([SCENE_MAGIC, headerLen, header, elev, ...tileBlobs], { type: 'application/octet-stream' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'scene-data.gpx3d';
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 60000);  // give large downloads time to start
+        } catch (err) {
+            console.error(err);
+            alert('Export failed: ' + err.message);
+        } finally {
+            $btnExport.disabled = false;
+            $btnExport.textContent = 'Export scene data';
+        }
     });
+
+    async function canvasFromImage(src) {
+        // src is a Blob from a scene file, or a data URL from an older JSON export
+        const img = src instanceof Blob ? await createImageBitmap(src) : await new Promise((res, rej) => {
+            const i = new Image();
+            i.onload = () => res(i);
+            i.onerror = () => rej(new Error('Could not decode texture tile'));
+            i.src = src;
+        });
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        if (img.close) img.close();
+        return canvas;
+    }
+
+    async function readSceneFile(file, onTile) {
+        const bytes = async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer());
+
+        if (new TextDecoder().decode(await bytes(0, SCENE_MAGIC.length)) !== SCENE_MAGIC) {
+            // Older JSON export
+            const data = JSON.parse(await file.text());
+            if (!data.texTiles) throw new Error('Unsupported scene file');
+            const texTiles = [];
+            for (const [i, t] of data.texTiles.entries()) {
+                texTiles.push({ canvas: await canvasFromImage(t.dataURL), offset: t.offset, repeat: t.repeat });
+                onTile(i + 1, data.texTiles.length);
+            }
+            return { ...data, elev: new Float64Array(data.elev), texTiles };
+        }
+
+        let pos = SCENE_MAGIC.length;
+        const headerLen = new DataView((await bytes(pos, pos + 4)).buffer).getUint32(0, true);
+        pos += 4;
+        const { elevBytes, texTiles: tileInfo, ...rest } = JSON.parse(new TextDecoder().decode(await bytes(pos, pos + headerLen)));
+        pos += headerLen;
+        const elev = new Float64Array(await file.slice(pos, pos + elevBytes).arrayBuffer());
+        pos += elevBytes;
+        const texTiles = [];
+        for (const [i, t] of tileInfo.entries()) {
+            texTiles.push({ canvas: await canvasFromImage(file.slice(pos, pos + t.bytes, 'image/jpeg')), offset: t.offset, repeat: t.repeat });
+            pos += t.bytes;
+            onTile(i + 1, tileInfo.length);
+        }
+        if (pos !== file.size) throw new Error('Scene file is truncated or corrupt');
+        return { ...rest, elev, texTiles };
+    }
 
     document.getElementById('import-input').addEventListener('change', async e => {
         const file = e.target.files[0];
         if (!file) return;
         $landing.style.display = 'none';
         $progress.classList.add('active');
-        prog('Loading terrain data...', 30);
+        prog('Loading scene data...', 20);
         try {
-            const data = JSON.parse(await file.text());
-            const elev = new Float64Array(data.elev);
-            const bb = data.bb;
-            const gw = data.gw, gh = data.gh;
-
-            prog('Restoring texture...', 60);
-            const { texTiles: savedTiles, ...rest } = data;
-            const texTiles = await Promise.all(savedTiles.map(async t => {
-                const img = await new Promise((res, rej) => {
-                    const i = new Image();
-                    i.onload = () => res(i);
-                    i.onerror = rej;
-                    i.src = t.dataURL;
-                });
-                const canvas = document.createElement('canvas');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                canvas.getContext('2d').drawImage(img, 0, 0);
-                return { canvas, offset: t.offset, repeat: t.repeat };
-            }));
-
-            const tracks = (data.tracks || []).map(pts =>
+            const scene = await readSceneFile(file, (d, t) => prog('Restoring texture...', 30 + (d / t) * 55, `Tile ${d} / ${t}`));
+            const { elev, bb, gw, gh, texTiles } = scene;
+            const tracks = (scene.tracks || []).map(pts =>
                 pts.map(p => ({ ...p, time: p.time ? new Date(p.time) : null }))
             );
-            const trackNames = data.trackNames || [];
+            const trackNames = scene.trackNames || [];
 
-            cachedTerrainData = { ...rest, texTiles };
+            cachedTerrainData = scene;
 
             prog('Building 3D scene...', 90);
             await new Promise(r => setTimeout(r, 80));
