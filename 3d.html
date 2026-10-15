@@ -329,7 +329,8 @@
             <span class="ctrl-label">Camera</span>
             <button id="btn-recenter" class="ctrl-btn">Re-center</button>
             <select id="sel-camera-mode">
-                <option value="orbit">Orbit</option>
+                <option value="orbit-left">Orbit (left)</option>
+                <option value="orbit-right">Orbit (right)</option>
                 <option value="forward">Forward</option>
                 <option value="backward">Backward</option>
                 <option value="left">Left</option>
@@ -894,7 +895,6 @@
         controls.enableDamping = true;
         controls.dampingFactor = 0.06;
         controls.maxPolarAngle = Math.PI * 0.85;
-        controls.autoRotateSpeed = +$rotSpd.value;
         controls.update();
 
         scene.add(new THREE.AmbientLight(0xffffff, 0.65));
@@ -955,7 +955,7 @@
 
         function animate(now) {
             animId = requestAnimationFrame(animate);
-            if (cameraMode !== 'orbit' && movePlaying) {
+            if (movePlaying) {
                 const delta = (now - lastFrameTime) / 1000;
                 lastFrameTime = now;
                 if (delta > 0 && delta < 0.5) {
@@ -1125,14 +1125,18 @@
     // Rotation of the ground-projected view direction around the up axis, per move mode
     const MOVE_ANGLES = { forward: 0, left: Math.PI / 2, backward: Math.PI, right: -Math.PI / 2 };
 
-    let cameraMode = 'orbit';
+    let cameraMode = 'orbit-left';
     let movePlaying = false;
     let lastFrameTime = 0;
+
+    // A positive OrbitControls autoRotateSpeed swings the camera to its left around the target
+    const orbitSpeed = () => +$rotSpd.value * (cameraMode === 'orbit-right' ? -1 : 1);
 
     // Camera motion runs only while the track animation plays
     function startCameraMotion() {
         if (!controls) return;
-        if (cameraMode === 'orbit') {
+        if (cameraMode.startsWith('orbit')) {
+            controls.autoRotateSpeed = orbitSpeed();
             controls.autoRotate = true;
         } else {
             movePlaying = true;
@@ -1159,7 +1163,7 @@
     });
 
     $rotSpd.addEventListener('input', () => {
-        if (controls) controls.autoRotateSpeed = +$rotSpd.value;
+        if (controls) controls.autoRotateSpeed = orbitSpeed();
     });
 
     function setCameraFromSliders() {
