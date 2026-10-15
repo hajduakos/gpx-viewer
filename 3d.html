@@ -1555,7 +1555,7 @@
 
     function updateTrackAnimation(t, duration) {
         const clamp01 = x => Math.min(Math.max(x, 0), 1);
-        const { startMarkerStart, pulseStart, pulseEnd, endMarkerStart } = animPhases(duration);
+        const { startMarkerStart, pulseStart, endMarkerStart } = animPhases(duration);
         updateTrailMarker(animMarkers[0], clamp01((t - startMarkerStart) / MARKER_MS));
         if (animMarkers[1]) updateTrailMarker(animMarkers[1], clamp01((t - endMarkerStart) / MARKER_MS));
         // Pulse clock, held still at the farthest point while its marker appears
@@ -1565,7 +1565,7 @@
             if (pt > holdAt) pt = Math.max(holdAt, pt - MARKER_MS);
         }
         const progress = clamp01(pt / duration);
-        updatePulse(progress, t >= pulseStart && t < pulseEnd);
+        updatePulse(progress, t >= pulseStart);  // stays at the track's end once done, until the camera stops
         updateAnimStats(progress, clamp01((t - ANIM_LEAD_MS) / STATS_FADE_MS));
     }
 
