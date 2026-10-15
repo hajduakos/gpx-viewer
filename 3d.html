@@ -996,14 +996,30 @@
     }
 
 
+    // Track names look like "D07 Gokyo to Gokyo Ri [farthest]": an optional day prefix, then "A to B" or just "A",
+    // and an optional [farthest] tag. They prefill the start/end marker labels and the end marker mode.
+    let trackLabels = [];
+
+    function parseTrackName(raw) {
+        const tag = /\s*\[farthest\]\s*$/i;
+        const farthest = tag.test(raw);
+        const display = raw.replace(/^D\d+\s+/, '').replace(tag, '');
+        const parts = display.split(' to ');
+        if (parts.length < 2) return { display, start: display, end: '', endMode: 'none' };
+        return { display, start: parts[0], end: parts.slice(1).join(' to '), endMode: farthest ? 'farthest' : 'end' };
+    }
+
     function showViewer(tracks, trackNames) {
         $progress.classList.remove('active');
         $viewer.classList.add('active');
         document.getElementById('rotate-box').classList.add('active');
 
+        trackLabels = trackNames.map(parseTrackName);
+        const displayNames = trackLabels.map(l => l.display);
+
         const $sel = document.getElementById('sel-highlight');
         $sel.innerHTML = '<option value="">-- none --</option>';
-        trackNames.forEach((n, i) => {
+        displayNames.forEach((n, i) => {
             const opt = document.createElement('option');
             opt.value = i;
             opt.textContent = n;
@@ -1012,7 +1028,7 @@
 
         if (!tracks.length) return;
 
-        const perTrack = tracks.map((pts, i) => ({ name: trackNames[i], ...computeTrackStats(pts) }));
+        const perTrack = tracks.map((pts, i) => ({ name: displayNames[i], ...computeTrackStats(pts) }));
         const totalDist = perTrack.reduce((s, t) => s + t.dist, 0);
         const totalGain = perTrack.reduce((s, t) => s + t.elevGain, 0);
         const totalTime = perTrack.reduce((s, t) => s + t.elapsedSec, 0);
@@ -1289,6 +1305,12 @@
         $btnHead.disabled = idx === '';
         $btnAnimate.disabled = idx === '';
         if (trackAnimating) stopTrackAnimation();
+        if (idx !== '') {
+            const lb = trackLabels[+idx];
+            document.getElementById('txt-start-label').value = lb.start;
+            document.getElementById('txt-end-label').value = lb.end;
+            document.getElementById('sel-end-marker').value = lb.endMode;
+        }
         scene.traverse(o => {
             if (o.name === 'gpx-track') {
                 const hit = idx !== '' && o.userData.trackIdx === +idx;
