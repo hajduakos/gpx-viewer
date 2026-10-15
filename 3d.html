@@ -297,18 +297,20 @@
         #anim-stats {
             display: none;
             position: fixed;
-            /* 32px above the bottom of the 16:9 frame, so it stays inside the video crop */
-            bottom: calc((100vh - min(100vh, calc(100vw * 9 / 16))) / 2 + 32px);
+            /* 50px above the bottom of the 16:9 frame, so it stays inside the video crop */
+            bottom: calc((100vh - min(100vh, calc(100vw * 9 / 16))) / 2 + 50px);
             left: 50%;
             transform: translateX(-50%);
             z-index: 15;
             pointer-events: none;
-            padding: 12px 28px;
-            border-radius: 16px;
+            /* Sizes in em so the whole box shrinks with the text */
+            padding: 0.27em 0.64em;
+            border-radius: 0.36em;
             background: rgba(0,0,0,0.55);
             color: #fff;
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-            font-size: 44px;
+            /* 44px, but small enough to fit across a narrow 16:9 frame (the box is about 11.5em wide) */
+            font-size: min(44px, calc(min(100vw, calc(100vh * 16 / 9)) / 14));
             white-space: pre;
         }
     </style>
