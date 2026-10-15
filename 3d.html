@@ -1392,6 +1392,7 @@
     let trackAnimStart = 0;
     let animTrack = null;
     let animEndMode = 'end';
+    let controlsWereVisible = false;
     let animFarFrac = 0;  // Fraction of the track's length at which the farthest point lies
     const $btnAnimate = document.getElementById('btn-animate');
 
@@ -1577,6 +1578,7 @@
         stopPulse();
         removeTrailMarkers();
         stopAnimStats();
+        if (controlsWereVisible) $rotBox.classList.add('active');
     }
 
     $btnAnimate.addEventListener('click', () => {
@@ -1592,6 +1594,9 @@
         trackAnimStart = performance.now();
         startPulse();
         startAnimStats();
+        // Keep the frame clean while animating; the A key still stops it
+        controlsWereVisible = $rotBox.classList.contains('active');
+        $rotBox.classList.remove('active');
         animMarkers = [makeTrailMarker(0, document.getElementById('txt-start-label').value)];
         animEndMode = document.getElementById('sel-end-marker').value;
         if (animEndMode !== 'none') {
