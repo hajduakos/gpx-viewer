@@ -277,10 +277,28 @@
         }
         #stats-table tr:hover td { background: rgba(255,255,255,0.05); }
 
+        /* Largest centered 16:9 rectangle that fits the window: the crop for the final video */
+        #frame-guide {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            width: min(100vw, calc(100vh * 16 / 9));
+            height: min(100vh, calc(100vw * 9 / 16));
+            transform: translate(-50%, -50%);
+            outline: 2px dashed rgba(255,255,255,0.7);
+            outline-offset: -2px;
+            box-shadow: 0 0 0 100vmax rgba(0,0,0,0.35);
+            pointer-events: none;
+            z-index: 6;
+        }
+        #frame-guide.active { display: block; }
+
         #anim-stats {
             display: none;
             position: fixed;
-            bottom: 32px;
+            /* 32px above the bottom of the 16:9 frame, so it stays inside the video crop */
+            bottom: calc((100vh - min(100vh, calc(100vw * 9 / 16))) / 2 + 32px);
             left: 50%;
             transform: translateX(-50%);
             z-index: 15;
@@ -342,6 +360,8 @@
     <div id="stats-box"></div>
 
     <div id="anim-stats"></div>
+
+    <div id="frame-guide"></div>
 
     <div id="rotate-box">
         <div class="ctrl-row">
@@ -1029,6 +1049,7 @@
     // Track names look like "D07 Gokyo to Gokyo Ri [farthest]": an optional day prefix, then "A to B" or just "A",
     // and an optional [farthest] tag. They prefill the start/end marker labels and the end marker mode.
     let trackLabels = [];
+    const $frameGuide = document.getElementById('frame-guide');
 
     function parseTrackName(raw) {
         const tag = /\s*\[farthest\]\s*$/i;
@@ -1044,6 +1065,7 @@
         $progress.classList.remove('active');
         $viewer.classList.add('active');
         document.getElementById('rotate-box').classList.add('active');
+        $frameGuide.classList.add('active');
 
         trackLabels = trackNames.map(parseTrackName);
         const displayNames = trackLabels.map(l => l.display);
@@ -1580,6 +1602,7 @@
         removeTrailMarkers();
         stopAnimStats();
         if (controlsWereVisible) $rotBox.classList.add('active');
+        $frameGuide.classList.add('active');
     }
 
     $btnAnimate.addEventListener('click', () => {
@@ -1598,6 +1621,7 @@
         // Keep the frame clean while animating; the A key still stops it
         controlsWereVisible = $rotBox.classList.contains('active');
         $rotBox.classList.remove('active');
+        $frameGuide.classList.remove('active');
         animMarkers = [makeTrailMarker(0, document.getElementById('txt-start-label').value)];
         animEndMode = document.getElementById('sel-end-marker').value;
         if (animEndMode !== 'none') {
