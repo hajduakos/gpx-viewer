@@ -436,6 +436,7 @@
             <div class="ctrl-row">
                 <span class="ctrl-label">Background</span>
                 <input type="color" id="clr-background" value="#2f6eb5">
+                <label><input type="checkbox" id="chk-clouds" checked> Clouds</label>
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Fog</span>
@@ -878,6 +879,94 @@
         scene.add(new THREE.Mesh(bGeom, brownMat));
     }
 
+    // ── Sky ──
+    // Equirectangular sky: the background color with procedural clouds above the horizon. The cloud layer is
+    // generated once; changing the color only recomposites it.
+    let cloudLayer = null;
+    let skyTexture = null;
+
+    function makeCloudLayer(w, h) {
+        // Tileable fractal value noise, projected onto a flat cloud deck above the camera: clouds shrink toward the
+        // horizon like real ones, and nothing seams at the back or pinches at the zenith
+        const N = 256, tile = new Float32Array(N * N);
+        let amp = 0.5, total = 0;
+        for (let cells = 4; cells <= 64; cells *= 2, amp *= 0.5) {
+            const lattice = new Float32Array(cells * cells).map(() => Math.random());
+            const step = N / cells;
+            for (let y = 0; y < N; y++) {
+                const gy = y / step, y0 = Math.floor(gy), ty = gy - y0, sy = ty * ty * (3 - 2 * ty);
+                const r0 = y0 * cells, r1 = ((y0 + 1) % cells) * cells;
+                for (let x = 0; x < N; x++) {
+                    const gx = x / step, x0 = Math.floor(gx), x1 = (x0 + 1) % cells;
+                    const tx = gx - x0, sx = tx * tx * (3 - 2 * tx);
+                    const top = lattice[r0 + x0] + (lattice[r0 + x1] - lattice[r0 + x0]) * sx;
+                    const bot = lattice[r1 + x0] + (lattice[r1 + x1] - lattice[r1 + x0]) * sx;
+                    tile[y * N + x] += amp * (top + (bot - top) * sy);
+                }
+            }
+            total += amp;
+        }
+        const sample = (u, v) => {
+            u = ((u % N) + N) % N; v = ((v % N) + N) % N;
+            const x0 = Math.floor(u), y0 = Math.floor(v), tx = u - x0, ty = v - y0;
+            const x1 = (x0 + 1) % N, y1 = (y0 + 1) % N;
+            const a = tile[y0 * N + x0] + (tile[y0 * N + x1] - tile[y0 * N + x0]) * tx;
+            const b = tile[y1 * N + x0] + (tile[y1 * N + x1] - tile[y1 * N + x0]) * tx;
+            return (a + (b - a) * ty) / total;
+        };
+        const smooth = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        const img = ctx.createImageData(w, h);
+        const d = img.data;
+        const DECK_SCALE = N * 0.6;  // noise tile pixels per unit of cloud deck at height 1
+        // The camera looks down on a floating terrain block, so much of the visible sky is below the true horizon;
+        // the cloud deck's horizon is lowered by this angle so clouds continue down there too
+        const CLOUD_HORIZON_DROP = 0.35;
+        for (let row = 0; row < h; row++) {
+            const lat = (0.5 - (row + 0.5) / h) * Math.PI + CLOUD_HORIZON_DROP;
+            if (lat <= 0) break;
+            const toDeck = Math.cos(lat) / Math.sin(lat);  // horizontal distance to where this view ray hits the deck
+            const horizonFade = smooth(0.01, 0.09, lat);
+            if (horizonFade === 0) continue;
+            for (let col = 0; col < w; col++) {
+                const lon = (col + 0.5) / w * 2 * Math.PI;
+                const n = sample(Math.cos(lon) * toDeck * DECK_SCALE, Math.sin(lon) * toDeck * DECK_SCALE);
+                const i = (row * w + col) * 4;
+                d[i] = d[i + 1] = d[i + 2] = 230 + 25 * smooth(0.55, 0.8, n);  // brighter cloud cores
+                d[i + 3] = 255 * smooth(0.48, 0.68, n) * horizonFade;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        return cv;
+    }
+
+    function updateSky() {
+        if (!scene) return;
+        const color = document.getElementById('clr-background').value;
+        if (scene.fog) scene.fog.color.set(color);
+        if (!document.getElementById('chk-clouds').checked) {
+            scene.background = new THREE.Color(color);
+            return;
+        }
+        if (!cloudLayer) cloudLayer = makeCloudLayer(1024, 512);
+        const cv = skyTexture ? skyTexture.image : document.createElement('canvas');
+        cv.width = cloudLayer.width; cv.height = cloudLayer.height;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(cloudLayer, 0, 0);
+        // three.js caches the cube map it builds from an equirectangular background per texture, so a recolor
+        // needs a fresh texture; disposing the old one drops its cached cube map
+        if (skyTexture) skyTexture.dispose();
+        skyTexture = new THREE.CanvasTexture(cv);
+        skyTexture.mapping = THREE.EquirectangularReflectionMapping;
+        skyTexture.colorSpace = THREE.SRGBColorSpace;
+        scene.background = skyTexture;
+    }
+
     function buildScene(elev, texTiles, tracks, bb, gw, gh) {
         const mid = (bb.maxLat + bb.minLat) / 2;
         const wm = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
@@ -930,7 +1019,8 @@
         });
 
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(document.getElementById('clr-background').value);
+        skyTexture = null;
+        updateSky();
 
         camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
         camera.position.set(sw * 0.6, (maxE - meanE) * scale + 25, sd * 0.6);
@@ -1249,11 +1339,8 @@
     document.getElementById('sld-theta').addEventListener('input', setCameraFromSliders);
     document.getElementById('sld-phi').addEventListener('input', setCameraFromSliders);
 
-    document.getElementById('clr-background').addEventListener('input', e => {
-        if (!scene) return;
-        scene.background = new THREE.Color(e.target.value);
-        if (scene.fog) scene.fog.color.set(e.target.value);
-    });
+    document.getElementById('clr-background').addEventListener('input', updateSky);
+    document.getElementById('chk-clouds').addEventListener('change', updateSky);
 
     document.getElementById('sld-fog').addEventListener('input', e => {
         if (!scene) return;
