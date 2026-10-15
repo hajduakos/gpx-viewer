@@ -1407,10 +1407,12 @@
 
     // Timeline: camera-only lead-in → stats box fades in → start marker → pulse (slider duration) → end marker
     // → camera-only tail. With the end marker at the farthest point, the pulse instead holds there while the
-    // marker appears. The camera keeps moving and the stats box stays up until the very end.
+    // marker appears. Once the pulse arrives, the whole track fades to the highlight color (FILL_MS), overlapping
+    // the end marker or the tail. The camera keeps moving and the stats box stays up until the very end.
     const ANIM_LEAD_MS = 2000;
     const STATS_FADE_MS = 500;
     const MARKER_MS = 500;
+    const FILL_MS = 1000;  // after the pulse arrives, the whole track fades to the highlight color
     const ANIM_TAIL_MS = 2000;
     let trackAnimating = false;
     let trackAnimStart = 0;
@@ -1456,7 +1458,8 @@
         animTrack.material.needsUpdate = true;
     }
 
-    function updatePulse(progress, active) {
+    // fill (0..1) blends the whole track toward the highlight color once the pulse has arrived
+    function updatePulse(progress, active, fill = 0) {
         const p = animTrack.userData.positions, cum = pulseCum, n = cum.length;
         const base = new THREE.Color(document.getElementById('clr-track').value);
         const peak = new THREE.Color(document.getElementById('clr-highlight').value);
@@ -1467,17 +1470,23 @@
             pulseRange = null;
         }
 
-        if (active && n > 1) {
+        if ((active || fill > 0) && n > 1) {
             const dCur = progress * cum[n - 1];
-            let k = 0, hi = n;
-            while (k < hi) { const mid = (k + hi) >> 1; if (cum[mid] < dCur - PULSE_RADIUS_M) k = mid + 1; else hi = mid; }
-            const first = k;
-            for (; k < n && cum[k] <= dCur + PULSE_RADIUS_M; k++) {
-                const t = Math.max(0, 1 - Math.abs(cum[k] - dCur) / PULSE_RADIUS_M);
-                const c = base.clone().lerp(peak, t);
+            // Points [first, end) to update: the pulse window, or the whole track while filling
+            let first = 0, end = n;
+            if (fill === 0) {
+                let hi = n;
+                while (first < hi) { const mid = (first + hi) >> 1; if (cum[mid] < dCur - PULSE_RADIUS_M) first = mid + 1; else hi = mid; }
+                end = first;
+                while (end < n && cum[end] <= dCur + PULSE_RADIUS_M) end++;
+            }
+            const c = new THREE.Color();
+            for (let k = first; k < end; k++) {
+                const t = active ? Math.max(0, 1 - Math.abs(cum[k] - dCur) / PULSE_RADIUS_M) : 0;
+                c.copy(base).lerp(peak, t + (1 - t) * fill);
                 setTrackPoint(k, [p[k*3], p[k*3+1] + PULSE_LIFT * t, p[k*3+2]], [c.r, c.g, c.b]);
             }
-            if (k > first) pulseRange = [first, k - 1];
+            if (end > first) pulseRange = [first, end - 1];
         }
 
         animTrack.geometry.attributes.instanceStart.data.needsUpdate = true;
@@ -1581,7 +1590,7 @@
 
     function updateTrackAnimation(t, duration) {
         const clamp01 = x => Math.min(Math.max(x, 0), 1);
-        const { startMarkerStart, pulseStart, endMarkerStart } = animPhases(duration);
+        const { startMarkerStart, pulseStart, pulseEnd, endMarkerStart } = animPhases(duration);
         updateTrailMarker(animMarkers[0], clamp01((t - startMarkerStart) / MARKER_MS));
         if (animMarkers[1]) updateTrailMarker(animMarkers[1], clamp01((t - endMarkerStart) / MARKER_MS));
         // Pulse clock, held still at the farthest point while its marker appears
@@ -1591,7 +1600,8 @@
             if (pt > holdAt) pt = Math.max(holdAt, pt - MARKER_MS);
         }
         const progress = clamp01(pt / duration);
-        updatePulse(progress, t >= pulseStart);  // stays at the track's end once done, until the camera stops
+        // Stays at the track's end once done, until the camera stops
+        updatePulse(progress, t >= pulseStart, clamp01((t - pulseEnd) / FILL_MS));
         updateAnimStats(progress, clamp01((t - ANIM_LEAD_MS) / STATS_FADE_MS));
     }
 
