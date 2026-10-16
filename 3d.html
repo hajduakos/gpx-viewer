@@ -755,7 +755,7 @@
         }
     }
 
-    let renderer, labelRenderer, scene, camera, controls;
+    let renderer, labelRenderer, scene, camera, controls, ambientLight, sunLight;
     let terrainChunks = [];
     let S = null;
     let D = null;
@@ -891,6 +891,12 @@
 
     const skyColor = () => document.getElementById('sel-sky').value === 'night' ? NIGHT_COLOR : SKY_COLOR;
 
+    // Night dims the terrain lighting to a slightly bluish moonlight; track lines are unlit and stay bright
+    const LIGHTING = {
+        day:   { ambient: [0xffffff, 0.65], sun: [0xffffff, 0.8] },
+        night: { ambient: [0xb0c0ff, 0.3],  sun: [0xc8d4ff, 0.35] },
+    };
+
     function makeStarSky(w, h) {
         const cv = document.createElement('canvas');
         cv.width = w; cv.height = h;
@@ -992,6 +998,11 @@
         if (!scene) return;
         const mode = document.getElementById('sel-sky').value;
         if (scene.fog) scene.fog.color.set(skyColor());
+        const light = LIGHTING[mode === 'night' ? 'night' : 'day'];
+        ambientLight.color.set(light.ambient[0]);
+        ambientLight.intensity = light.ambient[1];
+        sunLight.color.set(light.sun[0]);
+        sunLight.intensity = light.sun[1];
         if (mode === 'clear') {
             scene.background = new THREE.Color(SKY_COLOR);
             return;
@@ -1058,8 +1069,6 @@
         });
 
         scene = new THREE.Scene();
-        skyTextures = {};
-        updateSky();
         camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
         camera.position.set(sw * 0.6, (maxE - meanE) * scale + 25, sd * 0.6);
 
@@ -1077,10 +1086,13 @@
         controls.maxPolarAngle = Math.PI * 0.85;
         controls.update();
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.65));
-        const dl = new THREE.DirectionalLight(0xffffff, 0.8);
-        dl.position.set(50, 80, 30);
-        scene.add(dl);
+        ambientLight = new THREE.AmbientLight();
+        sunLight = new THREE.DirectionalLight();
+        sunLight.position.set(50, 80, 30);
+        scene.add(ambientLight, sunLight);
+
+        skyTextures = {};
+        updateSky();
 
         const geom = new THREE.PlaneGeometry(sw, sd, gw - 1, gh - 1);
         geom.rotateX(-Math.PI / 2);
