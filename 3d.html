@@ -1777,8 +1777,8 @@
             new LineMaterial({ linewidth: 4, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
         div.textContent = text;
-        // 1.5× the regular label size
-        div.style.cssText = `color:#fff;font-size:${document.getElementById('sld-label-size').value * 1.5}px;padding:3px 9px;background:rgba(0,0,0,0.55);border-radius:6px;white-space:nowrap;`;
+        // 1.65× the regular label size
+        div.style.cssText = `color:#fff;font-size:${document.getElementById('sld-label-size').value * 1.65}px;padding:3px 10px;background:rgba(0,0,0,0.55);border-radius:7px;white-space:nowrap;`;
         const label = new CSS2DObject(div);
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
@@ -1819,7 +1819,7 @@
         const km = d => (d / 1000).toFixed(1), m = g => String(Math.round(g));
         // Pad to the width of the day's totals so the text keeps its width while counting up
         const kmWidth = km(cum.dist[last]).length, mWidth = m(cum.gain[last]).length;
-        const day = trackLabels[i].day;
+        const day = trackLabels[i].day.replace(/^D/, 'Day ');  // "D01" -> "Day 01"
         animStatsText = (d, g) => `${day ? day + ' ' : ''}${km(d).padStart(kmWidth)}km ${m(g).padStart(mWidth)}m`;
         $animStats.style.opacity = 0;
         $animStats.style.display = 'block';
