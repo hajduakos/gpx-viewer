@@ -438,6 +438,7 @@
                 <select id="sel-sky">
                     <option value="clear">Clear</option>
                     <option value="clouds" selected>Clouds</option>
+                    <option value="sunset">Sunset</option>
                     <option value="night">Night</option>
                 </select>
             </div>
@@ -883,19 +884,44 @@
     }
 
     // ── Sky ──
-    // Clear: plain deep blue. Clouds: deep blue with procedural clouds. Night: black with stars.
-    // The textured modes are equirectangular backgrounds, built once per scene on first use.
+    // Clear: plain deep blue. Clouds: deep blue with procedural clouds. Sunset: orange horizon fading to blue
+    // overhead. Night: black with stars. The textured modes are equirectangular backgrounds, built once per scene
+    // on first use.
     const SKY_COLOR = '#2f6eb5';
     const NIGHT_COLOR = '#000000';
+    const SUNSET_HORIZON = '#ff9c50';
+    // [elevation in degrees, color], top to bottom, relative to a horizon lowered by SUNSET_HORIZON_DROP: the camera
+    // usually looks down on the floating terrain block, so much of the visible sky is below the true horizon
+    const SUNSET_HORIZON_DROP = 10;
+    const SUNSET_STOPS = [
+        [90, '#1d3a73'], [55, '#3f63a8'], [30, '#8d86b3'], [14, '#e6a57e'],
+        [4, SUNSET_HORIZON], [-6, '#ff8a3d'], [-30, '#c4552f'], [-90, '#5a2a22'],
+    ];
     let skyTextures = {};
 
-    const skyColor = () => document.getElementById('sel-sky').value === 'night' ? NIGHT_COLOR : SKY_COLOR;
+    const skyColor = () => ({ night: NIGHT_COLOR, sunset: SUNSET_HORIZON })[document.getElementById('sel-sky').value] || SKY_COLOR;
 
-    // Night dims the terrain lighting to a slightly bluish moonlight; track lines are unlit and stay bright
+    // Terrain lighting per sky; track lines are unlit and stay bright. Night is a dim bluish moonlight,
+    // sunset a warm light from a low sun.
     const LIGHTING = {
-        day:   { ambient: [0xffffff, 0.65], sun: [0xffffff, 0.8] },
-        night: { ambient: [0xb0c0ff, 0.3],  sun: [0xc8d4ff, 0.35] },
+        day:    { ambient: [0xffffff, 0.65], sun: [0xffffff, 0.8],  sunPos: [50, 80, 30] },
+        sunset: { ambient: [0xffd8b8, 0.45], sun: [0xffa860, 0.95], sunPos: [80, 22, 30] },
+        night:  { ambient: [0xb0c0ff, 0.3],  sun: [0xc8d4ff, 0.35], sunPos: [50, 80, 30] },
     };
+
+    function makeSunsetSky(w, h) {
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        // Rows of an equirectangular image are linear in elevation: +90° at the top, -90° at the bottom
+        const g = ctx.createLinearGradient(0, 0, 0, h);
+        for (const [deg, color] of SUNSET_STOPS) {
+            g.addColorStop(Math.min(Math.max(0.5 - (deg - SUNSET_HORIZON_DROP) / 180, 0), 1), color);
+        }
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+        return cv;
+    }
 
     function makeStarSky(w, h) {
         const cv = document.createElement('canvas');
@@ -998,18 +1024,20 @@
         if (!scene) return;
         const mode = document.getElementById('sel-sky').value;
         if (scene.fog) scene.fog.color.set(skyColor());
-        const light = LIGHTING[mode === 'night' ? 'night' : 'day'];
+        const light = LIGHTING[mode] || LIGHTING.day;
         ambientLight.color.set(light.ambient[0]);
         ambientLight.intensity = light.ambient[1];
         sunLight.color.set(light.sun[0]);
         sunLight.intensity = light.sun[1];
+        sunLight.position.set(...light.sunPos);
         if (mode === 'clear') {
             scene.background = new THREE.Color(SKY_COLOR);
             return;
         }
         if (!skyTextures[mode]) {
-            // Stars need a sharper texture than soft clouds to stay crisp on screen
-            const tex = new THREE.CanvasTexture(mode === 'night' ? makeStarSky(4096, 2048) : makeCloudSky());
+            // Stars need a sharper texture than soft clouds or a gradient to stay crisp on screen
+            const make = { night: () => makeStarSky(4096, 2048), sunset: () => makeSunsetSky(1024, 512), clouds: makeCloudSky };
+            const tex = new THREE.CanvasTexture(make[mode]());
             tex.mapping = THREE.EquirectangularReflectionMapping;
             tex.colorSpace = THREE.SRGBColorSpace;
             skyTextures[mode] = tex;
@@ -1088,7 +1116,6 @@
 
         ambientLight = new THREE.AmbientLight();
         sunLight = new THREE.DirectionalLight();
-        sunLight.position.set(50, 80, 30);
         scene.add(ambientLight, sunLight);
 
         skyTextures = {};
