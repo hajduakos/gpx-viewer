@@ -440,6 +440,7 @@
                     <option value="clouds" selected>Clouds</option>
                     <option value="sunset">Sunset</option>
                     <option value="night">Night</option>
+                    <option value="night-to-day">Night to day</option>
                 </select>
             </div>
             <div class="ctrl-row">
@@ -899,7 +900,7 @@
     ];
     let skyTextures = {};
 
-    const skyColor = () => ({ night: NIGHT_COLOR, sunset: SUNSET_HORIZON })[document.getElementById('sel-sky').value] || SKY_COLOR;
+    const skyColor = () => ({ night: NIGHT_COLOR, 'night-to-day': NIGHT_COLOR, sunset: SUNSET_HORIZON })[document.getElementById('sel-sky').value] || SKY_COLOR;
 
     // Terrain lighting per sky; track lines are unlit and stay bright. Night is a dim bluish moonlight,
     // sunset a warm light from a low sun.
@@ -1020,16 +1021,27 @@
         return cv;
     }
 
-    function updateSky() {
-        if (!scene) return;
-        const mode = document.getElementById('sel-sky').value;
-        if (scene.fog) scene.fog.color.set(skyColor());
-        const light = LIGHTING[mode] || LIGHTING.day;
+    function applyLighting(light) {
         ambientLight.color.set(light.ambient[0]);
         ambientLight.intensity = light.ambient[1];
         sunLight.color.set(light.sun[0]);
         sunLight.intensity = light.sun[1];
         sunLight.position.set(...light.sunPos);
+    }
+
+    function updateSky() {
+        if (!scene) return;
+        const mode = document.getElementById('sel-sky').value;
+        if (skyDome) skyDome.visible = mode === 'night-to-day';
+        if (mode === 'night-to-day') {
+            // Starts at night; the animation drives it toward day
+            if (!skyDome) { skyDome = makeSkyDome(); scene.add(skyDome); }
+            scene.background = null;
+            applyNightToDay(0);
+            return;
+        }
+        if (scene.fog) scene.fog.color.set(skyColor());
+        applyLighting(LIGHTING[mode] || LIGHTING.day);
         if (mode === 'clear') {
             scene.background = new THREE.Color(SKY_COLOR);
             return;
@@ -1043,6 +1055,81 @@
             skyTextures[mode] = tex;
         }
         scene.background = skyTextures[mode];
+    }
+
+    // ── Night to day ──
+    // A camera-centered sky dome blends the star sky, the sunrise gradient and the clear day blue as the hike
+    // progresses. (Scene backgrounds can't blend: three.js builds and caches a cube map per background texture.)
+    let skyDome = null;
+
+    function makeSkyDome() {
+        const tex = cv => {
+            const t = new THREE.CanvasTexture(cv);
+            t.colorSpace = THREE.SRGBColorSpace;
+            t.minFilter = THREE.LinearFilter;  // no mipmaps: they would show a line where longitude wraps around
+            t.generateMipmaps = false;
+            return t;
+        };
+        const material = new THREE.ShaderMaterial({
+            uniforms: {
+                night: { value: tex(makeStarSky(4096, 2048)) },
+                sunrise: { value: tex(makeSunsetSky(1024, 512)) },
+                day: { value: new THREE.Color(SKY_COLOR) },
+                toSunrise: { value: 0 },
+                toDay: { value: 0 },
+            },
+            vertexShader: `
+                varying vec3 vDir;
+                void main() {
+                    vDir = position;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }`,
+            fragmentShader: `
+                uniform sampler2D night;
+                uniform sampler2D sunrise;
+                uniform vec3 day;
+                uniform float toSunrise;
+                uniform float toDay;
+                varying vec3 vDir;
+                void main() {
+                    // Same equirectangular mapping three.js uses for backgrounds
+                    vec3 d = normalize(vDir);
+                    vec2 uv = vec2(atan(d.z, d.x) * 0.15915494 + 0.5, asin(clamp(d.y, -1.0, 1.0)) * 0.31830989 + 0.5);
+                    vec3 c = mix(texture2D(night, uv).rgb, texture2D(sunrise, uv).rgb, toSunrise);
+                    gl_FragColor = vec4(mix(c, day, toDay), 1.0);
+                    #include <colorspace_fragment>
+                }`,
+            side: THREE.BackSide,
+            depthWrite: false,
+            depthTest: false,
+        });
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(500, 64, 32), material);
+        dome.renderOrder = -1;  // drawn first, behind everything
+        dome.frustumCulled = false;
+        return dome;
+    }
+
+    function mixLighting(a, b, t) {
+        const col = (x, y) => new THREE.Color(x).lerp(new THREE.Color(y), t);
+        const num = (x, y) => x + (y - x) * t;
+        return {
+            ambient: [col(a.ambient[0], b.ambient[0]), num(a.ambient[1], b.ambient[1])],
+            sun: [col(a.sun[0], b.sun[0]), num(a.sun[1], b.sun[1])],
+            sunPos: a.sunPos.map((v, i) => num(v, b.sunPos[i])),
+        };
+    }
+
+    // progress: 0..1 along the hike. Fades from night to sunrise over the first half, then to day over the second.
+    function applyNightToDay(progress) {
+        const smooth = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+        const toSunrise = smooth(0, 0.5, progress), toDay = smooth(0.5, 1, progress);
+        skyDome.material.uniforms.toSunrise.value = toSunrise;
+        skyDome.material.uniforms.toDay.value = toDay;
+        applyLighting(mixLighting(mixLighting(LIGHTING.night, LIGHTING.sunset, toSunrise), LIGHTING.day, toDay));
+        if (scene.fog) {
+            scene.fog.color.set(new THREE.Color(NIGHT_COLOR).lerp(new THREE.Color(SUNSET_HORIZON), toSunrise)
+                .lerp(new THREE.Color(SKY_COLOR), toDay));
+        }
     }
 
     function buildScene(elev, texTiles, tracks, bb, gw, gh) {
@@ -1119,6 +1206,7 @@
         scene.add(ambientLight, sunLight);
 
         skyTextures = {};
+        skyDome = null;
         updateSky();
 
         const geom = new THREE.PlaneGeometry(sw, sd, gw - 1, gh - 1);
@@ -1198,6 +1286,7 @@
             );
             $sldTheta.value = sph.theta;
             $sldPhi.value = sph.phi;
+            if (skyDome) skyDome.position.copy(camera.position);
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
         }
@@ -1460,7 +1549,7 @@
 
     document.getElementById('chk-wireframe').addEventListener('change', e => {
         if (!scene) return;
-        scene.traverse(o => { if (o.isMesh && o.material) o.material.wireframe = e.target.checked; });
+        scene.traverse(o => { if (o.isMesh && o.material && o !== skyDome) o.material.wireframe = e.target.checked; });
     });
 
     document.getElementById('chk-texture').addEventListener('change', e => {
@@ -1762,6 +1851,7 @@
             if (pt > holdAt) pt = Math.max(holdAt, pt - MARKER_MS);
         }
         const progress = clamp01(pt / duration);
+        if (document.getElementById('sel-sky').value === 'night-to-day') applyNightToDay(progress);
         // Stays at the track's end once done, until the camera stops
         updatePulse(progress, t >= pulseStart, clamp01((t - pulseEnd) / FILL_MS));
         updateAnimStats(progress, clamp01((t - ANIM_LEAD_MS) / STATS_FADE_MS));
@@ -1775,6 +1865,7 @@
         stopPulse();
         removeTrailMarkers();
         stopAnimStats();
+        updateSky();  // back to the sky's starting state (night for Night to day)
         if (controlsWereVisible) $rotBox.classList.add('active');
         $frameGuide.classList.add('active');
     }
