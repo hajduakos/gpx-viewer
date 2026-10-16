@@ -151,7 +151,7 @@
             transition: all 0.2s; flex-shrink: 0;
         }
         #rot-speed { width: 80px; flex: 1; }
-        #sel-highlight, #sel-camera-mode, #sel-end-marker, #txt-start-label, #txt-end-label {
+        #sel-highlight, #sel-camera-mode, #sel-end-marker, #sel-sky, #txt-start-label, #txt-end-label {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 4px;
@@ -434,9 +434,11 @@
                 <label><input type="checkbox" id="chk-texture" checked> Texture</label>
             </div>
             <div class="ctrl-row">
-                <span class="ctrl-label">Background</span>
-                <input type="color" id="clr-background" value="#2f6eb5">
-                <label><input type="checkbox" id="chk-clouds" checked> Clouds</label>
+                <span class="ctrl-label">Sky</span>
+                <select id="sel-sky">
+                    <option value="clear">Clear</option>
+                    <option value="clouds" selected>Clouds</option>
+                </select>
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Fog</span>
@@ -880,9 +882,8 @@
     }
 
     // ── Sky ──
-    // Equirectangular sky: the background color with procedural clouds above the horizon. The cloud layer is
-    // generated once; changing the color only recomposites it.
-    let cloudLayer = null;
+    // Deep blue, either clear or with procedural clouds on an equirectangular background texture
+    const SKY_COLOR = '#2f6eb5';
     let skyTexture = null;
 
     function makeCloudLayer(w, h) {
@@ -945,25 +946,22 @@
 
     function updateSky() {
         if (!scene) return;
-        const color = document.getElementById('clr-background').value;
-        if (scene.fog) scene.fog.color.set(color);
-        if (!document.getElementById('chk-clouds').checked) {
-            scene.background = new THREE.Color(color);
+        if (document.getElementById('sel-sky').value === 'clear') {
+            scene.background = new THREE.Color(SKY_COLOR);
             return;
         }
-        if (!cloudLayer) cloudLayer = makeCloudLayer(1024, 512);
-        const cv = skyTexture ? skyTexture.image : document.createElement('canvas');
-        cv.width = cloudLayer.width; cv.height = cloudLayer.height;
-        const ctx = cv.getContext('2d');
-        ctx.fillStyle = color;
-        ctx.fillRect(0, 0, cv.width, cv.height);
-        ctx.drawImage(cloudLayer, 0, 0);
-        // three.js caches the cube map it builds from an equirectangular background per texture, so a recolor
-        // needs a fresh texture; disposing the old one drops its cached cube map
-        if (skyTexture) skyTexture.dispose();
-        skyTexture = new THREE.CanvasTexture(cv);
-        skyTexture.mapping = THREE.EquirectangularReflectionMapping;
-        skyTexture.colorSpace = THREE.SRGBColorSpace;
+        if (!skyTexture) {
+            const clouds = makeCloudLayer(1024, 512);
+            const cv = document.createElement('canvas');
+            cv.width = clouds.width; cv.height = clouds.height;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = SKY_COLOR;
+            ctx.fillRect(0, 0, cv.width, cv.height);
+            ctx.drawImage(clouds, 0, 0);
+            skyTexture = new THREE.CanvasTexture(cv);
+            skyTexture.mapping = THREE.EquirectangularReflectionMapping;
+            skyTexture.colorSpace = THREE.SRGBColorSpace;
+        }
         scene.background = skyTexture;
     }
 
@@ -1339,8 +1337,7 @@
     document.getElementById('sld-theta').addEventListener('input', setCameraFromSliders);
     document.getElementById('sld-phi').addEventListener('input', setCameraFromSliders);
 
-    document.getElementById('clr-background').addEventListener('input', updateSky);
-    document.getElementById('chk-clouds').addEventListener('change', updateSky);
+    document.getElementById('sel-sky').addEventListener('change', updateSky);
 
     document.getElementById('sld-fog').addEventListener('input', e => {
         if (!scene) return;
@@ -1348,8 +1345,7 @@
         if (v === 0) {
             scene.fog = null;
         } else {
-            const bg = document.getElementById('clr-background').value;
-            scene.fog = new THREE.FogExp2(bg, v * 0.02);
+            scene.fog = new THREE.FogExp2(SKY_COLOR, v * 0.02);
         }
     });
 
