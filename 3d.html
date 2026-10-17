@@ -407,6 +407,9 @@
                 <option value="farthest">Farthest point (long out and back)</option>
             </select>
         </div>
+        <div class="ctrl-row">
+            <label class="ctrl-label"><input type="checkbox" id="chk-zoom-out"> Zoom out in the end</label>
+        </div>
         <button id="btn-advanced">&#9662; Advanced settings</button>
         <div id="advanced-settings">
             <div class="adv-section-title">Tracks</div>
@@ -1291,8 +1294,12 @@
                 }
             }
             const animDuration = +document.getElementById('sld-animate-dur').value * 1000;
-            if (trackAnimating && now - trackAnimStart >= animPhases(animDuration).total) stopTrackAnimation();
-            if (trackAnimating) updateTrackAnimation(now - trackAnimStart, animDuration);
+            if (trackAnimating) {
+                const t = now - trackAnimStart, total = animPhases(animDuration).total;
+                if (t >= total + (animZoomOut ? ZOOM_OUT_MS + ZOOM_HOLD_MS : 0)) stopTrackAnimation();
+                else if (t >= total) updateZoomOut(t - total);
+                else updateTrackAnimation(t, animDuration);
+            }
             controls.update();
             const sph = new THREE.Spherical().setFromVector3(
                 camera.position.clone().sub(controls.target)
@@ -1684,6 +1691,7 @@
     let animEndMode = 'end';
     let controlsWereVisible = false;
     let animFarFrac = 0;  // Fraction of the track's length at which the farthest point lies
+    let animZoomOut = false;  // "Zoom out in the end", read when the animation starts
     const $btnAnimate = document.getElementById('btn-animate');
 
     // ── Pulse ──
@@ -1870,12 +1878,69 @@
         updateAnimStats(progress, clamp01((t - ANIM_LEAD_MS) / STATS_FADE_MS));
     }
 
+    // ── Zoom out in the end ──
+    // After the normal timeline: drop the markers and stats box, de-highlight the track, then move the camera over ZOOM_OUT_MS to
+    // a north-up, top-down view of the whole trek, and drift slowly further out for ZOOM_HOLD_MS
+    const ZOOM_OUT_MS = 2000;
+    const ZOOM_HOLD_MS = 4000;
+    const ZOOM_HOLD_DRIFT = 0.05;  // Fraction the camera distance grows during the hold
+    let zoomOut = null;
+
+    function startZoomOut() {
+        removeTrailMarkers();
+        stopAnimStats();
+        stopAllCameraMotion();
+        stopPulse();
+        animTrack.material.color.set(document.getElementById('clr-track').value);
+        animTrack.position.y = +document.getElementById('sld-track-offset').value;
+
+        const box = new THREE.Box3(), v = new THREE.Vector3();
+        scene.traverse(o => {
+            if (o.name !== 'gpx-track') return;
+            const p = o.userData.positions;
+            for (let i = 0; i < p.length; i += 3) box.expandByPoint(v.set(p[i], p[i + 1] + o.position.y, p[i + 2]));
+        });
+        const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+        // Fit the trek inside the 16:9 frame guide with a margin. Extents are measured at the box's top, which is
+        // closest to the camera and so appears largest.
+        const frameW = Math.min(innerWidth, innerHeight * 16 / 9), frameH = Math.min(innerHeight, innerWidth * 9 / 16);
+        const perUnit = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);  // visible height per unit of distance
+        const fit = 1.15 * Math.max(size.z / (perUnit * frameH / innerHeight), size.x / (perUnit * camera.aspect * frameW / innerWidth));
+        const from = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
+        // Theta 0 puts the camera on the south side, so north is at the top of the screen. Phi can't be exactly 0:
+        // looking straight down leaves the orientation undefined.
+        const to = new THREE.Spherical(fit + size.y / 2, 1e-4, 0);
+        const turn = ((-from.theta % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;  // shortest way to theta 0
+        zoomOut = { fromTarget: controls.target.clone(), toTarget: center, from, to, turn };
+        controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
+    }
+
+    function updateZoomOut(elapsed) {
+        if (!zoomOut) startZoomOut();
+        const { fromTarget, toTarget, from, to, turn } = zoomOut;
+        const e = smoothstep(0, 1, elapsed / ZOOM_OUT_MS);
+        const hold = Math.max(0, elapsed - ZOOM_OUT_MS) / ZOOM_HOLD_MS;
+        const sph = new THREE.Spherical(
+            (from.radius + (to.radius - from.radius) * e) * (1 + ZOOM_HOLD_DRIFT * hold * hold),  // eases into the drift
+            from.phi + (to.phi - from.phi) * e,
+            from.theta + turn * e);
+        controls.target.lerpVectors(fromTarget, toTarget, e);
+        camera.position.setFromSpherical(sph).add(controls.target);
+    }
+
     function stopTrackAnimation() {
         trackAnimating = false;
         $btnAnimate.classList.remove('playing');
         $btnAnimate.innerHTML = '&#9654;';
         stopAllCameraMotion();
         stopPulse();
+        if (zoomOut) {
+            zoomOut = null;
+            controls.enableDamping = true;
+            // The zoom-out de-highlighted the track; it's still the selected one
+            animTrack.material.color.set(document.getElementById('clr-highlight').value);
+            animTrack.position.y = +document.getElementById('sld-track-offset').value + HIGHLIGHT_LIFT;
+        }
         removeTrailMarkers();
         stopAnimStats();
         updateSky();  // back to the sky's starting state (night for Night to day)
@@ -1894,6 +1959,7 @@
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
+        animZoomOut = document.getElementById('chk-zoom-out').checked;
         startPulse();
         startAnimStats();
         // Keep the frame clean while animating; the A key still stops it
