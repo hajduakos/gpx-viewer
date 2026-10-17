@@ -151,7 +151,7 @@
             transition: all 0.2s; flex-shrink: 0;
         }
         #rot-speed { width: 80px; flex: 1; }
-        #sel-highlight, #sel-camera-mode, #sel-end-marker, #sel-sky, #txt-start-label, #txt-end-label {
+        #sel-highlight, #sel-camera-mode, #sel-end-marker, #sel-sky, #sel-overview, #txt-start-label, #txt-end-label {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 4px;
@@ -294,7 +294,7 @@
         }
         #frame-guide.active { display: block; }
 
-        #anim-stats {
+        #anim-stats, #trek-stats {
             display: none;
             position: fixed;
             /* 50px above the bottom of the 16:9 frame, so it stays inside the video crop */
@@ -312,6 +312,12 @@
             /* 44px, but small enough to fit across a narrow 16:9 frame (the box is about 11.5em wide) */
             font-size: min(44px, calc(min(100vw, calc(100vh * 16 / 9)) / 14));
             white-space: pre;
+        }
+        /* Trek totals at the end: bottom right of the 16:9 frame */
+        #trek-stats {
+            left: auto;
+            right: calc((100vw - min(100vw, calc(100vh * 16 / 9))) / 2 + 50px);
+            transform: none;
         }
     </style>
 </head>
@@ -363,6 +369,8 @@
 
     <div id="anim-stats"></div>
 
+    <div id="trek-stats"></div>
+
     <div id="frame-guide"></div>
 
     <div id="rotate-box">
@@ -408,7 +416,12 @@
             </select>
         </div>
         <div class="ctrl-row">
-            <label class="ctrl-label"><input type="checkbox" id="chk-zoom-out"> Zoom out in the end</label>
+            <span class="ctrl-label">Overview</span>
+            <select id="sel-overview">
+                <option value="none" selected>None</option>
+                <option value="in">Zoom in at the start</option>
+                <option value="out">Zoom out at the end</option>
+            </select>
         </div>
         <button id="btn-advanced">&#9662; Advanced settings</button>
         <div id="advanced-settings">
@@ -1296,9 +1309,15 @@
             const animDuration = +document.getElementById('sld-animate-dur').value * 1000;
             if (trackAnimating) {
                 const t = now - trackAnimStart, total = animPhases(animDuration).total;
-                if (t >= total + (animZoomOut ? ZOOM_OUT_MS + ZOOM_HOLD_MS : 0)) stopTrackAnimation();
-                else if (t >= total) updateZoomOut(t - total);
-                else updateTrackAnimation(t, animDuration);
+                const intro = animOverview === 'in' ? ZOOM_HOLD_MS + ZOOM_OUT_MS : 0;
+                const outro = animOverview === 'out' ? ZOOM_OUT_MS + ZOOM_HOLD_MS : 0;
+                if (t >= intro + total + outro) stopTrackAnimation();
+                else if (t < intro) updateZoomIn(t);
+                else if (t >= intro + total) updateZoomOut(t - intro - total);
+                else {
+                    if (!timelineStarted) startTimeline();
+                    updateTrackAnimation(t - intro, animDuration);
+                }
             }
             controls.update();
             const sph = new THREE.Spherical().setFromVector3(
@@ -1499,7 +1518,7 @@
     $selCameraMode.addEventListener('change', e => {
         stopAllCameraMotion();
         cameraMode = e.target.value;
-        if (trackAnimating) startCameraMotion();
+        if (trackAnimating && timelineStarted) startCameraMotion();
     });
 
     document.getElementById('btn-advanced').addEventListener('click', () => {
@@ -1691,7 +1710,8 @@
     let animEndMode = 'end';
     let controlsWereVisible = false;
     let animFarFrac = 0;  // Fraction of the track's length at which the farthest point lies
-    let animZoomOut = false;  // "Zoom out in the end", read when the animation starts
+    let animOverview = 'none';  // Overview setting ('none', 'in', 'out'), read when the animation starts
+    let timelineStarted = false;  // Whether the animation proper has begun (it waits for the zoom-in)
     const $btnAnimate = document.getElementById('btn-animate');
 
     // ── Pulse ──
@@ -1878,13 +1898,135 @@
         updateAnimStats(progress, clamp01((t - ANIM_LEAD_MS) / STATS_FADE_MS));
     }
 
-    // ── Zoom out in the end ──
-    // After the normal timeline: drop the markers and stats box, de-highlight the track, then move the camera over ZOOM_OUT_MS to
-    // a north-up, top-down view of the whole trek, and drift slowly further out for ZOOM_HOLD_MS
+    // ── Overview: zoom in at the start / zoom out at the end ──
+    // Both use a north-up, top-down view of the whole trek with the place labels. Zoom in: start there, drift slowly
+    // in for ZOOM_HOLD_MS while the labels fade out at the end, then move over ZOOM_OUT_MS to the camera as it was when
+    // Play was pressed, and run the animation. Zoom out: after the animation, drop the markers and stats box,
+    // de-highlight the track, move to the overview over ZOOM_OUT_MS, then drift slowly out for ZOOM_HOLD_MS while the
+    // labels and then the trek totals fade in.
     const ZOOM_OUT_MS = 2000;
-    const ZOOM_HOLD_MS = 4000;
-    const ZOOM_HOLD_DRIFT = 0.05;  // Fraction the camera distance grows during the hold
-    let zoomOut = null;
+    const ZOOM_HOLD_MS = 8000;
+    const ZOOM_HOLD_DRIFT = 0.05;  // Fraction the camera distance changes during the hold
+    const ZOOM_LABEL_FADE_MS = 1000;
+    const ZOOM_TOTALS_FADE_MS = 1000;
+    const $trekStats = document.getElementById('trek-stats');
+    // Overview labels sit above their point unless listed here (for places close to each other)
+    const ZOOM_LABEL_SIDES = { 'EBC': 'right', 'Kala Patthar': 'left' };
+    let zoomIn = null;   // {play, overview} camera views while zooming in
+    let zoomOut = null;  // {from, to} camera views while zooming out
+    let zoomLabels = [];
+
+    // One label per place named in the tracks' start/end labels, merged across tracks (placed at the average of
+    // the points), 0.6× the size of the start/end marker labels and with no vertical line, since we look top-down
+    function makeZoomLabels() {
+        const places = new Map();  // label text -> {pos: summed position, n}
+        scene.traverse(o => {
+            if (o.name !== 'gpx-track') return;
+            const i = o.userData.trackIdx, lb = trackLabels[i], p = o.userData.positions;
+            const add = (text, k) => {
+                if (!text) return;
+                const place = places.get(text) || { pos: new THREE.Vector3(), n: 0 };
+                place.pos.add(new THREE.Vector3(p[k * 3], p[k * 3 + 1] + o.position.y, p[k * 3 + 2]));
+                place.n++;
+                places.set(text, place);
+            };
+            add(lb.start, 0);
+            if (lb.endMode !== 'none') add(lb.end, lb.endMode === 'farthest' ? trackFarthestIdx[i] : p.length / 3 - 1);
+        });
+        const fontSize = document.getElementById('sld-label-size').value * 1.65 * 0.6;
+        for (const [text, { pos, n }] of places) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            div.style.cssText = `color:#fff;font-size:${fontSize}px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;opacity:0;`;
+            const label = new CSS2DObject(div);
+            const side = ZOOM_LABEL_SIDES[text];
+            // center is the label's anchor point: (0.5, 1) puts it above the point (north in the top-down view)
+            if (side === 'right') { label.center.set(0, 0.5); div.style.marginLeft = '4px'; }
+            else if (side === 'left') { label.center.set(1, 0.5); div.style.marginLeft = '-4px'; }
+            else label.center.set(0.5, 1);
+            label.position.copy(pos.divideScalar(n));
+            scene.add(label);
+            zoomLabels.push(label);
+        }
+    }
+
+    function setZoomLabelOpacity(opacity) {
+        for (const label of zoomLabels) label.element.style.opacity = opacity;
+    }
+
+    function removeZoomLabels() {
+        for (const label of zoomLabels) {
+            scene.remove(label);
+            label.element.remove();
+        }
+        zoomLabels = [];
+    }
+
+    // Total distance and ascent over all loaded tracks, measured like the daily stats box
+    function showTrekTotals() {
+        let dist = 0, gain = 0;
+        for (const cum of trackCumStats) {
+            dist += cum.dist[cum.dist.length - 1] || 0;
+            gain += cum.gain[cum.gain.length - 1] || 0;
+        }
+        $trekStats.textContent = `Total ${(dist / 1000).toFixed(1)}km ${Math.round(gain)}m`;
+        $trekStats.style.opacity = 0;
+        $trekStats.style.display = 'block';
+    }
+
+    // Camera views are {target, sph}: the orbit target and the camera's offset from it
+    function cameraView() {
+        return { target: controls.target.clone(), sph: new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target)) };
+    }
+
+    // North-up, top-down view that fits all tracks inside the 16:9 frame guide with a margin
+    function overviewView() {
+        const box = new THREE.Box3(), v = new THREE.Vector3();
+        scene.traverse(o => {
+            if (o.name !== 'gpx-track') return;
+            const p = o.userData.positions;
+            for (let i = 0; i < p.length; i += 3) box.expandByPoint(v.set(p[i], p[i + 1] + o.position.y, p[i + 2]));
+        });
+        const size = box.getSize(new THREE.Vector3());
+        // Extents are measured at the box's top, which is closest to the camera and so appears largest
+        const frameW = Math.min(innerWidth, innerHeight * 16 / 9), frameH = Math.min(innerHeight, innerWidth * 9 / 16);
+        const perUnit = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);  // visible height per unit of distance
+        const fit = 1.15 * Math.max(size.z / (perUnit * frameH / innerHeight), size.x / (perUnit * camera.aspect * frameW / innerWidth));
+        // Theta 0 puts the camera on the south side, so north is at the top of the screen. Phi can't be exactly 0:
+        // looking straight down leaves the orientation undefined.
+        return { target: box.getCenter(new THREE.Vector3()), sph: new THREE.Spherical(fit + size.y / 2, 1e-4, 0) };
+    }
+
+    // Puts the camera e (0..1) of the way from view a to view b, turning the short way around; scale multiplies the
+    // distance
+    function setCameraBetween(a, b, e, scale = 1) {
+        const turn = (((b.sph.theta - a.sph.theta) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;
+        const sph = new THREE.Spherical(
+            (a.sph.radius + (b.sph.radius - a.sph.radius) * e) * scale,
+            a.sph.phi + (b.sph.phi - a.sph.phi) * e,
+            a.sph.theta + turn * e);
+        controls.target.lerpVectors(a.target, b.target, e);
+        camera.position.setFromSpherical(sph).add(controls.target);
+    }
+
+    function startZoomIn() {
+        zoomIn = { play: cameraView(), overview: overviewView() };
+        makeZoomLabels();
+        setZoomLabelOpacity(1);
+        controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
+    }
+
+    function updateZoomIn(elapsed) {
+        const { play, overview } = zoomIn;
+        if (elapsed < ZOOM_HOLD_MS) {
+            const left = 1 - elapsed / ZOOM_HOLD_MS;
+            setCameraBetween(overview, overview, 0, 1 + ZOOM_HOLD_DRIFT * left * left);  // eases out of the drift
+            setZoomLabelOpacity(Math.min((ZOOM_HOLD_MS - elapsed) / ZOOM_LABEL_FADE_MS, 1));
+        } else {
+            if (zoomLabels.length) removeZoomLabels();
+            setCameraBetween(overview, play, smoothstep(0, 1, (elapsed - ZOOM_HOLD_MS) / ZOOM_OUT_MS));
+        }
+    }
 
     function startZoomOut() {
         removeTrailMarkers();
@@ -1893,39 +2035,34 @@
         stopPulse();
         animTrack.material.color.set(document.getElementById('clr-track').value);
         animTrack.position.y = +document.getElementById('sld-track-offset').value;
-
-        const box = new THREE.Box3(), v = new THREE.Vector3();
-        scene.traverse(o => {
-            if (o.name !== 'gpx-track') return;
-            const p = o.userData.positions;
-            for (let i = 0; i < p.length; i += 3) box.expandByPoint(v.set(p[i], p[i + 1] + o.position.y, p[i + 2]));
-        });
-        const center = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
-        // Fit the trek inside the 16:9 frame guide with a margin. Extents are measured at the box's top, which is
-        // closest to the camera and so appears largest.
-        const frameW = Math.min(innerWidth, innerHeight * 16 / 9), frameH = Math.min(innerHeight, innerWidth * 9 / 16);
-        const perUnit = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);  // visible height per unit of distance
-        const fit = 1.15 * Math.max(size.z / (perUnit * frameH / innerHeight), size.x / (perUnit * camera.aspect * frameW / innerWidth));
-        const from = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
-        // Theta 0 puts the camera on the south side, so north is at the top of the screen. Phi can't be exactly 0:
-        // looking straight down leaves the orientation undefined.
-        const to = new THREE.Spherical(fit + size.y / 2, 1e-4, 0);
-        const turn = ((-from.theta % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI;  // shortest way to theta 0
-        zoomOut = { fromTarget: controls.target.clone(), toTarget: center, from, to, turn };
-        controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
+        zoomOut = { from: cameraView(), to: overviewView() };
+        controls.enableDamping = false;
     }
 
     function updateZoomOut(elapsed) {
         if (!zoomOut) startZoomOut();
-        const { fromTarget, toTarget, from, to, turn } = zoomOut;
-        const e = smoothstep(0, 1, elapsed / ZOOM_OUT_MS);
         const hold = Math.max(0, elapsed - ZOOM_OUT_MS) / ZOOM_HOLD_MS;
-        const sph = new THREE.Spherical(
-            (from.radius + (to.radius - from.radius) * e) * (1 + ZOOM_HOLD_DRIFT * hold * hold),  // eases into the drift
-            from.phi + (to.phi - from.phi) * e,
-            from.theta + turn * e);
-        controls.target.lerpVectors(fromTarget, toTarget, e);
-        camera.position.setFromSpherical(sph).add(controls.target);
+        setCameraBetween(zoomOut.from, zoomOut.to, smoothstep(0, 1, elapsed / ZOOM_OUT_MS), 1 + ZOOM_HOLD_DRIFT * hold * hold);  // eases into the drift
+        if (elapsed >= ZOOM_OUT_MS) {
+            if (!zoomLabels.length) makeZoomLabels();
+            setZoomLabelOpacity(Math.min((elapsed - ZOOM_OUT_MS) / ZOOM_LABEL_FADE_MS, 1));
+        }
+        const totalsElapsed = elapsed - ZOOM_OUT_MS - ZOOM_LABEL_FADE_MS;
+        if (totalsElapsed >= 0) {
+            if ($trekStats.style.display !== 'block') showTrekTotals();
+            $trekStats.style.opacity = Math.min(totalsElapsed / ZOOM_TOTALS_FADE_MS, 1);
+        }
+    }
+
+    // The animation proper begins (after the zoom-in, if any): hand the camera back and start its motion
+    function startTimeline() {
+        timelineStarted = true;
+        if (zoomIn) {
+            zoomIn = null;
+            removeZoomLabels();
+            controls.enableDamping = true;
+        }
+        startCameraMotion();
     }
 
     function stopTrackAnimation() {
@@ -1934,9 +2071,12 @@
         $btnAnimate.innerHTML = '&#9654;';
         stopAllCameraMotion();
         stopPulse();
+        removeZoomLabels();
+        $trekStats.style.display = 'none';
+        controls.enableDamping = true;
+        zoomIn = null;
         if (zoomOut) {
             zoomOut = null;
-            controls.enableDamping = true;
             // The zoom-out de-highlighted the track; it's still the selected one
             animTrack.material.color.set(document.getElementById('clr-highlight').value);
             animTrack.position.y = +document.getElementById('sld-track-offset').value + HIGHLIGHT_LIFT;
@@ -1959,7 +2099,8 @@
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
-        animZoomOut = document.getElementById('chk-zoom-out').checked;
+        animOverview = document.getElementById('sel-overview').value;
+        timelineStarted = false;
         startPulse();
         startAnimStats();
         // Keep the frame clean while animating; the A key still stops it
@@ -1975,7 +2116,8 @@
             const endIdx = animEndMode === 'farthest' ? farIdx : animTrack.userData.positions.length / 3 - 1;
             animMarkers.push(makeTrailMarker(endIdx, document.getElementById('txt-end-label').value));
         }
-        startCameraMotion();
+        // Camera motion starts with the animation proper (startTimeline), after the zoom-in if there is one
+        if (animOverview === 'in') startZoomIn();
     });
 
     document.getElementById('sld-animate-dur').addEventListener('input', e => {
