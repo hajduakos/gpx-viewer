@@ -294,7 +294,7 @@
         }
         #frame-guide.active { display: block; }
 
-        #anim-stats, #trek-stats {
+        #anim-stats, #trek-stats, #fly-stats {
             display: none;
             position: fixed;
             /* 50px above the bottom of the 16:9 frame, so it stays inside the video crop */
@@ -319,6 +319,23 @@
             right: calc((100vw - min(100vw, calc(100vh * 16 / 9))) / 2 + 50px);
             transform: none;
         }
+        /* Flyover stats: a bar at the top left of the 16:9 frame, small labels over big numbers */
+        #fly-stats {
+            top: calc((100vh - min(100vh, calc(100vw * 9 / 16))) / 2 + 25px);
+            bottom: auto;
+            left: calc((100vw - min(100vw, calc(100vh * 16 / 9))) / 2 + 25px);
+            transform: none;
+            gap: 0.9em;
+            font-size: min(36px, calc(min(100vw, calc(100vh * 16 / 9)) / 28));
+        }
+        #fly-stats .fly-label {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 0.4em;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.75);
+        }
+        #fly-stats .fly-unit { font-size: 0.55em; color: rgba(255,255,255,0.8); }
     </style>
 </head>
 <body>
@@ -371,6 +388,8 @@
 
     <div id="trek-stats"></div>
 
+    <div id="fly-stats"></div>
+
     <div id="frame-guide"></div>
 
     <div id="rotate-box">
@@ -396,10 +415,15 @@
         </div>
         <div class="ctrl-row">
             <span class="ctrl-label">Animate</span>
-            <button id="btn-animate" title="Animate selected track" disabled>&#9654;</button>
+            <button id="btn-animate" title="Animate the selected track, or fly over the whole trek if none is selected" disabled>&#9654;</button>
             <span class="ctrl-label">Duration</span>
             <input type="range" id="sld-animate-dur" min="1" max="10" value="2" step="1" style="flex:1">
             <span class="ctrl-label" id="animate-dur-val">2s</span>
+        </div>
+        <div class="ctrl-row">
+            <span class="ctrl-label">Flyover</span>
+            <input type="range" id="sld-flyover-dur" min="30" max="300" value="120" step="10" style="flex:1">
+            <span class="ctrl-label" id="flyover-dur-val">120s</span>
         </div>
         <div class="ctrl-row">
             <span class="ctrl-label">Start label</span>
@@ -1202,14 +1226,17 @@
         });
         trackFarthest = tracks.map((pts, i) => toScene(pts[trackFarthestIdx[i]].lat, pts[trackFarthestIdx[i]].lon));
         // Cumulative distance and ascent at each track point, measured like computeTrackStats
+        // Cumulative distance and ascent at each track point, measured like computeTrackStats, plus the elevation
         trackCumStats = tracks.map(pts => {
-            const dist = new Float64Array(pts.length), gain = new Float64Array(pts.length);
+            const dist = new Float64Array(pts.length), gain = new Float64Array(pts.length), ele = new Float64Array(pts.length);
+            ele[0] = pts[0].ele ?? 0;
             for (let k = 1; k < pts.length; k++) {
                 dist[k] = dist[k-1] + haversine(pts[k-1].lat, pts[k-1].lon, pts[k].lat, pts[k].lon);
                 const up = pts[k].ele != null && pts[k-1].ele != null ? pts[k].ele - pts[k-1].ele : 0;
                 gain[k] = gain[k-1] + Math.max(up, 0);
+                ele[k] = pts[k].ele ?? ele[k-1];
             }
-            return { dist, gain };
+            return { dist, gain, ele };
         });
 
         scene = new THREE.Scene();
@@ -1307,7 +1334,8 @@
                 }
             }
             const animDuration = +document.getElementById('sld-animate-dur').value * 1000;
-            if (trackAnimating) {
+            if (trackAnimating && fly) updateFlyover(now - trackAnimStart);
+            else if (trackAnimating) {
                 const t = now - trackAnimStart, total = animPhases(animDuration).total;
                 const intro = animOverview === 'in' ? ZOOM_HOLD_MS + ZOOM_OUT_MS : 0;
                 const outro = animOverview === 'out' ? ZOOM_OUT_MS + ZOOM_HOLD_MS : 0;
@@ -1365,6 +1393,7 @@
         $frameGuide.classList.add('active');
 
         trackLabels = trackNames.map(parseTrackName);
+        $btnAnimate.disabled = !tracks.length;
         const displayNames = trackLabels.map(l => l.display);
 
         const $sel = document.getElementById('sel-highlight');
@@ -1648,7 +1677,6 @@
         const idx = e.target.value;
         $btnCenter.disabled = idx === '';
         $btnHead.disabled = idx === '';
-        $btnAnimate.disabled = idx === '';
         if (trackAnimating) stopTrackAnimation();
         if (idx !== '') {
             const lb = trackLabels[+idx];
@@ -1715,94 +1743,121 @@
     const $btnAnimate = document.getElementById('btn-animate');
 
     // ── Pulse ──
-    // Recolors the animated track itself: highlight color at the current point, fading to the track
-    // color PULSE_RADIUS_M before and after it. Those points are also raised (up to PULSE_LIFT at the
-    // current point) so the pulse stays on top where an out-and-back track overlaps itself.
+    // Recolors tracks themselves: highlight color at the current point, fading to the track color PULSE_RADIUS_M
+    // before and after it. Those points are also raised (up to PULSE_LIFT at the current point) so the pulse stays on
+    // top where an out-and-back track overlaps itself. Each recolored track has a state {track, cum, range}: cum is
+    // the distance in meters to each track point, range the points currently recolored.
     const PULSE_RADIUS_M = 1000;
     const PULSE_LIFT = 0.005;
-    let pulseCum = null;
-    let pulseRange = null;  // [first, last] track point currently recolored and raised
+    let pulseStates = [];
+    let pulseCum = null;  // The daily animation's track's cum
 
     // Track point k is the end of segment k-1 and the start of segment k in Line2's interleaved buffers
-    function setTrackPoint(k, xyz, rgb) {
-        const g = animTrack.geometry, last = pulseCum.length - 1;
+    function setTrackPoint(st, k, xyz, rgb) {
+        const g = st.track.geometry, last = st.cum.length - 1;
         const pos = g.attributes.instanceStart.data.array, col = g.attributes.instanceColorStart.data.array;
         if (k > 0) { pos.set(xyz, (k - 1) * 6 + 3); col.set(rgb, (k - 1) * 6 + 3); }
         if (k < last) { pos.set(xyz, k * 6); col.set(rgb, k * 6); }
     }
 
-    function startPulse() {
-        const p = animTrack.userData.positions, n = p.length / 3;
-        pulseCum = new Float64Array(n);
+    function startPulseOn(track) {
+        const p = track.userData.positions, n = p.length / 3;
+        const cum = new Float64Array(n);
         for (let k = 1; k < n; k++) {
             const dx = p[k*3] - p[k*3-3], dy = p[k*3+1] - p[k*3-2], dz = p[k*3+2] - p[k*3-1];
-            pulseCum[k] = pulseCum[k-1] + Math.hypot(dx, dy, dz) / S.scale;
+            cum[k] = cum[k-1] + Math.hypot(dx, dy, dz) / S.scale;
         }
-        pulseRange = null;
-
-        const g = animTrack.geometry;
+        const g = track.geometry;
         if (!g.attributes.instanceColorStart) g.setColors(new Float32Array(n * 3));
         const base = new THREE.Color(document.getElementById('clr-track').value);
         const col = g.attributes.instanceColorStart.data;
         for (let i = 0; i < col.array.length; i += 3) col.array.set([base.r, base.g, base.b], i);
         col.needsUpdate = true;
-        animTrack.material.vertexColors = true;
-        animTrack.material.needsUpdate = true;
+        track.material.vertexColors = true;
+        track.material.needsUpdate = true;
+        track.material.color.setRGB(1, 1, 1);  // vertex colors carry the color; keep the tint neutral
+        const st = { track, cum, range: null };
+        pulseStates.push(st);
+        return st;
     }
 
-    // fill (0..1) blends the whole track toward the highlight color once the pulse has arrived
-    function updatePulse(progress, active, fill = 0) {
-        const p = animTrack.userData.positions, cum = pulseCum, n = cum.length;
+    // dCur: the pulse's distance along this track; it may lie off the track, then only the overlapping part shows.
+    // fill (0..1) blends the whole track toward the highlight color once the pulse has arrived.
+    function updatePulseOn(st, dCur, active, fill = 0, radius = PULSE_RADIUS_M) {
+        const p = st.track.userData.positions, cum = st.cum, n = cum.length;
         const base = new THREE.Color(document.getElementById('clr-track').value);
         const peak = new THREE.Color(document.getElementById('clr-highlight').value);
+        let changed = false;
 
         // Put last frame's points back to their original height and the track color
-        if (pulseRange) {
-            for (let k = pulseRange[0]; k <= pulseRange[1]; k++) setTrackPoint(k, [p[k*3], p[k*3+1], p[k*3+2]], [base.r, base.g, base.b]);
-            pulseRange = null;
+        if (st.range) {
+            for (let k = st.range[0]; k <= st.range[1]; k++) setTrackPoint(st, k, [p[k*3], p[k*3+1], p[k*3+2]], [base.r, base.g, base.b]);
+            st.range = null;
+            changed = true;
         }
 
         if ((active || fill > 0) && n > 1) {
-            const dCur = progress * cum[n - 1];
             // Points [first, end) to update: the pulse window, or the whole track while filling
             let first = 0, end = n;
             if (fill === 0) {
                 let hi = n;
-                while (first < hi) { const mid = (first + hi) >> 1; if (cum[mid] < dCur - PULSE_RADIUS_M) first = mid + 1; else hi = mid; }
+                while (first < hi) { const mid = (first + hi) >> 1; if (cum[mid] < dCur - radius) first = mid + 1; else hi = mid; }
                 end = first;
-                while (end < n && cum[end] <= dCur + PULSE_RADIUS_M) end++;
+                while (end < n && cum[end] <= dCur + radius) end++;
             }
             const c = new THREE.Color();
             for (let k = first; k < end; k++) {
-                const t = active ? Math.max(0, 1 - Math.abs(cum[k] - dCur) / PULSE_RADIUS_M) : 0;
+                const t = active ? Math.max(0, 1 - Math.abs(cum[k] - dCur) / radius) : 0;
                 c.copy(base).lerp(peak, t + (1 - t) * fill);
-                setTrackPoint(k, [p[k*3], p[k*3+1] + PULSE_LIFT * t, p[k*3+2]], [c.r, c.g, c.b]);
+                setTrackPoint(st, k, [p[k*3], p[k*3+1] + PULSE_LIFT * t, p[k*3+2]], [c.r, c.g, c.b]);
             }
-            if (end > first) pulseRange = [first, end - 1];
+            if (end > first) { st.range = [first, end - 1]; changed = true; }
         }
 
-        animTrack.geometry.attributes.instanceStart.data.needsUpdate = true;
-        animTrack.geometry.attributes.instanceColorStart.data.needsUpdate = true;
-        animTrack.material.color.setRGB(1, 1, 1);  // vertex colors carry the color; keep the tint neutral
+        if (changed) {  // only upload tracks that changed (the flyover has many)
+            st.track.geometry.attributes.instanceStart.data.needsUpdate = true;
+            st.track.geometry.attributes.instanceColorStart.data.needsUpdate = true;
+        }
     }
 
+    // Restores every recolored track; the selected track gets its highlight color back
     function stopPulse() {
-        if (!pulseCum) return;
-        updatePulse(0, false);
-        animTrack.material.vertexColors = false;
-        animTrack.material.needsUpdate = true;
-        animTrack.material.color.set(document.getElementById('clr-highlight').value);
+        const sel = document.getElementById('sel-highlight').value;
+        for (const st of pulseStates) {
+            updatePulseOn(st, 0, false);
+            st.track.material.vertexColors = false;
+            st.track.material.needsUpdate = true;
+            const selected = sel !== '' && st.track.userData.trackIdx === +sel;
+            st.track.material.color.set(document.getElementById(selected ? 'clr-highlight' : 'clr-track').value);
+        }
+        pulseStates = [];
         pulseCum = null;
     }
 
+    // The daily animation's pulse on animTrack, with progress 0..1 along it
+    function startPulse() {
+        pulseCum = startPulseOn(animTrack).cum;
+    }
+
+    function updatePulse(progress, active, fill = 0) {
+        updatePulseOn(pulseStates[0], progress * pulseCum[pulseCum.length - 1], active, fill);
+    }
+
     // ── Start/end markers ──
-    // A vertical line grows up from the track's start (or end) point, then a label appears on top
+    // A vertical line grows up from a point, then a label appears on top. base() gives the point, so markers on a
+    // track follow its offset.
     const MARKER_HEIGHT_M = 1000;
     let animMarkers = [];
 
-    function makeTrailMarker(pointIdx, text) {
+    // A live base point on a track: track point k, including the track's offset
+    const trackPoint = (track, k) => () => {
+        const p = track.userData.positions;
+        return new THREE.Vector3(p[k * 3], p[k * 3 + 1] + track.position.y, p[k * 3 + 2]);
+    };
+
+    function makeTrailMarker(text, base) {
         const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
-            new LineMaterial({ linewidth: 4, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
+            new LineMaterial({ linewidth: 4, transparent: true, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
         div.textContent = text;
         // 1.65× the regular label size
@@ -1811,20 +1866,20 @@
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
         scene.add(line, label);
-        return { line, label, pointIdx };
+        return { line, label, base };
     }
 
-    function updateTrailMarker(m, growth) {
-        const p = animTrack.userData.positions, i = m.pointIdx * 3;
-        const h = MARKER_HEIGHT_M * S.scale;
-        const baseY = p[i+1] + animTrack.position.y;
-        m.line.position.set(p[i], baseY, p[i+2]);
+    function updateTrailMarker(m, growth, opacity = 1) {
+        const b = m.base(), h = MARKER_HEIGHT_M * S.scale;
+        m.line.position.copy(b);
         m.line.scale.y = Math.max(growth, 1e-4) * h;
-        m.line.visible = growth > 0;
+        m.line.visible = growth > 0 && opacity > 0;
+        m.line.material.opacity = opacity;
         m.line.material.resolution.set(innerWidth, innerHeight);
         m.line.material.color.set(document.getElementById('clr-highlight').value);
-        m.label.position.set(p[i], baseY + h, p[i+2]);
-        m.label.visible = growth >= 1 && m.label.element.textContent !== '';
+        m.label.position.set(b.x, b.y + h, b.z);
+        m.label.visible = growth >= 1 && opacity > 0 && m.label.element.textContent !== '';
+        m.label.element.style.opacity = opacity;
     }
 
     function removeTrailMarkers() {
@@ -1916,25 +1971,53 @@
     let zoomOut = null;  // {from, to} camera views while zooming out
     let zoomLabels = [];
 
-    // One label per place named in the tracks' start/end labels, merged across tracks (placed at the average of
-    // the points), 0.6× the size of the start/end marker labels and with no vertical line, since we look top-down
+    // All track objects in day order
+    function allTracks() {
+        const tracks = [];
+        scene.traverse(o => { if (o.name === 'gpx-track') tracks.push(o); });
+        return tracks.sort((a, b) => a.userData.trackIdx - b.userData.trackIdx);
+    }
+
+    // EBC-specific places not in the track names: a label at the highest point of a track
+    const EXTRA_PLACES = [{ track: 'Thagnak to Dzongla', text: 'Cho La Pass' }];
+
+    // A track's places, in order along it: [{text, k}], k being the track point the label belongs to. They come from
+    // its name, plus EXTRA_PLACES.
+    function trackPlaces(track) {
+        const i = track.userData.trackIdx, lb = trackLabels[i];
+        const places = lb.start ? [{ text: lb.start, k: 0 }] : [];
+        if (lb.endMode !== 'none' && lb.end) {
+            places.push({ text: lb.end, k: lb.endMode === 'farthest' ? trackFarthestIdx[i] : track.userData.positions.length / 3 - 1 });
+        }
+        for (const extra of EXTRA_PLACES) {
+            if (extra.track !== lb.display) continue;
+            const ele = trackCumStats[i].ele;
+            let highest = 0;
+            for (let k = 1; k < ele.length; k++) if (ele[k] > ele[highest]) highest = k;
+            places.push({ text: extra.text, k: highest });
+        }
+        return places.sort((a, b) => a.k - b.k);
+    }
+
+    // Each place's position, merged across tracks: label text -> average of its track points
+    function placePositions() {
+        const sums = new Map();
+        for (const track of allTracks()) {
+            for (const { text, k } of trackPlaces(track)) {
+                const sum = sums.get(text) || { pos: new THREE.Vector3(), n: 0 };
+                sum.pos.add(trackPoint(track, k)());
+                sum.n++;
+                sums.set(text, sum);
+            }
+        }
+        return new Map([...sums].map(([text, { pos, n }]) => [text, pos.divideScalar(n)]));
+    }
+
+    // One label per place, 0.6× the size of the start/end marker labels and with no vertical line, since we look
+    // top-down
     function makeZoomLabels() {
-        const places = new Map();  // label text -> {pos: summed position, n}
-        scene.traverse(o => {
-            if (o.name !== 'gpx-track') return;
-            const i = o.userData.trackIdx, lb = trackLabels[i], p = o.userData.positions;
-            const add = (text, k) => {
-                if (!text) return;
-                const place = places.get(text) || { pos: new THREE.Vector3(), n: 0 };
-                place.pos.add(new THREE.Vector3(p[k * 3], p[k * 3 + 1] + o.position.y, p[k * 3 + 2]));
-                place.n++;
-                places.set(text, place);
-            };
-            add(lb.start, 0);
-            if (lb.endMode !== 'none') add(lb.end, lb.endMode === 'farthest' ? trackFarthestIdx[i] : p.length / 3 - 1);
-        });
         const fontSize = document.getElementById('sld-label-size').value * 1.65 * 0.6;
-        for (const [text, { pos, n }] of places) {
+        for (const [text, pos] of placePositions()) {
             const div = document.createElement('div');
             div.textContent = text;
             div.style.cssText = `color:#fff;font-size:${fontSize}px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;opacity:0;`;
@@ -1944,7 +2027,7 @@
             if (side === 'right') { label.center.set(0, 0.5); div.style.marginLeft = '4px'; }
             else if (side === 'left') { label.center.set(1, 0.5); div.style.marginLeft = '-4px'; }
             else label.center.set(0.5, 1);
-            label.position.copy(pos.divideScalar(n));
+            label.position.copy(pos);
             scene.add(label);
             zoomLabels.push(label);
         }
@@ -2065,6 +2148,294 @@
         startCameraMotion();
     }
 
+    // ── Flyover: the whole trek, when no track is selected ──
+    // Overview → descend to the trail head → fly along all tracks in day order with the pulse, each place getting its
+    // line and label the first time the pulse reaches it (slowing down there) → zoom out. The camera flies a smooth
+    // curve through the end points of the days rather than the trail itself, so it never turns sharply; the pulse
+    // isn't always centered.
+    const FLY_OVERVIEW_MS = 3000;
+    const FLY_DESCENT_MS = 5000;
+    const FLY_RAMP_MS = 2000;           // The flight eases in from and out to a standstill over this
+    const FLY_ZOOM_OUT_MS = 4000;
+    const FLY_HOLD_MS = 6000;
+    const FLY_STATS_FADE_MS = 1000;     // The stats box fades in at the end of the descent
+    const FLY_MARKER_OUT_MS = 1000;     // When zooming out, the last place's marker fades out,
+    const FLY_LABELS_IN_MS = 2000;      // and all place labels fade in at the end of the zoom out
+    const FLY_SLOW = 0.25;              // Speed factor while passing a place...
+    const FLY_SLOW_RADIUS_M = 800;      // ...within this distance of it
+    const FLY_GROW_M = 500;             // A place's line grows over this distance, centered on the place
+    const FLY_PULSE_RADIUS_M = 500;     // Half the daily animation's pulse
+    const FLY_TURN_SMOOTH_M = 5000;     // The camera heading is averaged over this distance each way, spreading turns out
+    const FLY_POLAR = THREE.MathUtils.degToRad(62);  // Camera angle from vertical
+    const FLY_HEIGHT_M = 3000;          // Camera height above the trail point
+    const FLY_DISTANCE_M = FLY_HEIGHT_M / Math.cos(FLY_POLAR);
+    const FLY_AIM_UP_M = FLY_DISTANCE_M / 6;  // The camera aims this far above the trail, for more sky in the picture
+    // EBC-specific: compass direction (degrees) the camera faces when these tracks end; elsewhere it faces along
+    // its path
+    const FLY_HEADINGS = {
+        'Gokyo to Gokyo Ri': 90,          // turn east while Gokyo Ri is hiked
+        'Gorakshep to EBC': 90,           // at Gorakshep, turn east for EBC,
+        'Gorakshep to Kala Patthar': 180, // then south for Kala Patthar, ready for the way down
+        'Namche to Lukla': 125,           // arrive at Lukla facing about south-east (the averaging softens it), to see
+                                          // the bend before it
+    };
+    // Tracks whose end gets no heading of its own: the camera turns straight through toward the next one (leaving
+    // Machhermo it already starts turning east for Gokyo Ri; leaving Lobuche, east for EBC)
+    const FLY_TURN_THROUGH = ['Machhermo to Gokyo', 'Lobuche to Gorakshep'];
+    const FLY_LOOP_DRIFT = 0.08;        // On a loop day (e.g. the rest day at Namche) the camera creeps this fraction of
+                                        // the way toward the next day's end
+    const FLY_TURN_TIME_MS = 1500;      // Turning follows the flight averaged over this time each way, so it keeps its
+                                        // pace while the flight slows down near places
+    const $flyStats = document.getElementById('fly-stats');
+    let fly = null;
+
+    // Cubic Hermite through values (arrays of numbers) at increasing positions ss, with Catmull-Rom tangents taken
+    // per unit of s, so the rate of change doesn't jump at the keys. At keys marked gentle, the tangent is capped at
+    // the neighboring segments' slopes, so a short segment between two gentle keys is crossed at an even, slow pace
+    // instead of being overshot and doubled back on. Returns s -> array of numbers.
+    function smoothSpline(ss, values, gentle = []) {
+        const n = ss.length, dims = values[0].length;
+        const norm = v => Math.hypot(...v);
+        const slope = k => norm(values[k + 1].map((v, d) => v - values[k][d])) / (ss[k + 1] - ss[k]);
+        const tangents = values.map((_, k) => {
+            const a = Math.max(k - 1, 0), b = Math.min(k + 1, n - 1);
+            const m = values[0].map((_, d) => (values[b][d] - values[a][d]) / (ss[b] - ss[a]));
+            if (!gentle[k]) return m;
+            const cap = Math.min(k > 0 ? slope(k - 1) : Infinity, k < n - 1 ? slope(k) : Infinity);
+            const len = norm(m);
+            return len > cap ? m.map(v => v * cap / len) : m;
+        });
+        return s => {
+            let k = 0;
+            while (k < n - 2 && s > ss[k + 1]) k++;
+            const h = ss[k + 1] - ss[k], u = Math.min(Math.max((s - ss[k]) / h, 0), 1);
+            const u2 = u * u, u3 = u2 * u;
+            const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+            const out = [];
+            for (let d = 0; d < dims; d++) {
+                out.push(h00 * values[k][d] + h10 * h * tangents[k][d] + h01 * values[k + 1][d] + h11 * h * tangents[k + 1][d]);
+            }
+            return out;
+        };
+    }
+
+    function startFlyover() {
+        const tracks = allTracks();
+        // The trek as one route: tracks back to back in day order (the small gaps between days are skipped)
+        let s = 0, distBefore = 0, gainBefore = 0;
+        const legs = tracks.map(track => {
+            const st = startPulseOn(track), cum = trackCumStats[track.userData.trackIdx];
+            const leg = { st, track, offset: s, len: st.cum[st.cum.length - 1], cum, distBefore, gainBefore };
+            s += leg.len;
+            distBefore += cum.dist[cum.dist.length - 1];
+            gainBefore += cum.gain[cum.gain.length - 1];
+            return leg;
+        });
+        const total = s;
+
+        // Places in the order the pulse passes them, at the route distance where it does. A place shows again when
+        // passed again (e.g. Gokyo after Gokyo Ri), but not twice in a row (e.g. a day's end and the next day's start).
+        const positions = placePositions(), events = [];
+        for (const leg of legs) {
+            for (const { text, k } of trackPlaces(leg.track)) {
+                if (events.length && events[events.length - 1].text === text) continue;
+                const pos = positions.get(text);
+                events.push({ text, s: leg.offset + leg.st.cum[k], marker: makeTrailMarker(text, () => pos) });
+            }
+        }
+        animMarkers = events.map(e => e.marker);
+
+        // Camera keys at the trek's start and each track's end: [x, y, z, heading in degrees]
+        const keyS = [0], keyPts = [trackPoint(tracks[0], 0)()], keyHeadings = [null], keyTurnThrough = [false], keyLoop = [false];
+        for (const leg of legs) {
+            const end = leg.offset + leg.len;
+            if (end <= keyS[keyS.length - 1] + 1) continue;  // skip empty tracks
+            const display = trackLabels[leg.track.userData.trackIdx].display;
+            keyS.push(end);
+            keyPts.push(trackPoint(leg.track, leg.st.cum.length - 1)());
+            keyHeadings.push(FLY_HEADINGS[display] ?? null);
+            keyTurnThrough.push(FLY_TURN_THROUGH.includes(display));
+            keyLoop.push(trackLabels[leg.track.userData.trackIdx].endMode === 'none');
+        }
+        // A loop day (a single place, like the rest day at Namche) ends where it started, so the camera would go back
+        // and forth. Instead it creeps a little toward the next key, slowing into the loop and crossing it gently.
+        const gentle = [];
+        keyLoop.forEach((loop, k) => {
+            if (!loop || k === 0 || k === keyS.length - 1) return;
+            keyPts[k] = keyPts[k - 1].clone().lerp(keyPts[k + 1], FLY_LOOP_DRIFT);
+            keyTurnThrough[k] = true;
+            gentle[k - 1] = gentle[k] = true;
+        });
+        const target = smoothSpline(keyS, keyPts.map(v => [v.x, v.y, v.z]), gentle);
+        // Keys without a set heading face along the camera's path (north is -z, east is +x)
+        const headingS = [], headings = [];
+        keyHeadings.forEach((h, k) => {
+            if (keyTurnThrough[k]) return;
+            const a = target(keyS[k] - 1), b = target(keyS[k] + 1);
+            headingS.push(keyS[k]);
+            headings.push(h ?? Math.atan2(b[0] - a[0], -(b[2] - a[2])) * 180 / Math.PI);
+        });
+        for (let k = 1; k < headings.length; k++) {  // unwrap, so each turn goes the short way around
+            headings[k] = headings[k - 1] + ((((headings[k] - headings[k - 1]) % 360) + 540) % 360 - 180);
+        }
+        // Straight between the heading keys, then averaged: each turn spreads evenly over its stretch, never overshooting
+        const linear = s => {
+            let k = 0;
+            while (k < headingS.length - 2 && s > headingS[k + 1]) k++;
+            if (headingS.length < 2) return [headings[0]];
+            const u = Math.min(Math.max((s - headingS[k]) / (headingS[k + 1] - headingS[k]), 0), 1);
+            return [headings[k] + (headings[k + 1] - headings[k]) * u];
+        };
+        const heading = averagedHeading(linear, total);
+
+        const flightMs = +document.getElementById('sld-flyover-dur').value * 1000;
+        const STEP = 20, timeAt = flightTable(total, events.filter(e => e.s > 0).map(e => e.s), STEP);
+
+        // Widths for the stats box, so it doesn't change width while counting
+        const km = d => (d / 1000).toFixed(1), m = v => String(Math.round(v));
+        let maxEle = 0;
+        for (const leg of legs) for (const e of leg.cum.ele) maxEle = Math.max(maxEle, e);
+        const widths = { km: km(distBefore).length, ele: m(maxEle).length, gain: m(gainBefore).length };
+
+        fly = { legs, total, events, target, heading, timeAt, step: STEP, widths, flightMs, overview: overviewView(), end: null };
+        fly.start = flightView(0);
+        $flyStats.innerHTML = ['Day', 'Distance', 'Elevation', 'Gain']
+            .map(label => `<div><div class="fly-label">${label}</div><div class="fly-value"></div></div>`).join('');
+        fly.valueEls = [...$flyStats.querySelectorAll('.fly-value')];
+        $flyStats.style.opacity = 0;
+        $flyStats.style.display = 'flex';
+        controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
+    }
+
+    // The heading averaged over FLY_TURN_SMOOTH_M each way (tabulated every 50 m), so the camera turns in broad sweeps
+    // that start before a place and finish after it, while the pulse keeps a constant speed
+    function averagedHeading(heading, total) {
+        const STEP = 50, n = Math.ceil(total / STEP) + 1, w = Math.round(FLY_TURN_SMOOTH_M / STEP);
+        const prefix = new Float64Array(n + 1);
+        for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + heading(i * STEP)[0];
+        const avg = new Float64Array(n);
+        for (let i = 0; i < n; i++) {
+            const a = Math.max(0, i - w), b = Math.min(n - 1, i + w);
+            avg[i] = (prefix[b + 1] - prefix[a]) / (b - a + 1);
+        }
+        return s => {
+            const x = Math.min(Math.max(s / STEP, 0), n - 1), i = Math.min(Math.floor(x), Math.max(n - 2, 0)), f = x - i;
+            return [avg[i] + ((avg[i + 1] ?? avg[i]) - avg[i]) * f];
+        };
+    }
+
+    // Time to route distance, tabulated every step meters (timeAt[i]: time to reach i * step, in arbitrary units).
+    // Constant speed, so days take time in proportion to their distance, except near places (slowed to FLY_SLOW).
+    function flightTable(total, placeS, step) {
+        const steps = Math.max(1, Math.ceil(total / step));
+        const timeAt = new Float64Array(steps + 1);
+        for (let i = 1; i <= steps; i++) {
+            const d = (i - 0.5) * step;
+            let slow = 0;
+            for (const ps of placeS) {
+                const x = Math.abs(d - ps);
+                if (x < FLY_SLOW_RADIUS_M) slow = Math.max(slow, Math.cos(x / FLY_SLOW_RADIUS_M * Math.PI / 2) ** 2);
+            }
+            timeAt[i] = timeAt[i - 1] + step / (1 - (1 - FLY_SLOW) * slow);
+        }
+        return timeAt;
+    }
+
+    // Route distance after t ms of flight: eased in and out over FLY_RAMP_MS, slower near places
+    function flightDistance(t) {
+        const { flightMs, timeAt, step, total } = fly, R = FLY_RAMP_MS, tauMax = flightMs - R;
+        let tau = t < R ? t * t / (2 * R) : t > flightMs - R ? tauMax - (flightMs - t) ** 2 / (2 * R) : t - R / 2;
+        const target = Math.min(Math.max(tau / tauMax, 0), 1) * timeAt[timeAt.length - 1];
+        let lo = 0, hi = timeAt.length - 1;
+        while (lo < hi - 1) { const mid = (lo + hi) >> 1; if (timeAt[mid] <= target) lo = mid; else hi = mid; }
+        const f = timeAt[hi] > timeAt[lo] ? (target - timeAt[lo]) / (timeAt[hi] - timeAt[lo]) : 0;
+        return Math.min((lo + f) * step, total);
+    }
+
+    // Route distance averaged over FLY_TURN_TIME_MS each way (less near the flight's ends, so it matches there):
+    // smooth through the slow-downs near places
+    function turnDistance(t) {
+        const w = Math.min(FLY_TURN_TIME_MS, t, fly.flightMs - t);
+        if (w <= 0) return flightDistance(t);
+        let sum = 0;
+        for (let i = 0; i <= 8; i++) sum += flightDistance(t - w + 2 * w * i / 8);
+        return sum / 9;
+    }
+
+    // The camera's view at route distance s, facing the heading at route distance sTurn
+    function flightView(s, sTurn = s) {
+        const [x, y, z] = fly.target(s), [h] = fly.heading(sTurn);
+        // The camera sits behind the trail point: theta = -heading puts north-facing at theta 0. It then aims a bit
+        // above the point, which tilts the view up without moving the camera.
+        const trail = new THREE.Vector3(x, y, z);
+        const camPos = new THREE.Vector3().setFromSpherical(
+            new THREE.Spherical(FLY_DISTANCE_M * S.scale, FLY_POLAR, -THREE.MathUtils.degToRad(h))).add(trail);
+        const aim = trail.add(new THREE.Vector3(0, FLY_AIM_UP_M * S.scale, 0));
+        return { target: aim, sph: new THREE.Spherical().setFromVector3(camPos.sub(aim)) };
+    }
+
+    function updateFlyStats(s, opacity) {
+        const { legs, widths } = fly;
+        let li = 0;
+        while (li < legs.length - 1 && s >= legs[li + 1].offset) li++;
+        const leg = legs[li], pc = leg.st.cum, n = pc.length, d = s - leg.offset;
+        let k = 0, hi = n - 1;
+        while (k < hi) { const mid = (k + hi + 1) >> 1; if (pc[mid] <= d) k = mid; else hi = mid - 1; }
+        const k1 = Math.min(k + 1, n - 1), f = pc[k1] > pc[k] ? Math.min((d - pc[k]) / (pc[k1] - pc[k]), 1) : 0;
+        const at = a => a[k] + (a[k1] - a[k]) * f;
+        // Numbers are padded to their final width (monospace), so the columns don't shift while counting
+        const value = (num, unit) => num + (unit ? `<span class="fly-unit"> ${unit}</span>` : '');
+        const values = [
+            value(trackLabels[leg.track.userData.trackIdx].day.replace(/^D/, '') || '–'),
+            value(((leg.distBefore + at(leg.cum.dist)) / 1000).toFixed(1).padStart(widths.km), 'km'),
+            value(String(Math.round(at(leg.cum.ele))).padStart(widths.ele), 'm'),
+            value(String(Math.round(leg.gainBefore + at(leg.cum.gain))).padStart(widths.gain), 'm'),
+        ];
+        values.forEach((html, i) => { if (fly.valueEls[i].innerHTML !== html) fly.valueEls[i].innerHTML = html; });
+        $flyStats.style.opacity = opacity;
+    }
+
+    function updateFlyover(t) {
+        const clamp01 = x => Math.min(Math.max(x, 0), 1);
+        const descentEnd = FLY_OVERVIEW_MS + FLY_DESCENT_MS, flightEnd = descentEnd + fly.flightMs;
+        const zoomEnd = flightEnd + FLY_ZOOM_OUT_MS, holdEnd = zoomEnd + FLY_HOLD_MS;
+        if (t >= holdEnd) { stopTrackAnimation(); return; }
+
+        const s = t < descentEnd ? 0 : flightDistance(Math.min(t - descentEnd, fly.flightMs));
+        if (t < FLY_OVERVIEW_MS) {
+            const left = 1 - t / FLY_OVERVIEW_MS;
+            setCameraBetween(fly.overview, fly.overview, 0, 1 + ZOOM_HOLD_DRIFT * left * left);  // eases out of the drift
+        } else if (t < descentEnd) {
+            setCameraBetween(fly.overview, fly.start, smoothstep(0, 1, (t - FLY_OVERVIEW_MS) / FLY_DESCENT_MS));
+        } else if (t < flightEnd) {
+            const view = flightView(s, turnDistance(t - descentEnd));
+            setCameraBetween(view, view, 0);
+        } else {
+            if (!fly.end) fly.end = flightView(fly.total);
+            const hold = clamp01((t - zoomEnd) / FLY_HOLD_MS);
+            setCameraBetween(fly.end, fly.overview, smoothstep(0, 1, (t - flightEnd) / FLY_ZOOM_OUT_MS), 1 + ZOOM_HOLD_DRIFT * hold * hold);
+        }
+
+        // The trail head's line grows at the end of the descent, the others as the pulse passes them
+        // (centered on the place, but finishing by the route's end), and each fades out while the next one grows, so
+        // at most one shows at a time. When zooming out, the last one fades out and all place labels fade in.
+        const growth = e => e.s <= 0
+            ? clamp01((t - (descentEnd - MARKER_MS)) / MARKER_MS)
+            : clamp01((s - Math.min(e.s - FLY_GROW_M / 2, fly.total - FLY_GROW_M)) / FLY_GROW_M);
+        const markerFade = 1 - clamp01((t - flightEnd) / FLY_MARKER_OUT_MS);
+        fly.events.forEach((e, i) => {
+            const next = fly.events[i + 1];
+            updateTrailMarker(e.marker, growth(e), (next ? 1 - growth(next) : 1) * markerFade);
+        });
+        if (t >= zoomEnd - FLY_LABELS_IN_MS) {
+            if (!zoomLabels.length) makeZoomLabels();
+            setZoomLabelOpacity(clamp01((t - (zoomEnd - FLY_LABELS_IN_MS)) / FLY_LABELS_IN_MS));
+        }
+        for (const leg of fly.legs) updatePulseOn(leg.st, s - leg.offset, t >= descentEnd, 0, FLY_PULSE_RADIUS_M);
+        updateFlyStats(s, clamp01((t - (descentEnd - FLY_STATS_FADE_MS)) / FLY_STATS_FADE_MS));
+        if (document.getElementById('sel-sky').value === 'night-to-day') applyNightToDay(s / fly.total);
+    }
+
     function stopTrackAnimation() {
         trackAnimating = false;
         $btnAnimate.classList.remove('playing');
@@ -2083,6 +2454,8 @@
         }
         removeTrailMarkers();
         stopAnimStats();
+        fly = null;
+        $flyStats.style.display = 'none';
         updateSky();  // back to the sky's starting state (night for Night to day)
         if (controlsWereVisible) $rotBox.classList.add('active');
         $frameGuide.classList.add('active');
@@ -2091,30 +2464,32 @@
     $btnAnimate.addEventListener('click', () => {
         if (!scene) return;
         if (trackAnimating) { stopTrackAnimation(); return; }
+        // With a track selected, animate it; with none, fly over the whole trek
         const hlIdx = document.getElementById('sel-highlight').value;
         animTrack = null;
-        scene.traverse(o => { if (o.name === 'gpx-track' && o.userData.trackIdx === +hlIdx) animTrack = o; });
-        if (hlIdx === '' || !animTrack) return;
+        if (hlIdx !== '') scene.traverse(o => { if (o.name === 'gpx-track' && o.userData.trackIdx === +hlIdx) animTrack = o; });
+        if (hlIdx !== '' ? !animTrack : !allTracks().length) return;
         trackAnimating = true;
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
-        animOverview = document.getElementById('sel-overview').value;
-        timelineStarted = false;
-        startPulse();
-        startAnimStats();
         // Keep the frame clean while animating; the A key still stops it
         controlsWereVisible = $rotBox.classList.contains('active');
         $rotBox.classList.remove('active');
         $frameGuide.classList.remove('active');
-        animMarkers = [makeTrailMarker(0, document.getElementById('txt-start-label').value)];
+        if (!animTrack) { startFlyover(); return; }
+        animOverview = document.getElementById('sel-overview').value;
+        timelineStarted = false;
+        startPulse();
+        startAnimStats();
+        animMarkers = [makeTrailMarker(document.getElementById('txt-start-label').value, trackPoint(animTrack, 0))];
         animEndMode = document.getElementById('sel-end-marker').value;
         if (animEndMode !== 'none') {
             const farIdx = trackFarthestIdx[animTrack.userData.trackIdx];
             const totalDist = pulseCum[pulseCum.length - 1];
             animFarFrac = totalDist > 0 ? pulseCum[farIdx] / totalDist : 0;
             const endIdx = animEndMode === 'farthest' ? farIdx : animTrack.userData.positions.length / 3 - 1;
-            animMarkers.push(makeTrailMarker(endIdx, document.getElementById('txt-end-label').value));
+            animMarkers.push(makeTrailMarker(document.getElementById('txt-end-label').value, trackPoint(animTrack, endIdx)));
         }
         // Camera motion starts with the animation proper (startTimeline), after the zoom-in if there is one
         if (animOverview === 'in') startZoomIn();
@@ -2122,6 +2497,9 @@
 
     document.getElementById('sld-animate-dur').addEventListener('input', e => {
         document.getElementById('animate-dur-val').textContent = e.target.value + 's';
+    });
+    document.getElementById('sld-flyover-dur').addEventListener('input', e => {
+        document.getElementById('flyover-dur-val').textContent = e.target.value + 's';
     });
 
     // ── Keyboard Shortcuts ────────────────────────────────────────
