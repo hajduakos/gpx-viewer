@@ -1855,18 +1855,25 @@
         return new THREE.Vector3(p[k * 3], p[k * 3 + 1] + track.position.y, p[k * 3 + 2]);
     };
 
-    function makeTrailMarker(text, base) {
+    // The label shows the text and, below it at 60% size, the elevation (meters) if given
+    function makeTrailMarker(text, base, elevation = null) {
         const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
             new LineMaterial({ linewidth: 4, transparent: true, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
         div.textContent = text;
+        if (elevation != null) {
+            const ele = document.createElement('div');
+            ele.style.fontSize = '60%';
+            ele.textContent = `${Math.round(elevation)} m`;
+            div.appendChild(ele);
+        }
         // 1.65× the regular label size
-        div.style.cssText = `color:#fff;font-size:${document.getElementById('sld-label-size').value * 1.65}px;padding:3px 10px;background:rgba(0,0,0,0.55);border-radius:7px;white-space:nowrap;`;
+        div.style.cssText = `color:#fff;font-size:${document.getElementById('sld-label-size').value * 1.65}px;padding:3px 10px;background:rgba(0,0,0,0.55);border-radius:7px;white-space:nowrap;text-align:center;`;
         const label = new CSS2DObject(div);
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
         scene.add(line, label);
-        return { line, label, base };
+        return { line, label, base, text };
     }
 
     function updateTrailMarker(m, growth, opacity = 1) {
@@ -1878,7 +1885,7 @@
         m.line.material.resolution.set(innerWidth, innerHeight);
         m.line.material.color.set(document.getElementById('clr-highlight').value);
         m.label.position.set(b.x, b.y + h, b.z);
-        m.label.visible = growth >= 1 && opacity > 0 && m.label.element.textContent !== '';
+        m.label.visible = growth >= 1 && opacity > 0 && m.text !== '';
         m.label.element.style.opacity = opacity;
     }
 
@@ -2241,7 +2248,7 @@
             for (const { text, k } of trackPlaces(leg.track)) {
                 if (events.length && events[events.length - 1].text === text) continue;
                 const pos = positions.get(text);
-                events.push({ text, s: leg.offset + leg.st.cum[k], marker: makeTrailMarker(text, () => pos) });
+                events.push({ text, s: leg.offset + leg.st.cum[k], marker: makeTrailMarker(text, () => pos, leg.cum.ele[k]) });
             }
         }
         animMarkers = events.map(e => e.marker);
@@ -2526,14 +2533,15 @@
         timelineStarted = false;
         startPulse();
         startAnimStats();
-        animMarkers = [makeTrailMarker(document.getElementById('txt-start-label').value, trackPoint(animTrack, 0))];
+        const animEle = trackCumStats[animTrack.userData.trackIdx].ele;
+        animMarkers = [makeTrailMarker(document.getElementById('txt-start-label').value, trackPoint(animTrack, 0), animEle[0])];
         animEndMode = document.getElementById('sel-end-marker').value;
         if (animEndMode !== 'none') {
             const farIdx = trackFarthestIdx[animTrack.userData.trackIdx];
             const totalDist = pulseCum[pulseCum.length - 1];
             animFarFrac = totalDist > 0 ? pulseCum[farIdx] / totalDist : 0;
             const endIdx = animEndMode === 'farthest' ? farIdx : animTrack.userData.positions.length / 3 - 1;
-            animMarkers.push(makeTrailMarker(document.getElementById('txt-end-label').value, trackPoint(animTrack, endIdx)));
+            animMarkers.push(makeTrailMarker(document.getElementById('txt-end-label').value, trackPoint(animTrack, endIdx), animEle[endIdx]));
         }
         // Camera motion starts with the animation proper (startTimeline), after the zoom-in if there is one
         if (animOverview === 'in') startZoomIn();
