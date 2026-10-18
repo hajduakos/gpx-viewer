@@ -1743,6 +1743,7 @@
     let animTrack = null;
     let animEndMode = 'end';
     let controlsWereVisible = false;
+    let animStartView = null;  // The camera when the animation started, restored when it ends
     let animFarFrac = 0;  // Fraction of the track's length at which the farthest point lies
     let animOverview = 'none';  // Overview setting ('none', 'in', 'out'), read when the animation starts
     let timelineStarted = false;  // Whether the animation proper has begun (it waits for the zoom-in)
@@ -2543,6 +2544,12 @@
         stopPulse();
         removeZoomLabels();
         $trekStats.style.display = 'none';
+        if (animStartView) {
+            controls.enableDamping = false;
+            controls.update();  // flush leftover motion inertia, so it doesn't nudge the restored view
+            setCameraBetween(animStartView, animStartView, 0);
+            animStartView = null;
+        }
         controls.enableDamping = true;
         zoomIn = null;
         if (zoomOut) {
@@ -2573,6 +2580,7 @@
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
+        animStartView = cameraView();
         // Keep the frame clean while animating; the A key still stops it
         document.body.classList.add('recording');
         controlsWereVisible = $rotBox.classList.contains('active');
