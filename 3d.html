@@ -1865,8 +1865,9 @@
         return new THREE.Vector3(p[k * 3], p[k * 3 + 1] + track.position.y, p[k * 3 + 2]);
     };
 
-    // The label shows the text and, below it at 60% size, the day (if given) and the elevation (meters, if given)
-    function makeTrailMarker(text, base, elevation = null, day = null) {
+    // The label shows the text and, below it at 60% size, the day (if given) and the elevation (meters, if given).
+    // The line has the highlight color and MARKER_HEIGHT_M unless given.
+    function makeTrailMarker(text, base, elevation = null, day = null, { color = null, heightM = MARKER_HEIGHT_M } = {}) {
         const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
             new LineMaterial({ linewidth: 4, transparent: true, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
@@ -1880,7 +1881,7 @@
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
         scene.add(line, label);
-        const m = { line, label, base, text, info, elevation };
+        const m = { line, label, base, text, info, elevation, color, heightM };
         setMarkerDay(m, day);
         return m;
     }
@@ -1894,13 +1895,13 @@
     }
 
     function updateTrailMarker(m, growth, opacity = 1) {
-        const b = m.base(), h = MARKER_HEIGHT_M * S.scale;
+        const b = m.base(), h = m.heightM * S.scale;
         m.line.position.copy(b);
         m.line.scale.y = Math.max(growth, 1e-4) * h;
         m.line.visible = growth > 0 && opacity > 0;
         m.line.material.opacity = opacity;
         m.line.material.resolution.set(innerWidth, innerHeight);
-        m.line.material.color.set(document.getElementById('clr-highlight').value);
+        m.line.material.color.set(m.color ?? document.getElementById('clr-highlight').value);
         m.label.position.set(b.x, b.y + h, b.z);
         m.label.visible = growth >= 1 && opacity > 0 && m.text !== '';
         m.label.element.style.opacity = opacity;
@@ -2243,8 +2244,32 @@
                                         // the way toward the next day's end
     const FLY_TURN_TIME_MS = 1500;      // Turning follows the flight averaged over this time each way, so it keeps its
                                         // pace while the flight slows down near places
+    // EBC-specific peaks: a label with the altitude fades in above the peak, on a short black line, around the moment
+    // the pulse is halfway along each of its tracks
+    const FLY_PEAKS = [
+        { name: 'Cho Oyu', lat: 28.0941, lon: 86.6608, ele: 8188, tracks: ['Dole to Machhermo'] },
+        { name: 'Everest', lat: 27.9881, lon: 86.9250, ele: 8849, tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
+        { name: 'Lhotse', lat: 27.9617, lon: 86.9336, ele: 8516, tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
+        { name: 'Ama Dablam', lat: 27.8614, lon: 86.8614, ele: 6812, tracks: ['Thagnak to Dzongla'] },
+        { name: 'Makalu', lat: 27.8897, lon: 87.0886, ele: 8485, tracks: ['Gokyo to Gokyo Ri'] },
+    ];
+    const FLY_PEAK_SHOW_MS = 2000;  // shown from this long before to this long after the pulse passes the track's middle
+    const FLY_PEAK_FADE_MS = 300;
+    const FLY_PEAK_LINE_M = 200;
+    const FLY_MILESTONE_M = 10000;      // Every this much trek distance, a small label flashes up on the trail
+    const FLY_MILESTONE_MS = 1000;
+    const FLY_MILESTONE_FADE_MS = 150;
     const $flyStats = document.getElementById('fly-stats');
     let fly = null;
+
+    // Scene position of a lat/lon on the terrain surface
+    function terrainPoint(lat, lon) {
+        const { bb, elev, gw, gh } = D;
+        return new THREE.Vector3(
+            ((lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * S.sw,
+            (interpElev(lat, lon, bb, elev, gw, gh) - S.meanE) * S.scale,
+            ((bb.maxLat - lat) / (bb.maxLat - bb.minLat) - 0.5) * S.sd);
+    }
 
     // Cubic Hermite through values (arrays of numbers) at increasing positions ss, with Catmull-Rom tangents taken
     // per unit of s, so the rate of change doesn't jump at the keys. At keys marked gentle, the tangent is capped at
@@ -2290,25 +2315,26 @@
         });
         const total = s;
 
-        // The day starting at route distance at, if one does: the trek's start, or a boundary between tracks of
-        // different days (D11 and D12 have two tracks each)
+        // The day change at route distance at, if there is one: {prev, next}. At the trek's start there's no previous
+        // day; elsewhere it's a boundary between tracks of different days (D11 and D12 have two tracks each).
         const dayNum = leg => parseInt(trackLabels[leg.track.userData.trackIdx].day.slice(1), 10) || null;
-        const newDayAt = at => {
-            if (at <= 0) return dayNum(legs[0]);
+        const dayChangeAt = at => {
+            if (at <= 0) return { prev: null, next: dayNum(legs[0]) };
             const j = legs.findIndex((l, i) => i > 0 && Math.abs(l.offset - at) < 50);
-            return j > 0 && dayNum(legs[j]) !== dayNum(legs[j - 1]) ? dayNum(legs[j]) : null;
+            return j > 0 && dayNum(legs[j]) !== dayNum(legs[j - 1]) ? { prev: dayNum(legs[j - 1]), next: dayNum(legs[j]) } : null;
         };
 
         // Places in the order the pulse passes them, at the route distance where it does. A place shows again when
         // passed again (e.g. Gokyo after Gokyo Ri), but not twice in a row (e.g. a day's end and the next day's start).
-        // Labels where a new day starts show it.
+        // Labels where a day changes show the day just finished, switching to the next one halfway through the stop.
         const positions = placePositions(), events = [];
         for (const leg of legs) {
             for (const { text, k } of trackPlaces(leg.track)) {
                 if (events.length && events[events.length - 1].text === text) continue;
                 const pos = positions.get(text);
-                const at = leg.offset + leg.st.cum[k];
-                events.push({ text, s: at, marker: makeTrailMarker(text, () => pos, leg.cum.ele[k], newDayAt(at)) });
+                const at = leg.offset + leg.st.cum[k], change = dayChangeAt(at);
+                events.push({ text, s: at, marker: makeTrailMarker(text, () => pos, leg.cum.ele[k], change && (change.prev ?? change.next)),
+                              dayNext: change && change.prev != null ? change.next : null });
             }
         }
         animMarkers = events.map(e => e.marker);
@@ -2368,12 +2394,12 @@
         for (const e of events) if (e.s > 0) addStop(e.s, e);
         for (const leg of legs) addStop(leg.offset + leg.len, null);
         stops.sort((a, b) => a.s - b.s);
-        // A day starting at a stop without a label (the rest day at Namche ends where it began) updates the label
-        // still showing there
+        // A day changing at a stop without a label (the rest day at Namche ends where it began) updates the label still
+        // showing there, halfway through the stop like the others
         for (const st of stops) {
-            const day = st.event ? null : newDayAt(st.s);
+            const change = st.event ? null : dayChangeAt(st.s);
             const shown = events.filter(e => e.s < st.s).pop();
-            if (day && shown) st.dayUpdate = { day, marker: shown.marker };
+            if (change && shown) st.dayUpdate = { day: change.next, marker: shown.marker };
         }
         const STEP = 20, timeAt = flightTable(total, stops.map(st => st.s), STEP);
 
@@ -2385,6 +2411,42 @@
         fly = { legs, total, events, target, heading, timeAt, step: STEP, widths, flightMs, overview: overviewView(), end: null };
         planStops(stops);
         fly.start = flightView(0);
+        // Distance milestones: where the trek distance (as in the stats bar) passes each multiple of FLY_MILESTONE_M
+        fly.milestones = [];
+        for (const leg of legs) {
+            const dist = leg.cum.dist, n = dist.length;
+            if (n < 2) continue;
+            for (let D = Math.floor(leg.distBefore / FLY_MILESTONE_M + 1) * FLY_MILESTONE_M; D <= leg.distBefore + dist[n - 1]; D += FLY_MILESTONE_M) {
+                const local = D - leg.distBefore;
+                let k = 0;
+                while (k < n - 2 && dist[k + 1] < local) k++;
+                const f = dist[k + 1] > dist[k] ? Math.min((local - dist[k]) / (dist[k + 1] - dist[k]), 1) : 0;
+                const div = document.createElement('div');
+                div.textContent = `${D / 1000} km`;
+                div.style.cssText = `color:#fff;font-size:${+document.getElementById('sld-label-size').value}px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;margin-top:-6px;`;
+                const label = new CSS2DObject(div);
+                label.center.set(0.5, 1);  // just above the trail
+                label.position.copy(trackPoint(leg.track, k)().lerp(trackPoint(leg.track, k + 1)(), f));
+                label.visible = false;
+                scene.add(label);
+                const at = leg.offset + leg.st.cum[k] + (leg.st.cum[k + 1] - leg.st.cum[k]) * f;
+                fly.milestones.push({ label, at: flightTimeAt(at) });
+            }
+        }
+        // Peaks, timed around the pulse passing their track's middle
+        fly.peaks = [];
+        const { bb } = D;
+        for (const peak of FLY_PEAKS) {
+            if (peak.lat < bb.minLat || peak.lat > bb.maxLat || peak.lon < bb.minLon || peak.lon > bb.maxLon) continue;
+            const base = terrainPoint(peak.lat, peak.lon);
+            for (const track of peak.tracks) {
+                const leg = legs.find(l => trackLabels[l.track.userData.trackIdx].display === track);
+                if (!leg) continue;
+                const marker = makeTrailMarker(peak.name, () => base, peak.ele, null, { color: '#000000', heightM: FLY_PEAK_LINE_M });
+                animMarkers.push(marker);
+                fly.peaks.push({ marker, at: flightTimeAt(leg.offset + leg.len / 2) });
+            }
+        }
         fly.valueEls = makeStatsBar($flyStats);
         controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
     }
@@ -2433,17 +2495,20 @@
 
     // Lays out the stops in flight time: the flight is FLY_PAUSE_MS longer per stop than its moving time
     function planStops(stops) {
-        const { timeAt, step, flightMs } = fly, units = timeAt[timeAt.length - 1];
-        const pauseMs = Math.min(FLY_PAUSE_MS, flightMs / 2 / Math.max(stops.length, 1));  // keep time to move
-        const movingMs = flightMs - pauseMs * stops.length;
-        stops.forEach((st, i) => {
-            const x = st.s / step, k = Math.min(Math.floor(x), timeAt.length - 2);
-            const u = timeAt[k] + (timeAt[k + 1] - timeAt[k]) * (x - k);  // table time at the stop
-            st.moving = rampMoving(u / units * (movingMs - FLY_RAMP_MS), movingMs);
-            st.start = st.moving + i * pauseMs;  // flight time the stop begins
+        const pauseMs = Math.min(FLY_PAUSE_MS, fly.flightMs / 2 / Math.max(stops.length, 1));  // keep time to move
+        Object.assign(fly, { stops, pauseMs, movingMs: fly.flightMs - pauseMs * stops.length });
+        for (const st of stops) {
+            st.start = flightTimeAt(st.s);  // flight time the stop begins
             if (st.event) st.event.growStart = st.start;
-        });
-        Object.assign(fly, { stops, pauseMs, movingMs });
+        }
+    }
+
+    // Flight time (ms) at which the pulse reaches route distance s (arriving, for a stop there)
+    function flightTimeAt(s) {
+        const { timeAt, step, stops, pauseMs, movingMs } = fly, units = timeAt[timeAt.length - 1];
+        const x = Math.min(s / step, timeAt.length - 1), k = Math.min(Math.floor(x), timeAt.length - 2);
+        const u = timeAt[k] + (timeAt[k + 1] - timeAt[k]) * (x - k);  // table time at s
+        return rampMoving(u / units * (movingMs - FLY_RAMP_MS), movingMs) + stops.filter(st => st.s < s - 1).length * pauseMs;
     }
 
     // Route distance after t ms of flight: moving (eased in and out over FLY_RAMP_MS, braking near stops) except
@@ -2528,11 +2593,32 @@
         const growth = e => e.s <= 0
             ? clamp01((t - (descentEnd - MARKER_MS)) / MARKER_MS)
             : clamp01((t - descentEnd - e.growStart) / FLY_GROW_MS);
+        // Day changes at stops: halfway through, the label switches from the day just finished to the next one
+        const half = fly.pauseMs / 2;
         for (const st of fly.stops) {
-            if (st.dayUpdate && !st.dayUpdate.done && t - descentEnd >= st.start) {
+            if (st.dayUpdate && !st.dayUpdate.done && t - descentEnd >= st.start + half) {
                 setMarkerDay(st.dayUpdate.marker, st.dayUpdate.day);
                 st.dayUpdate.done = true;
             }
+        }
+        // A label that just appeared switches halfway through the time it's up during the stop
+        const labelHalf = FLY_GROW_MS + Math.max(fly.pauseMs - FLY_GROW_MS, 0) / 2;
+        for (const e of fly.events) {
+            if (e.dayNext && !e.daySwitched && t - descentEnd >= e.growStart + labelHalf) {
+                setMarkerDay(e.marker, e.dayNext);
+                e.daySwitched = true;
+            }
+        }
+        for (const ms of fly.milestones) {
+            const tf = t - descentEnd;
+            const opacity = clamp01((tf - ms.at) / FLY_MILESTONE_FADE_MS) * clamp01((ms.at + FLY_MILESTONE_MS - tf) / FLY_MILESTONE_FADE_MS);
+            ms.label.visible = opacity > 0;
+            ms.label.element.style.opacity = opacity;
+        }
+        for (const peak of fly.peaks) {
+            const tf = t - descentEnd;
+            const opacity = clamp01((tf - (peak.at - FLY_PEAK_SHOW_MS)) / FLY_PEAK_FADE_MS) * clamp01((peak.at + FLY_PEAK_SHOW_MS - tf) / FLY_PEAK_FADE_MS);
+            updateTrailMarker(peak.marker, opacity > 0 ? 1 : 0, opacity);
         }
         const markerFade = 1 - clamp01((t - flightEnd) / FLY_MARKER_OUT_MS);
         fly.events.forEach((e, i) => {
@@ -2572,6 +2658,10 @@
         }
         removeTrailMarkers();
         stopAnimStats();
+        for (const ms of fly?.milestones ?? []) {
+            scene.remove(ms.label);
+            ms.label.element.remove();
+        }
         fly = null;
         $flyStats.style.display = 'none';
         updateSky();  // back to the sky's starting state (night for Night to day)
