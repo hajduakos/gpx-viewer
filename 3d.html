@@ -2161,9 +2161,10 @@
     const FLY_STATS_FADE_MS = 1000;     // The stats box fades in at the end of the descent
     const FLY_MARKER_OUT_MS = 1000;     // When zooming out, the last place's marker fades out,
     const FLY_LABELS_IN_MS = 2000;      // and all place labels fade in at the end of the zoom out
-    const FLY_SLOW = 0.25;              // Speed factor while passing a place...
-    const FLY_SLOW_RADIUS_M = 800;      // ...within this distance of it
-    const FLY_GROW_M = 500;             // A place's line grows over this distance, centered on the place
+    const FLY_GROW_MS = 800;            // At each place and day's end the pulse (and the counters) stop while the
+    const FLY_LABEL_HOLD_MS = 1000;     // place's line grows, then for a moment with the label up, to read the stats;
+    const FLY_PAUSE_MS = FLY_GROW_MS + FLY_LABEL_HOLD_MS;
+    const FLY_BRAKE_M = 400;            // braking to the stop and accelerating away over this distance
     const FLY_PULSE_RADIUS_M = 500;     // Half the daily animation's pulse
     const FLY_TURN_SMOOTH_M = 5000;     // The camera heading is averaged over this distance each way, spreading turns out
     const FLY_POLAR = THREE.MathUtils.degToRad(62);  // Camera angle from vertical
@@ -2289,7 +2290,18 @@
         const heading = averagedHeading(linear, total);
 
         const flightMs = +document.getElementById('sld-flyover-dur').value * 1000;
-        const STEP = 20, timeAt = flightTable(total, events.filter(e => e.s > 0).map(e => e.s), STEP);
+        // Stops: every place (its label animates meanwhile) and every day's end, merged where they coincide (e.g. a
+        // day's end and the next day's start). The trail head isn't one, the flight starts there after the descent.
+        const stops = [];
+        const addStop = (at, event) => {
+            const near = stops.find(st => Math.abs(st.s - at) < 50);
+            if (near) near.event = near.event || event;
+            else stops.push({ s: at, event });
+        };
+        for (const e of events) if (e.s > 0) addStop(e.s, e);
+        for (const leg of legs) addStop(leg.offset + leg.len, null);
+        stops.sort((a, b) => a.s - b.s);
+        const STEP = 20, timeAt = flightTable(total, stops.map(st => st.s), STEP);
 
         // Widths for the stats box, so it doesn't change width while counting
         const km = d => (d / 1000).toFixed(1), m = v => String(Math.round(v));
@@ -2298,6 +2310,7 @@
         const widths = { km: km(distBefore).length, ele: m(maxEle).length, gain: m(gainBefore).length };
 
         fly = { legs, total, events, target, heading, timeAt, step: STEP, widths, flightMs, overview: overviewView(), end: null };
+        planStops(stops);
         fly.start = flightView(0);
         $flyStats.innerHTML = ['Day', 'Distance', 'Elevation', 'Gain']
             .map(label => `<div><div class="fly-label">${label}</div><div class="fly-value"></div></div>`).join('');
@@ -2324,28 +2337,58 @@
         };
     }
 
-    // Time to route distance, tabulated every step meters (timeAt[i]: time to reach i * step, in arbitrary units).
-    // Constant speed, so days take time in proportion to their distance, except near places (slowed to FLY_SLOW).
-    function flightTable(total, placeS, step) {
+    // Time to route distance while moving, tabulated every step meters (timeAt[i]: time to reach i * step, in
+    // arbitrary units). Constant speed, so days take time in proportion to their distance, except within FLY_BRAKE_M
+    // of a stop, where speed goes as the square root of the distance to it: constant deceleration to a standstill.
+    function flightTable(total, stopS, step) {
         const steps = Math.max(1, Math.ceil(total / step));
         const timeAt = new Float64Array(steps + 1);
         for (let i = 1; i <= steps; i++) {
             const d = (i - 0.5) * step;
-            let slow = 0;
-            for (const ps of placeS) {
-                const x = Math.abs(d - ps);
-                if (x < FLY_SLOW_RADIUS_M) slow = Math.max(slow, Math.cos(x / FLY_SLOW_RADIUS_M * Math.PI / 2) ** 2);
-            }
-            timeAt[i] = timeAt[i - 1] + step / (1 - (1 - FLY_SLOW) * slow);
+            let speed = 1;
+            for (const ss of stopS) speed = Math.min(speed, Math.sqrt(Math.min(Math.abs(d - ss) / FLY_BRAKE_M, 1)));
+            timeAt[i] = timeAt[i - 1] + step / speed;
         }
         return timeAt;
     }
 
-    // Route distance after t ms of flight: eased in and out over FLY_RAMP_MS, slower near places
+    // Moving time (ms, eased in and out over FLY_RAMP_MS) at which the pulse reaches route distance s, and back
+    function rampTau(m, movingMs) {
+        const R = FLY_RAMP_MS, tauMax = movingMs - R;
+        return m < R ? m * m / (2 * R) : m > movingMs - R ? tauMax - (movingMs - m) ** 2 / (2 * R) : m - R / 2;
+    }
+    function rampMoving(tau, movingMs) {
+        const R = FLY_RAMP_MS, tauMax = movingMs - R;
+        return tau < R / 2 ? Math.sqrt(2 * R * tau) : tau > tauMax - R / 2 ? movingMs - Math.sqrt(2 * R * (tauMax - tau)) : tau + R / 2;
+    }
+
+    // Lays out the stops in flight time: the flight is FLY_PAUSE_MS longer per stop than its moving time
+    function planStops(stops) {
+        const { timeAt, step, flightMs } = fly, units = timeAt[timeAt.length - 1];
+        const pauseMs = Math.min(FLY_PAUSE_MS, flightMs / 2 / Math.max(stops.length, 1));  // keep time to move
+        const movingMs = flightMs - pauseMs * stops.length;
+        stops.forEach((st, i) => {
+            const x = st.s / step, k = Math.min(Math.floor(x), timeAt.length - 2);
+            const u = timeAt[k] + (timeAt[k + 1] - timeAt[k]) * (x - k);  // table time at the stop
+            st.moving = rampMoving(u / units * (movingMs - FLY_RAMP_MS), movingMs);
+            st.start = st.moving + i * pauseMs;  // flight time the stop begins
+            if (st.event) st.event.growStart = st.start;
+        });
+        Object.assign(fly, { stops, pauseMs, movingMs });
+    }
+
+    // Route distance after t ms of flight: moving (eased in and out over FLY_RAMP_MS, braking near stops) except
+    // while at a stop
     function flightDistance(t) {
-        const { flightMs, timeAt, step, total } = fly, R = FLY_RAMP_MS, tauMax = flightMs - R;
-        let tau = t < R ? t * t / (2 * R) : t > flightMs - R ? tauMax - (flightMs - t) ** 2 / (2 * R) : t - R / 2;
-        const target = Math.min(Math.max(tau / tauMax, 0), 1) * timeAt[timeAt.length - 1];
+        const { timeAt, step, total, stops, pauseMs, movingMs } = fly;
+        let passed = 0;
+        for (const st of stops) {
+            if (t < st.start) break;
+            if (t < st.start + pauseMs) return st.s;
+            passed++;
+        }
+        const tau = rampTau(Math.min(Math.max(t - passed * pauseMs, 0), movingMs), movingMs);
+        const target = Math.min(Math.max(tau / (movingMs - FLY_RAMP_MS), 0), 1) * timeAt[timeAt.length - 1];
         let lo = 0, hi = timeAt.length - 1;
         while (lo < hi - 1) { const mid = (lo + hi) >> 1; if (timeAt[mid] <= target) lo = mid; else hi = mid; }
         const f = timeAt[hi] > timeAt[lo] ? (target - timeAt[lo]) / (timeAt[hi] - timeAt[lo]) : 0;
@@ -2353,7 +2396,7 @@
     }
 
     // Route distance averaged over FLY_TURN_TIME_MS each way (less near the flight's ends, so it matches there):
-    // smooth through the slow-downs near places
+    // smooth through the stops, so the camera keeps drifting slowly while the pulse stands still
     function turnDistance(t) {
         const w = Math.min(FLY_TURN_TIME_MS, t, fly.flightMs - t);
         if (w <= 0) return flightDistance(t);
@@ -2376,8 +2419,9 @@
 
     function updateFlyStats(s, opacity) {
         const { legs, widths } = fly;
+        // At a day boundary it's still the day just finished: the next day counts once the pulse moves into it
         let li = 0;
-        while (li < legs.length - 1 && s >= legs[li + 1].offset) li++;
+        while (li < legs.length - 1 && s > legs[li + 1].offset) li++;
         const leg = legs[li], pc = leg.st.cum, n = pc.length, d = s - leg.offset;
         let k = 0, hi = n - 1;
         while (k < hi) { const mid = (k + hi + 1) >> 1; if (pc[mid] <= d) k = mid; else hi = mid - 1; }
@@ -2408,7 +2452,7 @@
         } else if (t < descentEnd) {
             setCameraBetween(fly.overview, fly.start, smoothstep(0, 1, (t - FLY_OVERVIEW_MS) / FLY_DESCENT_MS));
         } else if (t < flightEnd) {
-            const view = flightView(s, turnDistance(t - descentEnd));
+            const view = flightView(turnDistance(t - descentEnd));
             setCameraBetween(view, view, 0);
         } else {
             if (!fly.end) fly.end = flightView(fly.total);
@@ -2416,12 +2460,12 @@
             setCameraBetween(fly.end, fly.overview, smoothstep(0, 1, (t - flightEnd) / FLY_ZOOM_OUT_MS), 1 + ZOOM_HOLD_DRIFT * hold * hold);
         }
 
-        // The trail head's line grows at the end of the descent, the others as the pulse passes them
-        // (centered on the place, but finishing by the route's end), and each fades out while the next one grows, so
-        // at most one shows at a time. When zooming out, the last one fades out and all place labels fade in.
+        // The trail head's line grows at the end of the descent, the others during their stop. Each fades out while
+        // the next one grows, so at most one shows at a time. When zooming out, the last one fades out and all place
+        // labels fade in.
         const growth = e => e.s <= 0
             ? clamp01((t - (descentEnd - MARKER_MS)) / MARKER_MS)
-            : clamp01((s - Math.min(e.s - FLY_GROW_M / 2, fly.total - FLY_GROW_M)) / FLY_GROW_M);
+            : clamp01((t - descentEnd - e.growStart) / FLY_GROW_MS);
         const markerFade = 1 - clamp01((t - flightEnd) / FLY_MARKER_OUT_MS);
         fly.events.forEach((e, i) => {
             const next = fly.events[i + 1];
