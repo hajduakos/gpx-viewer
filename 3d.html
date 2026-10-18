@@ -319,23 +319,26 @@
             right: calc((100vw - min(100vw, calc(100vh * 16 / 9))) / 2 + 50px);
             transform: none;
         }
-        /* Flyover stats: a bar at the top left of the 16:9 frame, small labels over big numbers */
-        #fly-stats {
-            top: calc((100vh - min(100vh, calc(100vw * 9 / 16))) / 2 + 25px);
-            bottom: auto;
-            left: calc((100vw - min(100vw, calc(100vh * 16 / 9))) / 2 + 25px);
-            transform: none;
+        /* Stats bars (daily and flyover): small labels over big numbers */
+        #anim-stats, #fly-stats {
             gap: 0.9em;
             font-size: min(36px, calc(min(100vw, calc(100vh * 16 / 9)) / 28));
         }
-        #fly-stats .fly-label {
+        .bar-label {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: 0.4em;
             letter-spacing: 0.08em;
             text-transform: uppercase;
             color: rgba(255,255,255,0.75);
         }
-        #fly-stats .fly-unit { font-size: 0.55em; color: rgba(255,255,255,0.8); }
+        .bar-unit { font-size: 0.55em; color: rgba(255,255,255,0.8); }
+        /* Flyover stats: top left of the 16:9 frame */
+        #fly-stats {
+            top: calc((100vh - min(100vh, calc(100vw * 9 / 16))) / 2 + 25px);
+            bottom: auto;
+            left: calc((100vw - min(100vw, calc(100vh * 16 / 9))) / 2 + 25px);
+            transform: none;
+        }
     </style>
 </head>
 <body>
@@ -1906,24 +1909,47 @@
         animMarkers = [];
     }
 
-    // ── Distance/ascent box ──
-    // Shows the day with the distance and ascent covered so far, following the pulse
+    // ── Stats bars ──
+    // Day, distance, elevation and gain columns: small labels over big numbers, used by the daily animation and the
+    // flyover. Numbers are padded to their final width (monospace), so the columns don't shift while counting.
+    const BAR_LABELS = ['Day', 'Distance', 'Elevation', 'Gain'];
+
+    // Fills the bar element with the columns; returns the value elements
+    function makeStatsBar(el) {
+        el.innerHTML = BAR_LABELS.map(label => `<div><div class="bar-label">${label}</div><div class="bar-value"></div></div>`).join('');
+        el.style.opacity = 0;
+        el.style.display = 'flex';
+        return [...el.querySelectorAll('.bar-value')];
+    }
+
+    // Number widths for the bar, from the largest values it will show
+    function statsBarWidths(maxDist, maxEle, maxGain) {
+        return { km: (maxDist / 1000).toFixed(1).length, ele: String(Math.round(maxEle)).length, gain: String(Math.round(maxGain)).length };
+    }
+
+    function setStatsBar(valueEls, widths, day, dist, ele, gain) {
+        const value = (num, unit) => num + (unit ? `<span class="bar-unit"> ${unit}</span>` : '');
+        const values = [
+            value(day.replace(/^D/, '') || '–'),
+            value((dist / 1000).toFixed(1).padStart(widths.km), 'km'),
+            value(String(Math.round(ele)).padStart(widths.ele), 'm'),
+            value(String(Math.round(gain)).padStart(widths.gain), 'm'),
+        ];
+        values.forEach((html, i) => { if (valueEls[i].innerHTML !== html) valueEls[i].innerHTML = html; });
+    }
+
+    // ── Daily stats bar ──
+    // The day's distance, current elevation and gain, following the pulse
     const $animStats = document.getElementById('anim-stats');
-    let animStatsText = null;
+    let animStatsBar = null;
 
     function startAnimStats() {
-        const i = animTrack.userData.trackIdx, cum = trackCumStats[i], last = cum.dist.length - 1;
-        const km = d => (d / 1000).toFixed(1), m = g => String(Math.round(g));
-        // Pad to the width of the day's totals so the text keeps its width while counting up
-        const kmWidth = km(cum.dist[last]).length, mWidth = m(cum.gain[last]).length;
-        const day = trackLabels[i].day.replace(/^D/, 'Day ');  // "D01" -> "Day 01"
-        animStatsText = (d, g) => `${day ? day + ' ' : ''}${km(d).padStart(kmWidth)}km ${m(g).padStart(mWidth)}m`;
-        $animStats.style.opacity = 0;
-        $animStats.style.display = 'block';
+        const cum = trackCumStats[animTrack.userData.trackIdx], last = cum.dist.length - 1;
+        animStatsBar = { valueEls: makeStatsBar($animStats), widths: statsBarWidths(cum.dist[last], cum.ele.reduce((a, b) => Math.max(a, b), 0), cum.gain[last]) };
     }
 
     function updateAnimStats(progress, opacity) {
-        const cum = trackCumStats[animTrack.userData.trackIdx], pc = pulseCum, n = pc.length;
+        const i = animTrack.userData.trackIdx, cum = trackCumStats[i], pc = pulseCum, n = pc.length;
         // Find where the pulse is between track points k and k1, then interpolate the stats there
         const d = progress * pc[n - 1];
         let k = 0, hi = n - 1;
@@ -1931,7 +1957,7 @@
         const k1 = Math.min(k + 1, n - 1);
         const f = pc[k1] > pc[k] ? (d - pc[k]) / (pc[k1] - pc[k]) : 0;
         const at = a => a[k] + (a[k1] - a[k]) * f;
-        $animStats.textContent = animStatsText(at(cum.dist), at(cum.gain));
+        setStatsBar(animStatsBar.valueEls, animStatsBar.widths, trackLabels[i].day, at(cum.dist), at(cum.ele), at(cum.gain));
         $animStats.style.opacity = opacity;
     }
 
@@ -2335,20 +2361,15 @@
         }
         const STEP = 20, timeAt = flightTable(total, stops.map(st => st.s), STEP);
 
-        // Widths for the stats box, so it doesn't change width while counting
-        const km = d => (d / 1000).toFixed(1), m = v => String(Math.round(v));
+        // Widths for the stats bar, so it doesn't change width while counting
         let maxEle = 0;
         for (const leg of legs) for (const e of leg.cum.ele) maxEle = Math.max(maxEle, e);
-        const widths = { km: km(distBefore).length, ele: m(maxEle).length, gain: m(gainBefore).length };
+        const widths = statsBarWidths(distBefore, maxEle, gainBefore);
 
         fly = { legs, total, events, target, heading, timeAt, step: STEP, widths, flightMs, overview: overviewView(), end: null };
         planStops(stops);
         fly.start = flightView(0);
-        $flyStats.innerHTML = ['Day', 'Distance', 'Elevation', 'Gain']
-            .map(label => `<div><div class="fly-label">${label}</div><div class="fly-value"></div></div>`).join('');
-        fly.valueEls = [...$flyStats.querySelectorAll('.fly-value')];
-        $flyStats.style.opacity = 0;
-        $flyStats.style.display = 'flex';
+        fly.valueEls = makeStatsBar($flyStats);
         controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
     }
 
@@ -2459,15 +2480,8 @@
         while (k < hi) { const mid = (k + hi + 1) >> 1; if (pc[mid] <= d) k = mid; else hi = mid - 1; }
         const k1 = Math.min(k + 1, n - 1), f = pc[k1] > pc[k] ? Math.min((d - pc[k]) / (pc[k1] - pc[k]), 1) : 0;
         const at = a => a[k] + (a[k1] - a[k]) * f;
-        // Numbers are padded to their final width (monospace), so the columns don't shift while counting
-        const value = (num, unit) => num + (unit ? `<span class="fly-unit"> ${unit}</span>` : '');
-        const values = [
-            value(trackLabels[leg.track.userData.trackIdx].day.replace(/^D/, '') || '–'),
-            value(((leg.distBefore + at(leg.cum.dist)) / 1000).toFixed(1).padStart(widths.km), 'km'),
-            value(String(Math.round(at(leg.cum.ele))).padStart(widths.ele), 'm'),
-            value(String(Math.round(leg.gainBefore + at(leg.cum.gain))).padStart(widths.gain), 'm'),
-        ];
-        values.forEach((html, i) => { if (fly.valueEls[i].innerHTML !== html) fly.valueEls[i].innerHTML = html; });
+        setStatsBar(fly.valueEls, widths, trackLabels[leg.track.userData.trackIdx].day,
+            leg.distBefore + at(leg.cum.dist), at(leg.cum.ele), leg.gainBefore + at(leg.cum.gain));
         $flyStats.style.opacity = opacity;
     }
 
