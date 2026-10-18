@@ -1744,7 +1744,10 @@
     let animEndMode = 'end';
     let controlsWereVisible = false;
     let animStartView = null;  // The camera when the animation started, restored when it ends
-    let animFarFrac = 0;  // Fraction of the track's length at which the farthest point lies
+    let animEndMarker = null;
+    // Stops of the daily pulse, in order along the track: {frac (of the track's length), ms, growMs, marker, farthest}.
+    // The farthest point (with that end mode) and extra places like Cho La Pass.
+    let animHolds = [];
     let animOverview = 'none';  // Overview setting ('none', 'in', 'out'), read when the animation starts
     let timelineStarted = false;  // Whether the animation proper has begun (it waits for the zoom-in)
     const $btnAnimate = document.getElementById('btn-animate');
@@ -1973,24 +1976,33 @@
     function animPhases(duration) {
         const startMarkerStart = ANIM_LEAD_MS + STATS_FADE_MS;
         const pulseStart = startMarkerStart + MARKER_MS;
-        const pulseEnd = pulseStart + duration + (animEndMode === 'farthest' ? MARKER_MS : 0);
-        const endMarkerStart = animEndMode === 'farthest' ? pulseStart + animFarFrac * duration : pulseEnd;
+        // Each hold starts (relative to the pulse start) when the pulse gets there, after the holds before it
+        let held = 0;
+        const holdStarts = animHolds.map(h => { const at = h.frac * duration + held; held += h.ms; return at; });
+        const pulseEnd = pulseStart + duration + held;
+        const far = animHolds.findIndex(h => h.farthest);
+        const endMarkerStart = far >= 0 ? pulseStart + holdStarts[far] : pulseEnd;
         const total = pulseEnd + (animEndMode === 'end' ? MARKER_MS : 0) + ANIM_TAIL_MS;
-        return { startMarkerStart, pulseStart, pulseEnd, endMarkerStart, total };
+        return { startMarkerStart, pulseStart, pulseEnd, endMarkerStart, holdStarts, total };
     }
 
     function updateTrackAnimation(t, duration) {
         const clamp01 = x => Math.min(Math.max(x, 0), 1);
-        const { startMarkerStart, pulseStart, pulseEnd, endMarkerStart } = animPhases(duration);
+        const { startMarkerStart, pulseStart, pulseEnd, endMarkerStart, holdStarts } = animPhases(duration);
         updateTrailMarker(animMarkers[0], clamp01((t - startMarkerStart) / MARKER_MS));
-        if (animMarkers[1]) updateTrailMarker(animMarkers[1], clamp01((t - endMarkerStart) / MARKER_MS));
-        // Pulse clock, held still at the farthest point while its marker appears
-        let pt = t - pulseStart;
-        if (animEndMode === 'farthest') {
-            const holdAt = animFarFrac * duration;
-            if (pt > holdAt) pt = Math.max(holdAt, pt - MARKER_MS);
+        if (animEndMarker) updateTrailMarker(animEndMarker, clamp01((t - endMarkerStart) / MARKER_MS));
+        animHolds.forEach((h, i) => {
+            if (h.marker) updateTrailMarker(h.marker, clamp01((t - pulseStart - holdStarts[i]) / h.growMs));
+        });
+        // Pulse clock, held still during each hold while its marker appears
+        const pt = t - pulseStart;
+        let pe = null, passed = 0;
+        for (let i = 0; i < animHolds.length; i++) {
+            if (pt < holdStarts[i]) break;
+            if (pt < holdStarts[i] + animHolds[i].ms) { pe = animHolds[i].frac * duration; break; }
+            passed += animHolds[i].ms;
         }
-        const progress = clamp01(pt / duration);
+        const progress = clamp01((pe ?? pt - passed) / duration);
         if (document.getElementById('sel-sky').value === 'night-to-day') applyNightToDay(progress);
         // Stays at the track's end once done, until the camera stops
         updatePulse(progress, t >= pulseStart, clamp01((t - pulseEnd) / FILL_MS));
@@ -2594,13 +2606,25 @@
         const animEle = trackCumStats[animTrack.userData.trackIdx].ele;
         animMarkers = [makeTrailMarker(document.getElementById('txt-start-label').value, trackPoint(animTrack, 0), animEle[0])];
         animEndMode = document.getElementById('sel-end-marker').value;
+        animEndMarker = null;
+        animHolds = [];
+        const totalDist = pulseCum[pulseCum.length - 1];
+        const fracAt = k => totalDist > 0 ? pulseCum[k] / totalDist : 0;
         if (animEndMode !== 'none') {
             const farIdx = trackFarthestIdx[animTrack.userData.trackIdx];
-            const totalDist = pulseCum[pulseCum.length - 1];
-            animFarFrac = totalDist > 0 ? pulseCum[farIdx] / totalDist : 0;
             const endIdx = animEndMode === 'farthest' ? farIdx : animTrack.userData.positions.length / 3 - 1;
-            animMarkers.push(makeTrailMarker(document.getElementById('txt-end-label').value, trackPoint(animTrack, endIdx), animEle[endIdx]));
+            animEndMarker = makeTrailMarker(document.getElementById('txt-end-label').value, trackPoint(animTrack, endIdx), animEle[endIdx]);
+            animMarkers.push(animEndMarker);
+            if (animEndMode === 'farthest') animHolds.push({ frac: fracAt(farIdx), ms: MARKER_MS, farthest: true });
         }
+        // Extra places along the track (e.g. Cho La Pass): as in the flyover, the pulse stops while the label appears
+        for (const place of trackPlaces(animTrack)) {
+            if (!EXTRA_PLACES.some(e => e.text === place.text)) continue;
+            const marker = makeTrailMarker(place.text, trackPoint(animTrack, place.k), animEle[place.k]);
+            animMarkers.push(marker);
+            animHolds.push({ frac: fracAt(place.k), ms: FLY_PAUSE_MS, growMs: FLY_GROW_MS, marker });
+        }
+        animHolds.sort((a, b) => a.frac - b.frac);
         // Camera motion starts with the animation proper (startTimeline), after the zoom-in if there is one
         if (animOverview === 'in') startZoomIn();
     });
