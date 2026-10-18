@@ -1855,25 +1855,32 @@
         return new THREE.Vector3(p[k * 3], p[k * 3 + 1] + track.position.y, p[k * 3 + 2]);
     };
 
-    // The label shows the text and, below it at 60% size, the elevation (meters) if given
-    function makeTrailMarker(text, base, elevation = null) {
+    // The label shows the text and, below it at 60% size, the day (if given) and the elevation (meters, if given)
+    function makeTrailMarker(text, base, elevation = null, day = null) {
         const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
             new LineMaterial({ linewidth: 4, transparent: true, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
         div.textContent = text;
-        if (elevation != null) {
-            const ele = document.createElement('div');
-            ele.style.fontSize = '60%';
-            ele.textContent = `${Math.round(elevation)} m`;
-            div.appendChild(ele);
-        }
+        const info = document.createElement('div');
+        info.style.fontSize = '60%';
+        div.appendChild(info);
         // 1.65× the regular label size
         div.style.cssText = `color:#fff;font-size:${document.getElementById('sld-label-size').value * 1.65}px;padding:3px 10px;background:rgba(0,0,0,0.55);border-radius:7px;white-space:nowrap;text-align:center;`;
         const label = new CSS2DObject(div);
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
         scene.add(line, label);
-        return { line, label, base, text };
+        const m = { line, label, base, text, info, elevation };
+        setMarkerDay(m, day);
+        return m;
+    }
+
+    function setMarkerDay(m, day) {
+        const parts = [];
+        if (day != null) parts.push(`Day ${day}`);
+        if (m.elevation != null) parts.push(`${Math.round(m.elevation)} m`);
+        m.info.textContent = parts.join(' · ');
+        m.info.style.display = parts.length ? '' : 'none';
     }
 
     function updateTrailMarker(m, growth, opacity = 1) {
@@ -2241,14 +2248,25 @@
         });
         const total = s;
 
+        // The day starting at route distance at, if one does: the trek's start, or a boundary between tracks of
+        // different days (D11 and D12 have two tracks each)
+        const dayNum = leg => parseInt(trackLabels[leg.track.userData.trackIdx].day.slice(1), 10) || null;
+        const newDayAt = at => {
+            if (at <= 0) return dayNum(legs[0]);
+            const j = legs.findIndex((l, i) => i > 0 && Math.abs(l.offset - at) < 50);
+            return j > 0 && dayNum(legs[j]) !== dayNum(legs[j - 1]) ? dayNum(legs[j]) : null;
+        };
+
         // Places in the order the pulse passes them, at the route distance where it does. A place shows again when
         // passed again (e.g. Gokyo after Gokyo Ri), but not twice in a row (e.g. a day's end and the next day's start).
+        // Labels where a new day starts show it.
         const positions = placePositions(), events = [];
         for (const leg of legs) {
             for (const { text, k } of trackPlaces(leg.track)) {
                 if (events.length && events[events.length - 1].text === text) continue;
                 const pos = positions.get(text);
-                events.push({ text, s: leg.offset + leg.st.cum[k], marker: makeTrailMarker(text, () => pos, leg.cum.ele[k]) });
+                const at = leg.offset + leg.st.cum[k];
+                events.push({ text, s: at, marker: makeTrailMarker(text, () => pos, leg.cum.ele[k], newDayAt(at)) });
             }
         }
         animMarkers = events.map(e => e.marker);
@@ -2308,6 +2326,13 @@
         for (const e of events) if (e.s > 0) addStop(e.s, e);
         for (const leg of legs) addStop(leg.offset + leg.len, null);
         stops.sort((a, b) => a.s - b.s);
+        // A day starting at a stop without a label (the rest day at Namche ends where it began) updates the label
+        // still showing there
+        for (const st of stops) {
+            const day = st.event ? null : newDayAt(st.s);
+            const shown = events.filter(e => e.s < st.s).pop();
+            if (day && shown) st.dayUpdate = { day, marker: shown.marker };
+        }
         const STEP = 20, timeAt = flightTable(total, stops.map(st => st.s), STEP);
 
         // Widths for the stats box, so it doesn't change width while counting
@@ -2473,6 +2498,12 @@
         const growth = e => e.s <= 0
             ? clamp01((t - (descentEnd - MARKER_MS)) / MARKER_MS)
             : clamp01((t - descentEnd - e.growStart) / FLY_GROW_MS);
+        for (const st of fly.stops) {
+            if (st.dayUpdate && !st.dayUpdate.done && t - descentEnd >= st.start) {
+                setMarkerDay(st.dayUpdate.marker, st.dayUpdate.day);
+                st.dayUpdate.done = true;
+            }
+        }
         const markerFade = 1 - clamp01((t - flightEnd) / FLY_MARKER_OUT_MS);
         fly.events.forEach((e, i) => {
             const next = fly.events[i + 1];
