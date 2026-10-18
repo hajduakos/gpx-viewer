@@ -294,6 +294,9 @@
         }
         #frame-guide.active { display: block; }
 
+        /* No mouse pointer in the picture while an animation (a recording) runs */
+        body.recording, body.recording * { cursor: none !important; }
+
         #anim-stats, #trek-stats, #fly-stats {
             display: none;
             position: fixed;
@@ -2555,6 +2558,7 @@
         updateSky();  // back to the sky's starting state (night for Night to day)
         if (controlsWereVisible) $rotBox.classList.add('active');
         $frameGuide.classList.add('active');
+        document.body.classList.remove('recording');
     }
 
     $btnAnimate.addEventListener('click', () => {
@@ -2570,6 +2574,7 @@
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         trackAnimStart = performance.now();
         // Keep the frame clean while animating; the A key still stops it
+        document.body.classList.add('recording');
         controlsWereVisible = $rotBox.classList.contains('active');
         $rotBox.classList.remove('active');
         $frameGuide.classList.remove('active');
