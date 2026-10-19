@@ -1998,7 +1998,7 @@
         });
         // Peaks fade in once the start label is up (as the pulse starts), or the end label, and stay
         for (const { marker, atEnd } of animPeakMarkers) {
-            const opacity = clamp01((t - (atEnd ? endMarkerStart + MARKER_MS : pulseStart)) / FLY_PEAK_FADE_MS);
+            const opacity = clamp01((t - (atEnd ? endMarkerStart + MARKER_MS : pulseStart)) / DAILY_PEAK_FADE_MS);
             updateTrailMarker(marker, opacity > 0 ? 1 : 0, opacity);
         }
         // Pulse clock, held still during each hold while its marker appears
@@ -2267,8 +2267,9 @@
         { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'] },
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'] },
     ];
-    // In a daily animation, a peak fades in right after the start label (or, with at: 'end', the end label) and stays,
-    // like the start/end labels
+    // In a daily animation, a peak fades in (over DAILY_PEAK_FADE_MS) right after the start label (or, with at: 'end',
+    // the end label) and stays, like the start/end labels
+    const DAILY_PEAK_FADE_MS = 1000;
     const DAILY_PEAKS = [
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
