@@ -2280,11 +2280,17 @@
         'Makalu': { lat: 27.8897, lon: 87.0886, ele: 8485 },
         'Nuptse': { lat: 27.9664, lon: 86.8900, ele: 7861 },
         'Pumori': { lat: 28.0153, lon: 86.8263, ele: 7161 },
+        'Cholatse': { lat: 27.9179, lon: 86.7667, ele: 6440 },
+        'Tobuche': { lat: 27.8967, lon: 86.7776, ele: 6495 },
+        'Lobuche East': { lat: 27.9595, lon: 86.7899, ele: 6119 },
         'Khumbu Icefall': { lat: 28.0000, lon: 86.8650, ele: null, lineM: 1000 },  // above Base Camp
     };
     // In the flyover, a peak shows for 2 * FLY_PEAK_SHOW_MS: centered on the pulse passing the middle of each of its
     // tracks, or starting when the pulse reaches fraction at of them, or delayMs after a place's (first) label appears
     const FLY_PEAKS = [
+        { peak: 'Cholatse', tracks: ['Namche to Dole'] },
+        { peak: 'Tobuche', tracks: ['Namche to Dole'] },
+        { peak: 'Lobuche East', tracks: ['Dzongla to Lobuche'] },
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
         { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
