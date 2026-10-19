@@ -1748,6 +1748,7 @@
     // Stops of the daily pulse, in order along the track: {frac (of the track's length), ms, growMs, marker, farthest}.
     // The farthest point (with that end mode) and extra places like Cho La Pass.
     let animHolds = [];
+    let animPeakMarkers = [];  // DAILY_PEAKS markers of the animated track
     let animOverview = 'none';  // Overview setting ('none', 'in', 'out'), read when the animation starts
     let timelineStarted = false;  // Whether the animation proper has begun (it waits for the zoom-in)
     const $btnAnimate = document.getElementById('btn-animate');
@@ -1995,6 +1996,9 @@
         animHolds.forEach((h, i) => {
             if (h.marker) updateTrailMarker(h.marker, clamp01((t - pulseStart - holdStarts[i]) / h.growMs));
         });
+        // Peaks fade in once the start label is up (as the pulse starts) and stay
+        const peakOpacity = clamp01((t - pulseStart) / FLY_PEAK_FADE_MS);
+        for (const m of animPeakMarkers) updateTrailMarker(m, peakOpacity > 0 ? 1 : 0, peakOpacity);
         // Pulse clock, held still during each hold while its marker appears
         const pt = t - pulseStart;
         let pe = null, passed = 0;
@@ -2244,20 +2248,40 @@
                                         // the way toward the next day's end
     const FLY_TURN_TIME_MS = 1500;      // Turning follows the flight averaged over this time each way, so it keeps its
                                         // pace while the flight slows down near places
-    // EBC-specific peaks: a label with the altitude fades in above the peak, on a short black line, around the moment
-    // the pulse is halfway along each of its tracks
+    // EBC-specific peaks: a label with the altitude above the peak, on a short black line (official altitudes; the
+    // terrain model is too coarse for the summits)
+    const PEAKS = {
+        'Cho Oyu': { lat: 28.0941, lon: 86.6608, ele: 8188 },
+        'Everest': { lat: 27.9881, lon: 86.9250, ele: 8849 },
+        'Lhotse': { lat: 27.9617, lon: 86.9336, ele: 8516 },
+        'Ama Dablam': { lat: 27.8614, lon: 86.8614, ele: 6812 },
+        'Makalu': { lat: 27.8897, lon: 87.0886, ele: 8485 },
+    };
+    // In the flyover, a peak fades in around the moment the pulse is halfway along each of its tracks
     const FLY_PEAKS = [
-        { name: 'Cho Oyu', lat: 28.0941, lon: 86.6608, ele: 8188, tracks: ['Dole to Machhermo'] },
-        { name: 'Everest', lat: 27.9881, lon: 86.9250, ele: 8849, tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
-        { name: 'Lhotse', lat: 27.9617, lon: 86.9336, ele: 8516, tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
-        { name: 'Ama Dablam', lat: 27.8614, lon: 86.8614, ele: 6812, tracks: ['Thagnak to Dzongla'] },
-        { name: 'Makalu', lat: 27.8897, lon: 87.0886, ele: 8485, tracks: ['Gokyo to Gokyo Ri'] },
+        { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
+        { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
+        { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
+        { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'] },
+        { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'] },
+    ];
+    // In a daily animation, a peak fades in right after the start label and stays, like the start/end labels
+    const DAILY_PEAKS = [
+        { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
     ];
     const FLY_PEAK_SHOW_MS = 2000;  // shown from this long before to this long after the pulse passes the track's middle
     const FLY_PEAK_FADE_MS = 300;
     const FLY_PEAK_LINE_M = 200;
     const $flyStats = document.getElementById('fly-stats');
     let fly = null;
+
+    // A marker for a peak (null if it's outside the terrain)
+    function makePeakMarker(name) {
+        const { lat, lon, ele } = PEAKS[name], { bb } = D;
+        if (lat < bb.minLat || lat > bb.maxLat || lon < bb.minLon || lon > bb.maxLon) return null;
+        const base = terrainPoint(lat, lon);
+        return makeTrailMarker(name, () => base, ele, null, { color: '#000000', heightM: FLY_PEAK_LINE_M });
+    }
 
     // Scene position of a lat/lon on the terrain surface
     function terrainPoint(lat, lon) {
@@ -2410,14 +2434,11 @@
         fly.start = flightView(0);
         // Peaks, timed around the pulse passing their track's middle
         fly.peaks = [];
-        const { bb } = D;
-        for (const peak of FLY_PEAKS) {
-            if (peak.lat < bb.minLat || peak.lat > bb.maxLat || peak.lon < bb.minLon || peak.lon > bb.maxLon) continue;
-            const base = terrainPoint(peak.lat, peak.lon);
-            for (const track of peak.tracks) {
+        for (const { peak, tracks } of FLY_PEAKS) {
+            for (const track of tracks) {
                 const leg = legs.find(l => trackLabels[l.track.userData.trackIdx].display === track);
-                if (!leg) continue;
-                const marker = makeTrailMarker(peak.name, () => base, peak.ele, null, { color: '#000000', heightM: FLY_PEAK_LINE_M });
+                const marker = leg && makePeakMarker(peak);
+                if (!marker) continue;
                 animMarkers.push(marker);
                 fly.peaks.push({ marker, at: flightTimeAt(leg.offset + leg.len / 2) });
             }
@@ -2680,6 +2701,9 @@
             animHolds.push({ frac: fracAt(place.k), ms: FLY_PAUSE_MS, growMs: FLY_GROW_MS, marker });
         }
         animHolds.sort((a, b) => a.frac - b.frac);
+        const display = trackLabels[animTrack.userData.trackIdx].display;
+        animPeakMarkers = DAILY_PEAKS.filter(p => p.tracks.includes(display)).map(p => makePeakMarker(p.peak)).filter(Boolean);
+        animMarkers.push(...animPeakMarkers);
         // Camera motion starts with the animation proper (startTimeline), after the zoom-in if there is one
         if (animOverview === 'in') startZoomIn();
     });
