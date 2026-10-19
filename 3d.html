@@ -2260,6 +2260,7 @@
     const FLY_PEAK_LINE_M = 200;     // Height of a peak's line
     // EBC-specific peaks: a label with the altitude above the peak, on a short black line (official altitudes; the
     // terrain model is too coarse for the summits). lineM overrides the line's height, e.g. to keep labels apart.
+    // Landmarks without an altitude (ele: null) show just the name.
     const PEAKS = {
         'Cho Oyu': { lat: 28.0941, lon: 86.6608, ele: 8188 },
         'Everest': { lat: 27.9881, lon: 86.9250, ele: 8849 },
@@ -2267,6 +2268,7 @@
         'Ama Dablam': { lat: 27.8614, lon: 86.8614, ele: 6812 },
         'Makalu': { lat: 27.8897, lon: 87.0886, ele: 8485 },
         'Nuptse': { lat: 27.9664, lon: 86.8900, ele: 7861 },
+        'Khumbu Icefall': { lat: 28.0000, lon: 86.8650, ele: null, lineM: 1000 },  // above Base Camp
     };
     // In the flyover, a peak fades in around the moment the pulse is halfway along each of its tracks
     const FLY_PEAKS = [
@@ -2289,6 +2291,7 @@
         { peak: 'Everest', tracks: ['Gorakshep to EBC'], at: 'end' },
         { peak: 'Lhotse', tracks: ['Gorakshep to EBC'], at: 'end' },
         { peak: 'Nuptse', tracks: ['Gorakshep to EBC'], at: 'end' },
+        { peak: 'Khumbu Icefall', tracks: ['Gorakshep to EBC'], at: 'end' },
         { peak: 'Cho Oyu', tracks: ['Gokyo to Thagnak'], at: 0.5 },
     ];
     const FLY_PEAK_SHOW_MS = 2000;  // shown from this long before to this long after the pulse passes the track's middle
