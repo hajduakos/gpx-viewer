@@ -2256,9 +2256,6 @@
     const FLY_PEAK_SHOW_MS = 2000;  // shown from this long before to this long after the pulse passes the track's middle
     const FLY_PEAK_FADE_MS = 300;
     const FLY_PEAK_LINE_M = 200;
-    const FLY_MILESTONE_M = 10000;      // Every this much trek distance, a small label flashes up on the trail
-    const FLY_MILESTONE_MS = 1000;
-    const FLY_MILESTONE_FADE_MS = 150;
     const $flyStats = document.getElementById('fly-stats');
     let fly = null;
 
@@ -2411,28 +2408,6 @@
         fly = { legs, total, events, target, heading, timeAt, step: STEP, widths, flightMs, overview: overviewView(), end: null };
         planStops(stops);
         fly.start = flightView(0);
-        // Distance milestones: where the trek distance (as in the stats bar) passes each multiple of FLY_MILESTONE_M
-        fly.milestones = [];
-        for (const leg of legs) {
-            const dist = leg.cum.dist, n = dist.length;
-            if (n < 2) continue;
-            for (let D = Math.floor(leg.distBefore / FLY_MILESTONE_M + 1) * FLY_MILESTONE_M; D <= leg.distBefore + dist[n - 1]; D += FLY_MILESTONE_M) {
-                const local = D - leg.distBefore;
-                let k = 0;
-                while (k < n - 2 && dist[k + 1] < local) k++;
-                const f = dist[k + 1] > dist[k] ? Math.min((local - dist[k]) / (dist[k + 1] - dist[k]), 1) : 0;
-                const div = document.createElement('div');
-                div.textContent = `${D / 1000} km`;
-                div.style.cssText = `color:#fff;font-size:${+document.getElementById('sld-label-size').value}px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;margin-top:-6px;`;
-                const label = new CSS2DObject(div);
-                label.center.set(0.5, 1);  // just above the trail
-                label.position.copy(trackPoint(leg.track, k)().lerp(trackPoint(leg.track, k + 1)(), f));
-                label.visible = false;
-                scene.add(label);
-                const at = leg.offset + leg.st.cum[k] + (leg.st.cum[k + 1] - leg.st.cum[k]) * f;
-                fly.milestones.push({ label, at: flightTimeAt(at) });
-            }
-        }
         // Peaks, timed around the pulse passing their track's middle
         fly.peaks = [];
         const { bb } = D;
@@ -2609,12 +2584,6 @@
                 e.daySwitched = true;
             }
         }
-        for (const ms of fly.milestones) {
-            const tf = t - descentEnd;
-            const opacity = clamp01((tf - ms.at) / FLY_MILESTONE_FADE_MS) * clamp01((ms.at + FLY_MILESTONE_MS - tf) / FLY_MILESTONE_FADE_MS);
-            ms.label.visible = opacity > 0;
-            ms.label.element.style.opacity = opacity;
-        }
         for (const peak of fly.peaks) {
             const tf = t - descentEnd;
             const opacity = clamp01((tf - (peak.at - FLY_PEAK_SHOW_MS)) / FLY_PEAK_FADE_MS) * clamp01((peak.at + FLY_PEAK_SHOW_MS - tf) / FLY_PEAK_FADE_MS);
@@ -2658,10 +2627,6 @@
         }
         removeTrailMarkers();
         stopAnimStats();
-        for (const ms of fly?.milestones ?? []) {
-            scene.remove(ms.label);
-            ms.label.element.remove();
-        }
         fly = null;
         $flyStats.style.display = 'none';
         updateSky();  // back to the sky's starting state (night for Night to day)
