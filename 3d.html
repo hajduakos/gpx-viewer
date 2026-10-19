@@ -2048,8 +2048,12 @@
         return tracks.sort((a, b) => a.userData.trackIdx - b.userData.trackIdx);
     }
 
-    // EBC-specific places not in the track names: a label at the highest point of a track
-    const EXTRA_PLACES = [{ track: 'Thagnak to Dzongla', text: 'Cho La Pass' }];
+    // EBC-specific places not in the track names: a label at the track point nearest to lat/lon, or at the track's
+    // highest point
+    const EXTRA_PLACES = [
+        { track: 'Thagnak to Dzongla', text: 'Cho La Pass' },
+        { track: 'Somare to Namche', text: 'Tengboche Monastery', lat: 27.83608, lon: 86.76381 },  // from a photo's EXIF
+    ];
 
     // A track's places, in order along it: [{text, k}], k being the track point the label belongs to. They come from
     // its name, plus EXTRA_PLACES.
@@ -2061,10 +2065,16 @@
         }
         for (const extra of EXTRA_PLACES) {
             if (extra.track !== lb.display) continue;
-            const ele = trackCumStats[i].ele;
-            let highest = 0;
-            for (let k = 1; k < ele.length; k++) if (ele[k] > ele[highest]) highest = k;
-            places.push({ text: extra.text, k: highest });
+            let best = 0;
+            if (extra.lat != null) {
+                const target = terrainPoint(extra.lat, extra.lon), p = track.userData.positions;
+                const dist2 = k => (p[k * 3] - target.x) ** 2 + (p[k * 3 + 2] - target.z) ** 2;
+                for (let k = 1; k < p.length / 3; k++) if (dist2(k) < dist2(best)) best = k;
+            } else {
+                const ele = trackCumStats[i].ele;
+                for (let k = 1; k < ele.length; k++) if (ele[k] > ele[best]) best = k;
+            }
+            places.push({ text: extra.text, k: best });
         }
         return places.sort((a, b) => a.k - b.k);
     }
@@ -2245,6 +2255,7 @@
     // its path
     const FLY_HEADINGS = {
         'Gokyo to Gokyo Ri': 90,          // turn east while Gokyo Ri is hiked
+        'Thagnak to Dzongla': 100,        // arrive at Dzongla turned a little toward Ama Dablam
         'Gorakshep to EBC': 90,           // at Gorakshep, turn east for EBC,
         'Gorakshep to Kala Patthar': 180, // then south for Kala Patthar, ready for the way down
         'Namche to Lukla': 125,           // arrive at Lukla facing about south-east (the averaging softens it), to see
@@ -2268,18 +2279,21 @@
         'Ama Dablam': { lat: 27.8614, lon: 86.8614, ele: 6812 },
         'Makalu': { lat: 27.8897, lon: 87.0886, ele: 8485 },
         'Nuptse': { lat: 27.9664, lon: 86.8900, ele: 7861 },
+        'Pumori': { lat: 28.0153, lon: 86.8263, ele: 7161 },
         'Khumbu Icefall': { lat: 28.0000, lon: 86.8650, ele: null, lineM: 1000 },  // above Base Camp
     };
     // In the flyover, a peak shows for 2 * FLY_PEAK_SHOW_MS: centered on the pulse passing the middle of each of its
-    // tracks, or starting when a place's label appears
+    // tracks, or starting when the pulse reaches fraction at of them, or delayMs after a place's (first) label appears
     const FLY_PEAKS = [
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
         { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
         { peak: 'Nuptse', tracks: ['Lobuche to Gorakshep'] },
-        { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'] },
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'] },
+        { peak: 'Ama Dablam', place: 'Cho La Pass', delayMs: 500 },
+        { peak: 'Pumori', place: 'Gorakshep', delayMs: 500 },
         { peak: 'Khumbu Icefall', place: 'EBC' },
+        { peak: 'Ama Dablam', tracks: ['Gorakshep to Somare'], at: 0.15 },  // just after leaving Gorakshep for good
     ];
     // In a daily animation, a peak fades in (over DAILY_PEAK_FADE_MS) delayMs after a label appears and stays, like the
     // start/end labels. at: the start label (default), 'end', an extra place's label (e.g. 'Cho La Pass'), or a
@@ -2467,13 +2481,14 @@
             animMarkers.push(marker);
             fly.peaks.push({ marker, from, to: from + 2 * FLY_PEAK_SHOW_MS });
         };
-        for (const { peak, tracks = [], place } of FLY_PEAKS) {
+        for (const { peak, tracks = [], at, place, delayMs = 0 } of FLY_PEAKS) {
             for (const track of tracks) {
                 const leg = legs.find(l => trackLabels[l.track.userData.trackIdx].display === track);
-                if (leg) addPeak(peak, flightTimeAt(leg.offset + leg.len / 2) - FLY_PEAK_SHOW_MS);
+                if (!leg) continue;
+                addPeak(peak, at != null ? flightTimeAt(leg.offset + at * leg.len) : flightTimeAt(leg.offset + leg.len / 2) - FLY_PEAK_SHOW_MS);
             }
             const event = place && events.find(e => e.text === place && e.growStart != null);
-            if (event) addPeak(peak, event.growStart + FLY_GROW_MS);  // once the place's line has grown and its label is up
+            if (event) addPeak(peak, event.growStart + FLY_GROW_MS + delayMs);  // once the place's line has grown and its label is up
         }
         fly.valueEls = makeStatsBar($flyStats);
         controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
