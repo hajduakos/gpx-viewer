@@ -1748,7 +1748,7 @@
     // Stops of the daily pulse, in order along the track: {frac (of the track's length), ms, growMs, marker, farthest}.
     // The farthest point (with that end mode) and extra places like Cho La Pass.
     let animHolds = [];
-    let animPeakMarkers = [];  // DAILY_PEAKS of the animated track: {marker, atEnd}
+    let animPeakMarkers = [];  // DAILY_PEAKS of the animated track: {marker, at, delayMs}
     let animOverview = 'none';  // Overview setting ('none', 'in', 'out'), read when the animation starts
     let timelineStarted = false;  // Whether the animation proper has begun (it waits for the zoom-in)
     const $btnAnimate = document.getElementById('btn-animate');
@@ -1996,9 +1996,14 @@
         animHolds.forEach((h, i) => {
             if (h.marker) updateTrailMarker(h.marker, clamp01((t - pulseStart - holdStarts[i]) / h.growMs));
         });
-        // Peaks fade in once the start label is up (as the pulse starts), or the end label, and stay
-        for (const { marker, atEnd } of animPeakMarkers) {
-            const opacity = clamp01((t - (atEnd ? endMarkerStart + MARKER_MS : pulseStart)) / DAILY_PEAK_FADE_MS);
+        // Peaks fade in after their label is up: the start label (as the pulse starts), the end label, or an extra
+        // place's label at its stop
+        for (const { marker, at, delayMs } of animPeakMarkers) {
+            const hold = animHolds.findIndex(h => h.marker?.text === at);
+            const shownAt = at === 'end' ? endMarkerStart + MARKER_MS
+                : hold >= 0 ? pulseStart + holdStarts[hold] + animHolds[hold].growMs
+                : pulseStart;
+            const opacity = clamp01((t - shownAt - delayMs) / DAILY_PEAK_FADE_MS);
             updateTrailMarker(marker, opacity > 0 ? 1 : 0, opacity);
         }
         // Pulse clock, held still during each hold while its marker appears
@@ -2267,14 +2272,15 @@
         { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'] },
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'] },
     ];
-    // In a daily animation, a peak fades in (over DAILY_PEAK_FADE_MS) right after the start label (or, with at: 'end',
-    // the end label) and stays, like the start/end labels
+    // In a daily animation, a peak fades in (over DAILY_PEAK_FADE_MS) delayMs after a label appears and stays, like the
+    // start/end labels. at: the start label (default), 'end', or an extra place's label (e.g. 'Cho La Pass').
     const DAILY_PEAK_FADE_MS = 1000;
     const DAILY_PEAKS = [
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
         { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
+        { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass', delayMs: 500 },
     ];
     const FLY_PEAK_SHOW_MS = 2000;  // shown from this long before to this long after the pulse passes the track's middle
     const FLY_PEAK_FADE_MS = 300;
@@ -2710,7 +2716,7 @@
         animHolds.sort((a, b) => a.frac - b.frac);
         const display = trackLabels[animTrack.userData.trackIdx].display;
         animPeakMarkers = DAILY_PEAKS.filter(p => p.tracks.includes(display))
-            .map(p => ({ marker: makePeakMarker(p.peak), atEnd: p.at === 'end' })).filter(p => p.marker);
+            .map(p => ({ marker: makePeakMarker(p.peak), at: p.at ?? 'start', delayMs: p.delayMs ?? 0 })).filter(p => p.marker);
         animMarkers.push(...animPeakMarkers.map(p => p.marker));
         // Camera motion starts with the animation proper (startTimeline), after the zoom-in if there is one
         if (animOverview === 'in') startZoomIn();
