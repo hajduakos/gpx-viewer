@@ -2263,6 +2263,7 @@
         'Lhotse': { lat: 27.9617, lon: 86.9336, ele: 8516 },
         'Ama Dablam': { lat: 27.8614, lon: 86.8614, ele: 6812 },
         'Makalu': { lat: 27.8897, lon: 87.0886, ele: 8485 },
+        'Nuptse': { lat: 27.9664, lon: 86.8900, ele: 7861 },
     };
     // In the flyover, a peak fades in around the moment the pulse is halfway along each of its tracks
     const FLY_PEAKS = [
@@ -2281,6 +2282,9 @@
         { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
         { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass', delayMs: 500 },
+        { peak: 'Everest', tracks: ['Gorakshep to EBC'], at: 'end' },
+        { peak: 'Lhotse', tracks: ['Gorakshep to EBC'], at: 'end' },
+        { peak: 'Nuptse', tracks: ['Gorakshep to EBC'], at: 'end' },
     ];
     const FLY_PEAK_SHOW_MS = 2000;  // shown from this long before to this long after the pulse passes the track's middle
     const FLY_PEAK_FADE_MS = 300;
