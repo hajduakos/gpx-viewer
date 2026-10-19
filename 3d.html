@@ -2258,7 +2258,7 @@
                                           // leave Namche at about 50° (the averaging softens the 60), so the valley
                                           // toward Dole stays in view
         'Gokyo to Gokyo Ri': 90,          // turn east while Gokyo Ri is hiked
-        'Thagnak to Dzongla': 100,        // arrive at Dzongla turned a little toward Ama Dablam
+        'Thagnak to Dzongla': 110,        // arrive at Dzongla turned a little toward Ama Dablam
         'Gorakshep to EBC': 90,           // at Gorakshep, turn east for EBC,
         'Gorakshep to Kala Patthar': 180, // then south for Kala Patthar, ready for the way down
         'Namche to Lukla': 125,           // arrive at Lukla facing about south-east (the averaging softens it), to see
@@ -2308,15 +2308,17 @@
         { peak: 'Lobuche East', tracks: ['Dzongla to Lobuche'] },
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'], delayMs: 1000 },
         { peak: 'Phari Lapcha', tracks: ['Machhermo to Gokyo'], at: 0.05 },  // just after leaving Machhermo
-        { peak: 'Cholatse', tracks: ['Namche to Dole'], at: 0.8 },  // slightly before Dole
-        { peak: 'Tobuche', tracks: ['Namche to Dole'], at: 0.8 },
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
         { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
         { peak: 'Nuptse', tracks: ['Lobuche to Gorakshep'] },
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'] },
         { peak: 'Ama Dablam', place: 'Cho La Pass', delayMs: 500 },
+        { peak: 'Cholatse', tracks: ['Thagnak to Dzongla'], at: 0.85 },  // just before Dzongla
+        { peak: 'Tobuche', tracks: ['Thagnak to Dzongla'], at: 0.85 },
         { peak: 'Pumori', place: 'Gorakshep', delayMs: 500 },
         { peak: 'Khumbu Icefall', place: 'EBC' },
+        { peak: 'Cholatse', tracks: ['Gorakshep to Somare'], at: 0.08 },  // after leaving Gorakshep, just before Ama Dablam
+        { peak: 'Tobuche', tracks: ['Gorakshep to Somare'], at: 0.08 },
         { peak: 'Ama Dablam', tracks: ['Gorakshep to Somare'], at: 0.15 },  // just after leaving Gorakshep for good
         { peak: 'Thamserku', tracks: ['Gorakshep to Somare'], at: 0.8 },  // just before arriving at Somare
         { peak: 'Kangtega', tracks: ['Gorakshep to Somare'], at: 0.8 },
