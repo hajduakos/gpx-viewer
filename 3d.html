@@ -2000,7 +2000,9 @@
         // place's label at its stop
         for (const { marker, at, delayMs } of animPeakMarkers) {
             const hold = animHolds.findIndex(h => h.marker?.text === at);
+            const heldBefore = frac => animHolds.reduce((sum, h) => sum + (h.frac < frac ? h.ms : 0), 0);
             const shownAt = at === 'end' ? endMarkerStart + MARKER_MS
+                : typeof at === 'number' ? pulseStart + at * duration + heldBefore(at)
                 : hold >= 0 ? pulseStart + holdStarts[hold] + animHolds[hold].growMs
                 : pulseStart;
             const opacity = clamp01((t - shownAt - delayMs) / DAILY_PEAK_FADE_MS);
@@ -2275,7 +2277,8 @@
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'] },
     ];
     // In a daily animation, a peak fades in (over DAILY_PEAK_FADE_MS) delayMs after a label appears and stays, like the
-    // start/end labels. at: the start label (default), 'end', or an extra place's label (e.g. 'Cho La Pass').
+    // start/end labels. at: the start label (default), 'end', an extra place's label (e.g. 'Cho La Pass'), or a
+    // fraction of the day's distance (when the pulse gets there).
     const DAILY_PEAK_FADE_MS = 1000;
     const DAILY_PEAKS = [
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
@@ -2286,6 +2289,7 @@
         { peak: 'Everest', tracks: ['Gorakshep to EBC'], at: 'end' },
         { peak: 'Lhotse', tracks: ['Gorakshep to EBC'], at: 'end' },
         { peak: 'Nuptse', tracks: ['Gorakshep to EBC'], at: 'end' },
+        { peak: 'Cho Oyu', tracks: ['Gokyo to Thagnak'], at: 0.5 },
     ];
     const FLY_PEAK_SHOW_MS = 2000;  // shown from this long before to this long after the pulse passes the track's middle
     const FLY_PEAK_FADE_MS = 300;
