@@ -1895,7 +1895,7 @@
         m.info.style.display = parts.length ? '' : 'none';
     }
 
-    function updateTrailMarker(m, growth, opacity = 1) {
+    function updateTrailMarker(m, growth, opacity = 1, labelOpacity = opacity) {
         const b = m.base(), h = m.heightM * S.scale;
         m.line.position.copy(b);
         m.line.scale.y = Math.max(growth, 1e-4) * h;
@@ -1904,8 +1904,8 @@
         m.line.material.resolution.set(innerWidth, innerHeight);
         m.line.material.color.set(m.color ?? document.getElementById('clr-highlight').value);
         m.label.position.set(b.x, b.y + h, b.z);
-        m.label.visible = growth >= 1 && opacity > 0 && m.text !== '';
-        m.label.element.style.opacity = opacity;
+        m.label.visible = growth >= 1 && labelOpacity > 0 && m.text !== '';
+        m.label.element.style.opacity = labelOpacity;
     }
 
     function removeTrailMarkers() {
@@ -2005,8 +2005,8 @@
                 : typeof at === 'number' ? pulseStart + at * duration + heldBefore(at)
                 : hold >= 0 ? pulseStart + holdStarts[hold] + animHolds[hold].growMs
                 : pulseStart;
-            const opacity = clamp01((t - shownAt - delayMs) / DAILY_PEAK_FADE_MS);
-            updateTrailMarker(marker, opacity > 0 ? 1 : 0, opacity);
+            const since = t - shownAt - delayMs;
+            updateTrailMarker(marker, clamp01(since / PEAK_GROW_MS), 1, clamp01((since - PEAK_GROW_MS) / PEAK_LABEL_FADE_MS));
         }
         // Pulse clock, held still during each hold while its marker appears
         const pt = t - pulseStart;
@@ -2254,6 +2254,9 @@
     // EBC-specific: compass direction (degrees) the camera faces when these tracks end; elsewhere it faces along
     // its path
     const FLY_HEADINGS = {
+        'Namche': 60,                     // face about north-east during the rest day, so Thamserku is in view, and
+                                          // leave Namche at about 50° (the averaging softens the 60), so the valley
+                                          // toward Dole stays in view
         'Gokyo to Gokyo Ri': 90,          // turn east while Gokyo Ri is hiked
         'Thagnak to Dzongla': 100,        // arrive at Dzongla turned a little toward Ama Dablam
         'Gorakshep to EBC': 90,           // at Gorakshep, turn east for EBC,
@@ -2261,14 +2264,23 @@
         'Namche to Lukla': 125,           // arrive at Lukla facing about south-east (the averaging softens it), to see
                                           // the bend before it
     };
-    // Tracks whose end gets no heading of its own: the camera turns straight through toward the next one (leaving
-    // Machhermo it already starts turning east for Gokyo Ri; leaving Lobuche, east for EBC)
-    const FLY_TURN_THROUGH = ['Machhermo to Gokyo', 'Lobuche to Gorakshep'];
+    // Tracks whose end gets no heading of its own: the camera turns straight through toward the next one (from the
+    // approach to Namche it turns steadily toward the rest day's heading; leaving Machhermo it already starts turning
+    // east for Gokyo Ri; leaving Lobuche, east for EBC)
+    const FLY_TURN_THROUGH = ['Phakding to Namche', 'Machhermo to Gokyo', 'Lobuche to Gorakshep'];
+    // Headings partway along a track (fraction at of its length), e.g. to turn sooner than evenly over the day
+    const FLY_HEADING_POINTS = [
+        { track: 'Namche to Dole', at: 0.2, heading: 10 },  // soon after leaving Namche, turn up the valley toward Dole
+    ];
     const FLY_LOOP_DRIFT = 0.08;        // On a loop day (e.g. the rest day at Namche) the camera creeps this fraction of
                                         // the way toward the next day's end
-    const FLY_TURN_TIME_MS = 1500;      // Turning follows the flight averaged over this time each way, so it keeps its
-                                        // pace while the flight slows down near places
+    const FLY_TURN_TIME_MS = 1500;      // The camera follows the flight averaged over this time each way, so it keeps
+                                        // moving while the pulse stops at places
+    const FLY_HEADING_TIME_MS = 4000;   // and turns following it averaged over this longer time, so turns run at an
+                                        // even pace right through the stops
     const FLY_PEAK_LINE_M = 200;     // Height of a peak's line
+    const PEAK_GROW_MS = 500;        // A peak's line grows up from the summit,
+    const PEAK_LABEL_FADE_MS = 500;  // then its label fades in
     // EBC-specific peaks: a label with the altitude above the peak, on a short black line (official altitudes; the
     // terrain model is too coarse for the summits). lineM overrides the line's height, e.g. to keep labels apart.
     // Landmarks without an altitude (ele: null) show just the name.
@@ -2283,15 +2295,21 @@
         'Cholatse': { lat: 27.9179, lon: 86.7667, ele: 6440 },
         'Tobuche': { lat: 27.8967, lon: 86.7776, ele: 6495 },
         'Lobuche East': { lat: 27.9595, lon: 86.7899, ele: 6119 },
+        'Thamserku': { lat: 27.7903, lon: 86.7875, ele: 6623 },
+        'Kangtega': { lat: 27.7995, lon: 86.8082, ele: 6782 },
+        'Phari Lapcha': { lat: 27.9296, lon: 86.6808, ele: 6017 },
         'Khumbu Icefall': { lat: 28.0000, lon: 86.8650, ele: null, lineM: 1000 },  // above Base Camp
     };
     // In the flyover, a peak shows for 2 * FLY_PEAK_SHOW_MS: centered on the pulse passing the middle of each of its
-    // tracks, or starting when the pulse reaches fraction at of them, or delayMs after a place's (first) label appears
+    // tracks, or starting when the pulse reaches fraction at of them, or when a place's (first) label appears; delayMs
+    // shifts it later
     const FLY_PEAKS = [
-        { peak: 'Cholatse', tracks: ['Namche to Dole'] },
-        { peak: 'Tobuche', tracks: ['Namche to Dole'] },
+        { peak: 'Thamserku', tracks: ['Namche'] },  // around the middle of the rest day
         { peak: 'Lobuche East', tracks: ['Dzongla to Lobuche'] },
-        { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
+        { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'], delayMs: 1000 },
+        { peak: 'Phari Lapcha', tracks: ['Machhermo to Gokyo'], at: 0.05 },  // just after leaving Machhermo
+        { peak: 'Cholatse', tracks: ['Namche to Dole'], at: 0.8 },  // slightly before Dole
+        { peak: 'Tobuche', tracks: ['Namche to Dole'], at: 0.8 },
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
         { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
         { peak: 'Nuptse', tracks: ['Lobuche to Gorakshep'] },
@@ -2300,11 +2318,12 @@
         { peak: 'Pumori', place: 'Gorakshep', delayMs: 500 },
         { peak: 'Khumbu Icefall', place: 'EBC' },
         { peak: 'Ama Dablam', tracks: ['Gorakshep to Somare'], at: 0.15 },  // just after leaving Gorakshep for good
+        { peak: 'Thamserku', tracks: ['Gorakshep to Somare'], at: 0.8 },  // just before arriving at Somare
+        { peak: 'Kangtega', tracks: ['Gorakshep to Somare'], at: 0.8 },
     ];
-    // In a daily animation, a peak fades in (over DAILY_PEAK_FADE_MS) delayMs after a label appears and stays, like the
-    // start/end labels. at: the start label (default), 'end', an extra place's label (e.g. 'Cho La Pass'), or a
-    // fraction of the day's distance (when the pulse gets there).
-    const DAILY_PEAK_FADE_MS = 1000;
+    // In a daily animation, a peak appears delayMs after a label does and stays, like the start/end labels. at: the start
+    // label (default), 'end', an extra place's label (e.g. 'Cho La Pass'), or a fraction of the day's distance (when
+    // the pulse gets there).
     const DAILY_PEAKS = [
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
@@ -2420,12 +2439,13 @@
             keyLoop.push(trackLabels[leg.track.userData.trackIdx].endMode === 'none');
         }
         // A loop day (a single place, like the rest day at Namche) ends where it started, so the camera would go back
-        // and forth. Instead it creeps a little toward the next key, slowing into the loop and crossing it gently.
+        // and forth. Instead it creeps a little toward the next key, slowing into the loop and crossing it gently. It
+        // turns straight through unless the loop day has a heading of its own.
         const gentle = [];
         keyLoop.forEach((loop, k) => {
             if (!loop || k === 0 || k === keyS.length - 1) return;
             keyPts[k] = keyPts[k - 1].clone().lerp(keyPts[k + 1], FLY_LOOP_DRIFT);
-            keyTurnThrough[k] = true;
+            keyTurnThrough[k] = keyHeadings[k] === null;
             gentle[k - 1] = gentle[k] = true;
         });
         const target = smoothSpline(keyS, keyPts.map(v => [v.x, v.y, v.z]), gentle);
@@ -2437,6 +2457,14 @@
             headingS.push(keyS[k]);
             headings.push(h ?? Math.atan2(b[0] - a[0], -(b[2] - a[2])) * 180 / Math.PI);
         });
+        for (const point of FLY_HEADING_POINTS) {
+            const leg = legs.find(l => trackLabels[l.track.userData.trackIdx].display === point.track);
+            if (!leg) continue;
+            const at = leg.offset + point.at * leg.len;
+            const i = headingS.findIndex(x => x > at);
+            headingS.splice(i < 0 ? headingS.length : i, 0, at);
+            headings.splice(i < 0 ? headings.length : i, 0, point.heading);
+        }
         for (let k = 1; k < headings.length; k++) {  // unwrap, so each turn goes the short way around
             headings[k] = headings[k - 1] + ((((headings[k] - headings[k - 1]) % 360) + 540) % 360 - 180);
         }
@@ -2491,7 +2519,7 @@
             for (const track of tracks) {
                 const leg = legs.find(l => trackLabels[l.track.userData.trackIdx].display === track);
                 if (!leg) continue;
-                addPeak(peak, at != null ? flightTimeAt(leg.offset + at * leg.len) : flightTimeAt(leg.offset + leg.len / 2) - FLY_PEAK_SHOW_MS);
+                addPeak(peak, delayMs + (at != null ? flightTimeAt(leg.offset + at * leg.len) : flightTimeAt(leg.offset + leg.len / 2) - FLY_PEAK_SHOW_MS));
             }
             const event = place && events.find(e => e.text === place && e.growStart != null);
             if (event) addPeak(peak, event.growStart + FLY_GROW_MS + delayMs);  // once the place's line has grown and its label is up
@@ -2578,14 +2606,15 @@
         return Math.min((lo + f) * step, total);
     }
 
-    // Route distance averaged over FLY_TURN_TIME_MS each way (less near the flight's ends, so it matches there):
-    // smooth through the stops, so the camera keeps drifting slowly while the pulse stands still
-    function turnDistance(t) {
-        const w = Math.min(FLY_TURN_TIME_MS, t, fly.flightMs - t);
+    // Route distance averaged over window ms each way (less near the flight's ends, so it matches there): smooth
+    // through the stops, so the camera keeps moving while the pulse stands still
+    function turnDistance(t, window = FLY_TURN_TIME_MS) {
+        const w = Math.min(window, t, fly.flightMs - t);
         if (w <= 0) return flightDistance(t);
+        const n = Math.max(8, Math.round(w / 250));  // a sample at least every 0.5 s
         let sum = 0;
-        for (let i = 0; i <= 8; i++) sum += flightDistance(t - w + 2 * w * i / 8);
-        return sum / 9;
+        for (let i = 0; i <= n; i++) sum += flightDistance(t - w + 2 * w * i / n);
+        return sum / (n + 1);
     }
 
     // The camera's view at route distance s, facing the heading at route distance sTurn
@@ -2628,7 +2657,7 @@
         } else if (t < descentEnd) {
             setCameraBetween(fly.overview, fly.start, smoothstep(0, 1, (t - FLY_OVERVIEW_MS) / FLY_DESCENT_MS));
         } else if (t < flightEnd) {
-            const view = flightView(turnDistance(t - descentEnd));
+            const view = flightView(turnDistance(t - descentEnd), turnDistance(t - descentEnd, FLY_HEADING_TIME_MS));
             setCameraBetween(view, view, 0);
         } else {
             if (!fly.end) fly.end = flightView(fly.total);
@@ -2658,10 +2687,12 @@
                 e.daySwitched = true;
             }
         }
+        // Peaks: the line grows, then the label fades in; at the end both fade out
         for (const peak of fly.peaks) {
-            const tf = t - descentEnd;
-            const opacity = clamp01((tf - peak.from) / FLY_PEAK_FADE_MS) * clamp01((peak.to - tf) / FLY_PEAK_FADE_MS);
-            updateTrailMarker(peak.marker, opacity > 0 ? 1 : 0, opacity);
+            const tf = t - descentEnd, since = tf - peak.from;
+            const out = clamp01((peak.to - tf) / FLY_PEAK_FADE_MS);
+            updateTrailMarker(peak.marker, clamp01(since / PEAK_GROW_MS), since > 0 ? out : 0,
+                clamp01((since - PEAK_GROW_MS) / PEAK_LABEL_FADE_MS) * out);
         }
         const markerFade = 1 - clamp01((t - flightEnd) / FLY_MARKER_OUT_MS);
         fly.events.forEach((e, i) => {
