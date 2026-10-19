@@ -2270,13 +2270,16 @@
         'Nuptse': { lat: 27.9664, lon: 86.8900, ele: 7861 },
         'Khumbu Icefall': { lat: 28.0000, lon: 86.8650, ele: null, lineM: 1000 },  // above Base Camp
     };
-    // In the flyover, a peak fades in around the moment the pulse is halfway along each of its tracks
+    // In the flyover, a peak shows for 2 * FLY_PEAK_SHOW_MS: centered on the pulse passing the middle of each of its
+    // tracks, or starting when a place's label appears
     const FLY_PEAKS = [
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
         { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
+        { peak: 'Nuptse', tracks: ['Lobuche to Gorakshep'] },
         { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'] },
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'] },
+        { peak: 'Khumbu Icefall', place: 'EBC' },
     ];
     // In a daily animation, a peak fades in (over DAILY_PEAK_FADE_MS) delayMs after a label appears and stays, like the
     // start/end labels. at: the start label (default), 'end', an extra place's label (e.g. 'Cho La Pass'), or a
@@ -2458,14 +2461,19 @@
         fly.start = flightView(0);
         // Peaks, timed around the pulse passing their track's middle
         fly.peaks = [];
-        for (const { peak, tracks } of FLY_PEAKS) {
+        const addPeak = (peak, from) => {
+            const marker = makePeakMarker(peak);
+            if (!marker) return;
+            animMarkers.push(marker);
+            fly.peaks.push({ marker, from, to: from + 2 * FLY_PEAK_SHOW_MS });
+        };
+        for (const { peak, tracks = [], place } of FLY_PEAKS) {
             for (const track of tracks) {
                 const leg = legs.find(l => trackLabels[l.track.userData.trackIdx].display === track);
-                const marker = leg && makePeakMarker(peak);
-                if (!marker) continue;
-                animMarkers.push(marker);
-                fly.peaks.push({ marker, at: flightTimeAt(leg.offset + leg.len / 2) });
+                if (leg) addPeak(peak, flightTimeAt(leg.offset + leg.len / 2) - FLY_PEAK_SHOW_MS);
             }
+            const event = place && events.find(e => e.text === place && e.growStart != null);
+            if (event) addPeak(peak, event.growStart + FLY_GROW_MS);  // once the place's line has grown and its label is up
         }
         fly.valueEls = makeStatsBar($flyStats);
         controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
@@ -2631,7 +2639,7 @@
         }
         for (const peak of fly.peaks) {
             const tf = t - descentEnd;
-            const opacity = clamp01((tf - (peak.at - FLY_PEAK_SHOW_MS)) / FLY_PEAK_FADE_MS) * clamp01((peak.at + FLY_PEAK_SHOW_MS - tf) / FLY_PEAK_FADE_MS);
+            const opacity = clamp01((tf - peak.from) / FLY_PEAK_FADE_MS) * clamp01((peak.to - tf) / FLY_PEAK_FADE_MS);
             updateTrailMarker(peak.marker, opacity > 0 ? 1 : 0, opacity);
         }
         const markerFade = 1 - clamp01((t - flightEnd) / FLY_MARKER_OUT_MS);
