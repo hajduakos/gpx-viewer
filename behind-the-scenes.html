@@ -1,0 +1,1438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Behind the scenes</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+        }
+        body.recording, body.recording * { cursor: none !important; }
+
+        #landing {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            gap: 16px;
+        }
+        .file-picker {
+            position: relative;
+            padding: 24px 48px;
+            background: rgba(255,255,255,0.04);
+            border: 2px dashed rgba(255,255,255,0.2);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 1rem;
+        }
+        .file-picker:hover {
+            border-color: #4facfe;
+            background: rgba(79,172,254,0.06);
+        }
+        .file-picker input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+        #status { font-size: 0.85rem; color: #777; height: 18px; }
+
+        #viewer { display: none; position: fixed; inset: 0; }
+        #viewer canvas { display: block; }
+
+        /* Subtitles: 50px above the bottom of the 16:9 frame, so they stay inside the video crop */
+        #subtitle {
+            display: none;
+            position: fixed;
+            bottom: calc((100vh - min(100vh, calc(100vw * 9 / 16))) / 2 + 50px);
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 15;
+            pointer-events: none;
+            padding: 0.3em 0.9em;
+            border-radius: 0.36em;
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            white-space: nowrap;
+            font-size: min(30px, calc(min(100vw, calc(100vh * 16 / 9)) / 34));
+            font-variant-numeric: tabular-nums;
+            opacity: 0;
+        }
+        #subtitle-text { transition: opacity 0.2s; }
+
+        /* Frame around the flying camera's picture-in-picture view (placed from JS) */
+        #pip {
+            display: none;
+            position: fixed;
+            z-index: 15;
+            pointer-events: none;
+            outline: 2px solid rgba(255,255,255,0.85);
+            border-radius: 2px;
+        }
+    </style>
+</head>
+<body>
+    <div id="landing">
+        <div class="file-picker">
+            <span>Load saved scene data (.gpx3d)</span>
+            <input type="file" accept=".gpx3d,.json" id="import-input">
+        </div>
+        <div id="status"></div>
+    </div>
+
+    <div id="viewer"></div>
+    <div id="subtitle"><span id="subtitle-text"></span></div>
+    <div id="pip"></div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+    import * as THREE from 'three';
+    import { Line2 } from 'three/addons/lines/Line2.js';
+    import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+    import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+    import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+    import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+    import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+
+    // Timeline (ms after the lead). Every subtitle shows alone for LABEL_MS before anything moves, then its step
+    // animates (camera moves included) and holds the result for HOLD_MS before the next subtitle.
+    const LEAD_MS = 1000;        // empty black screen before anything appears
+    const LABEL_MS = 1000;
+    const HOLD_MS = 2000;
+    const DOTS_MS = 3000;        // GPS points: sample points appear one by one along the route, as the phone records them,
+    const DOTS = 100;            // this many (evenly by recording order),
+    const REVEAL_MS = 2000;      // then the tracks are drawn along the route, connecting them
+    const DOTS_FADE_MS = 1000;   // (the dots fade out in the hold)
+    const DOT_SIZE = 7;          // px
+    const DOT_COLOR = '#ffffff';
+    const BOX_DRAW_MS = 1000;    // bounding box: outline traced, a hold, then expanded to 4x
+    const BOX_GROW_MS = 2000;
+    const GRID_MS = 4000;        // grid refines from 1x1 cells, doubling, to the full grid (reached at the end)
+    const BOX_FADE_MS = 500;     // (the bounding box fades in the hold)
+    const GRID_FADE_MS = 300;    // the first grid fades in
+    const TILT_MS = 2000;        // camera tilts from top-down to the isometric view, before the elevation rises
+    const ELEV_MS = 4000;        // grid and tracks rise from flat to the real elevation, in a wave from the far corner
+    const ELEV_EXAGGERATION = 1; // heights scaled up for illustration
+    const ELEV_OVERSHOOT = 4;    // while rising, each point overshoots to this times its height, then settles back
+    // Satellite texture tiles, one after the other from the far corner: each opens floating above the terrain, then
+    // sinks onto the terrain and wraps over it. The first one goes slowly and on its own, the rest overlap.
+    const FIRST_TILE_OPEN_MS = 1000;
+    const FIRST_TILE_LOWER_MS = 2500;
+    const TILE_OPEN_MS = 500;
+    const TILE_LOWER_MS = 1500;
+    const TILE_STAGGER_MS = 375;
+    const TEX_ZOOM_MS = 1500;    // the camera zooms in on the first tile before it opens, and back out after it settles,
+    const TEX_ZOOM_FIT = 0.45;   // to this fraction of its distance
+    const TEX_FLOAT = 6;         // the floating texture's height above the highest terrain (scene units)
+    const TEX_TILE_PX = 4096;    // texture tiles are downscaled to at most this (the whole scene is in view)
+    const TRACK_LIFT = 0.03;     // tracks sit this far above the terrain, so the texture stays below them
+    const OVERHEAD_MS = 2000;    // settlements step: the camera moves to the opening top-down view of the tracks, the
+                                 // terrain flattens and the texture dims for the look-at spline,
+    const TEXTURE_DIM = 0.2;     // to this brightness,
+    const SETTLE_MS = 3000;      // then settlements (each day's start and end) appear one by one in day order,
+    const SETTLE_IN_MS = 300;    // each fading in over this
+    const CAM_PATH_MS = 5000;    // the flyover camera's look-at spline is drawn through them,
+    const RAISE_MS = 2000;       // eye path step: the terrain rises back (the spline with it) at full brightness,
+                                 // settlement names fading, while the camera returns to the isometric view, closer in:
+    const ZOOM_FIT = 1.15;       // this times the distance that fit the tracks' bounding square top-down,
+    const FLY_VIEW_MS = 1500;    // fly step: the view comes down to this angle and a bit closer before the camera flies
+    const FLY_VIEW_ELEVATION = 30;
+    const FLY_VIEW_FIT = 1.0;    // (as ZOOM_FIT)
+    const CAM_EYE_MS = 5000;     // then the eye's path, with an arrow from the eye to the point it looks at
+    const CAM_FADE_MS = 1000;    // (the look-at spline and the arrow fade in the hold)
+    const CAM_GROUND_LIFT = 0.05;  // the look-at spline's height above the terrain
+    const CAM_LOOK_COLOR = '#ffee00';
+    const CAM_PATH_COLOR = '#00e5ff';
+    const CAM_PATH_WIDTH = 3;
+    const CAM_ARROW_COLOR = '#ffffff';
+    const CAM_ARROW_WIDTH = 2;
+    const CAM_ARROW_HEAD = [0.6, 0.25];  // arrow head length and radius (scene units)
+    const CAM_KEY_RADIUS = 0.25; // dots at the spline's keys (scene units)
+    const SETTLE_LABEL_SIZE = 15;  // px
+    const RULER_OFFSET = 0.08;   // the first tile's dimension lines: this far out from its edges (fraction of its size),
+    const RULER_TICK = 0.03;     // ticks this long each way (fraction of its size),
+    const RULER_WIDTH = 2;       // px
+    const RULER_FADE_MS = 300;
+    const CAM_FLY_MS = 8000;     // then a camera flies the path:
+    const CAM_DOT_COLOR = '#ff2020';
+    const CAM_DOT_RADIUS = 0.4;  // a dot,
+    const CAM_CONE_COLOR = '#ff4040';
+    const CAM_CONE_OPACITY = 0.25;  // with a see-through pyramid of its 16:9 field of view (the view frustum),
+    const CAM_EDGE_OPACITY = 0.7;   // edges drawn stronger, reaching the point it aims at
+    const PIP_WIDTH = 0.25;      // what the flying camera sees, top left of the 16:9 frame: this fraction of its width,
+    const PIP_MARGIN = 25;       // this far from its edges (px),
+    const CLOUD_LAYERS_MS = 2500;  // clouds: the noise octaves appear one by one, stacked above the terrain,
+    const CLOUD_LAYER_IN_MS = 500;
+    const CLOUD_MERGE_MS = 1500;   // then merge into their sum,
+    const CLOUD_PAINT_MS = 1500;   // which gets thresholded and colored as in 3d.html,
+    const CLOUD_SKY_MS = 2000;     // then the deck rises away, the camera comes down and the sky turns blue,
+    const CLOUD_TILE_MS = 4000;    // and the painted tile is laid across the sky one copy at a time, outward from overhead
+                                   // (with its edges outlined, fading in the hold)
+    const CLOUD_ELEVATION = 10;    // to see the sky, the camera comes down to this angle above the map (still looking at
+                                   // its center), and goes back up while zooming in
+    const CLOUD_DECK_SIZE = 2;     // deck side, as a fraction of the tracks' bounding square
+    const CLOUD_DECK_ABOVE = 3;    // lowest layer's height above the highest terrain (scene units)
+    const CLOUD_LAYER_GAP = 4;     // between stacked layers
+    const CLOUD_LAYER_OPACITY = 0.85;
+    const CLOUD_RISE = 40;         // how far the deck rises as it fades into the sky
+    const CLOUD_TILES_PER_UNIT = 0.4;  // the sky's tiles per unit of deck at height 1: 1.5x bigger than 3d.html's 0.6
+                                       // for the demonstration (the inset keeps 3d.html's)
+    const CLOUD_TILES_MAX = 60;    // tiles out to the deck's horizon
+    const CLOUD_GRID_MS = 1500;    // the tiles' outlines are drawn outward over the black sky first,
+    const CLOUD_REST_MS = 500;     // and once the tiles are all in, the sky beyond the deck turns blue too
+    const CLOUD_TILE_LINE_COLOR = [1.0, 0.85, 0.2];
+    const SKY_COLOR = '#2f6eb5';   // 3d.html's sky blue, under the clouds
+
+    // Flyover camera, from 3d.html (EBC-specific headings included)
+    const FLY_TURN_SMOOTH_M = 5000;     // The camera heading is averaged over this distance each way, spreading turns out
+    const FLY_POLAR = THREE.MathUtils.degToRad(62);  // Camera angle from vertical
+    const FLY_HEIGHT_M = 3000;          // Camera height above the trail point
+    const FLY_DISTANCE_M = FLY_HEIGHT_M / Math.cos(FLY_POLAR);
+    const FLY_AIM_UP_M = FLY_DISTANCE_M / 6;  // The camera aims this far above the trail
+    const FLY_FOV = 55;                 // 3d.html's camera field of view (vertical, degrees)
+    const FLY_HEADINGS = {
+        'Namche': 60,
+        'Gokyo to Gokyo Ri': 90,
+        'Thagnak to Dzongla': 110,
+        'Gorakshep to EBC': 90,
+        'Gorakshep to Kala Patthar': 180,
+        'Namche to Lukla': 125,
+    };
+    const FLY_TURN_THROUGH = ['Phakding to Namche', 'Machhermo to Gokyo', 'Lobuche to Gorakshep'];
+    const FLY_HEADING_POINTS = [
+        { track: 'Namche to Dole', at: 0.2, heading: 10 },
+    ];
+    const FLY_LOOP_DRIFT = 0.08;
+    const ELEV_WAVE = 0.5;       // width of the rising wave front, as a fraction of the corner-to-corner distance
+    const SUBTITLE_FADE_MS = 300;
+
+    const SMOOTH_WINDOW = 5;     // 3d.html smooths every GPX track with smoothPoints(points, 5)
+    const BOX_SCALE = 4;         // 3d.html builds the scene with 300% padding
+    const FIT = 0.75;            // the track's bounding square fills this much of the 16:9 frame height
+    const FOV = 55;
+    const ISO_ELEVATION = 45;    // isometric view: degrees above the horizon
+    const ISO_HEADING = 45;      // and compass heading of the view (45 = from the southwest, looking northeast)
+    const TRACK_COLOR = '#ff3333';
+    const TRACK_WIDTH = 2.5;
+    const BOX_COLOR = '#ffffff';
+    const BOX_WIDTH = 2;
+    const GRID_OPACITY = 0.5;
+    const GRID_SHOWN = 64;       // cells drawn per side for illustration (the subtitle still names the real grid)
+    const GRID_MESH = 128;       // the grid surface's resolution (the elevation, downsampled to it)
+
+    const $landing = document.getElementById('landing');
+    const $status = document.getElementById('status');
+    const $viewer = document.getElementById('viewer');
+    const $subtitle = document.getElementById('subtitle');
+    const $subtitleText = document.getElementById('subtitle-text');
+    const $pip = document.getElementById('pip');
+
+    const smoothstep = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+    const clamp01 = x => Math.min(Math.max(x, 0), 1);
+
+    let data, renderer, scene, camera;
+    let tracks = [];             // { line, cum (scene-space distance at each point), start (route distance before it),
+                                 //   heights, wave (per point) }
+    let gridHeights, gridWave;   // per grid vertex
+    let lookPath, camPath;       // the look-at spline and the eye's path (Line2s, points revealed in order),
+    let camKeys = [];            // the eye path's dots at the spline's keys ({ dot, at: route fraction }),
+    let settlements = [];        // the look-at spline's keys, once per place: { dot, label (CSS2DObject), groundY }
+    let labelRenderer;
+    let ruler;                   // the first texture tile's dimension lines: { lines, labels }
+    let pip, pipOpacity = 1;     // the inset: { target (render target), hud (scene), hudCamera, quad }
+    let T, subtitles;            // step start times (ms) by name; [start, key, html] for each subtitle
+    let camArrow;                // and the arrow from the eye to the look-at point ({ shaft, head })
+    let camRig;                  // { eye(s), aim(s), total, dot, cone }
+    let clouds;                  // { layers (one mesh per octave), deck (their sum), deckY, dome (the sky) }
+    let texTiles = [];           // { mesh, order (opening position, far corner first), sheetY (uniform: the tile's flat
+                                 //   height; wherever the terrain is higher, it rests on the terrain) }
+    let texFloatY, texBottomY;
+    let lastElev = null;
+    const terrainHeight = { value: 1 };  // scales all heights (texture, tracks, look-at spline) to flatten the terrain
+    let routeLength = 0, totalPoints = 0;
+    let dots;                    // THREE.Points: the sample GPS points
+    let box, boxInner, boxOuter, grid;
+    let startTime = null;
+    let subtitleKey = null;
+
+    // ── Bounding Box (from 3d.html) ─────────────────────────────
+
+    function bbox(pts, pad) {
+        let minLa = Infinity, maxLa = -Infinity, minLo = Infinity, maxLo = -Infinity;
+        for (const p of pts) {
+            if (p.lat < minLa) minLa = p.lat;
+            if (p.lat > maxLa) maxLa = p.lat;
+            if (p.lon < minLo) minLo = p.lon;
+            if (p.lon > maxLo) maxLo = p.lon;
+        }
+        const cLat = (minLa + maxLa) / 2, cLon = (minLo + maxLo) / 2;
+        const latM = (maxLa - minLa) * 110540;
+        const lonM = (maxLo - minLo) * 111320 * Math.cos(cLat * Math.PI / 180);
+        const halfM = Math.max(latM, lonM) / 2 * (1 + pad);
+        const halfLat = halfM / 110540;
+        const halfLon = halfM / (111320 * Math.cos(cLat * Math.PI / 180));
+        return { minLat: cLat - halfLat, maxLat: cLat + halfLat, minLon: cLon - halfLon, maxLon: cLon + halfLon };
+    }
+
+    // ── Scene ───────────────────────────────────────────────────
+
+    function buildScene() {
+        const { bb, gw, gh } = data;
+        // Same scene units as 3d.html: the terrain is 100 units across its longer side, centered on the origin
+        const mid = (bb.maxLat + bb.minLat) / 2;
+        const wm = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
+        const dm = (bb.maxLat - bb.minLat) * 110540;
+        const scale = 100 / Math.max(wm, dm);
+        const sw = wm * scale, sd = dm * scale;
+        const toScene = (lat, lon) => [
+            ((lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw,
+            ((bb.maxLat - lat) / (bb.maxLat - bb.minLat) - 0.5) * sd,
+        ];
+        // Heights relative to the mean elevation as in 3d.html, but exaggerated. Everything starts flat; the elevation
+        // step raises each point from 0 to its height.
+        let meanE = 0;
+        for (let i = 0; i < data.elev.length; i++) meanE += data.elev[i];
+        meanE /= data.elev.length;
+        const heightAt = (lat, lon) => (interpElev(lat, lon, bb, data.elev, gw, gh) - meanE) * scale * ELEV_EXAGGERATION;
+        // Wave position of a point: 0 at the corner farthest from the isometric camera, 1 at the closest
+        const hd = ISO_HEADING * Math.PI / 180, fx = Math.sin(hd), fz = -Math.cos(hd);
+        const dMax = Math.abs(fx) * sw / 2 + Math.abs(fz) * sd / 2;
+        const waveAt = (x, z) => (dMax - (x * fx + z * fz)) / (2 * dMax);
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000);
+        camera = new THREE.PerspectiveCamera(FOV, innerWidth / innerHeight, 0.01, 5000);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        $viewer.innerHTML = '';
+        $viewer.appendChild(renderer.domElement);
+        labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(innerWidth, innerHeight);
+        Object.assign(labelRenderer.domElement.style, { position: 'absolute', top: '0', pointerEvents: 'none', zIndex: '5' });
+        $viewer.appendChild(labelRenderer.domElement);
+
+        // Tracks, drawn in day order one after the other
+        const resolution = new THREE.Vector2(innerWidth, innerHeight);
+        tracks = [];
+        routeLength = 0;
+        totalPoints = 0;
+        for (const pts of data.tracks) {
+            if (pts.length < 2) continue;
+            const positions = [], cum = new Float64Array(pts.length);
+            const heights = new Float32Array(pts.length), wave = new Float32Array(pts.length);
+            let prev = null;
+            pts.forEach((p, k) => {
+                const [x, z] = toScene(p.lat, p.lon);
+                positions.push(x, 0, z);
+                heights[k] = heightAt(p.lat, p.lon);
+                wave[k] = waveAt(x, z);
+                if (prev) cum[k] = cum[k - 1] + Math.hypot(x - prev[0], z - prev[1]);
+                prev = [x, z];
+            });
+            const geom = new LineGeometry();
+            geom.setPositions(positions);
+            geom.instanceCount = 0;
+            const line = new Line2(geom, new LineMaterial({ color: TRACK_COLOR, linewidth: TRACK_WIDTH, resolution }));
+            line.position.y = TRACK_LIFT;
+            line.renderOrder = 2;
+            line.frustumCulled = false;
+            scene.add(line);
+            tracks.push({ line, cum, start: routeLength, heights, wave });
+            routeLength += cum[cum.length - 1];
+            totalPoints += pts.length;
+        }
+
+        // Sample GPS points, spread evenly over all recorded points (recording order, so roughly evenly in time)
+        const all = data.tracks.flat(), dotPos = [];
+        for (let i = 0; i < DOTS; i++) {
+            const p = all[Math.round(i * (all.length - 1) / (DOTS - 1))];
+            const [x, z] = toScene(p.lat, p.lon);
+            dotPos.push(x, TRACK_LIFT, z);
+        }
+        const dotTex = (() => {
+            const cv = document.createElement('canvas');
+            cv.width = cv.height = 64;
+            const ctx = cv.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(32, 32, 30, 0, 2 * Math.PI);
+            ctx.fill();
+            return new THREE.CanvasTexture(cv);
+        })();
+        dots = new THREE.Points(
+            new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(dotPos, 3)),
+            new THREE.PointsMaterial({ color: DOT_COLOR, size: DOT_SIZE, sizeAttenuation: false, map: dotTex,
+                                       transparent: true, depthTest: false, depthWrite: false }));
+        dots.geometry.setDrawRange(0, 0);
+        dots.renderOrder = 7;
+        dots.frustumCulled = false;
+        scene.add(dots);
+
+        // Bounding box: the tracks' bounding square, then the scene's (4x, from the saved bounds)
+        const corners = b => [toScene(b.maxLat, b.minLon), toScene(b.maxLat, b.maxLon), toScene(b.minLat, b.maxLon), toScene(b.minLat, b.minLon)];
+        boxInner = corners(bbox(data.tracks.flat(), 0));
+        boxOuter = corners(bb);
+        const boxGeom = new LineGeometry();
+        boxGeom.setPositions(new Array(15).fill(0));  // 4 segments, filled in per frame
+        boxGeom.instanceCount = 0;
+        box = new Line2(boxGeom, new LineMaterial({ color: BOX_COLOR, linewidth: BOX_WIDTH, resolution, depthTest: false, transparent: true }));
+        box.renderOrder = 1;
+        box.frustumCulled = false;
+        scene.add(box);
+
+        // Elevation grid over the scene's bounds: lines through the gw x gh sample points. Lines denser than the
+        // pixels blend into their average coverage instead of moiré.
+        grid = new THREE.Mesh(
+            gridGeometry(sw, sd, bb, heightAt, waveAt),
+            new THREE.ShaderMaterial({
+                uniforms: { uCells: { value: new THREE.Vector2(gw - 1, gh - 1) }, uOpacity: { value: 0 }, uNewLines: { value: 1 } },
+                vertexShader: `
+                    varying vec2 vUv;
+                    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                fragmentShader: `
+                    uniform vec2 uCells;
+                    uniform float uOpacity, uNewLines;
+                    varying vec2 vUv;
+                    float lines(vec2 cells) {
+                        vec2 c = vUv * cells;
+                        vec2 fw = fwidth(c);
+                        vec2 d = abs(fract(c + 0.5) - 0.5) / fw;    // pixels to the nearest line
+                        vec2 a = 1.0 - clamp(d - 0.25, 0.0, 1.0);    // ~1px antialiased lines
+                        a = mix(a, clamp(fw, 0.0, 1.0), smoothstep(0.25, 0.75, fw));
+                        return max(a.x, a.y);
+                    }
+                    void main() {
+                        // The previous (half as fine) grid's lines at full strength, the ones added since fading in
+                        float a = max(lines(uCells * 0.5), lines(uCells) * uNewLines);
+                        gl_FragColor = vec4(1.0, 1.0, 1.0, a * uOpacity);
+                    }`,
+                transparent: true,
+                depthWrite: false,
+            })
+        );
+        grid.renderOrder = 0;
+        scene.add(grid);
+
+        buildTexture(sw, sd, meanE, scale, waveAt);
+        const heightAtXZ = (x, z) => heightAt(bb.maxLat - (z / sd + 0.5) * (bb.maxLat - bb.minLat), bb.minLon + (x / sw + 0.5) * (bb.maxLon - bb.minLon));
+        buildCameraPath(toScene, heightAt, heightAtXZ, scale, resolution);
+        buildClouds();
+        buildSchedule();
+    }
+
+    // One full-resolution terrain chunk per texture tile, as in 3d.html. Vertices stay flat (y = 0, relative to the
+    // tile's center) and carry their terrain height; the vertex shader puts each at max(sheet height, terrain height).
+    function buildTexture(sw, sd, meanE, scale, waveAt) {
+        const { gw, gh, elev } = data;
+        const n = Math.round(Math.sqrt(data.texTiles.length));
+        const tileEdge = (i, n, size) => Math.round(i * (size - 1) / n);
+        let maxY = -Infinity, minY = Infinity;
+        for (let i = 0; i < elev.length; i++) {
+            const y = (elev[i] - meanE) * scale * ELEV_EXAGGERATION;
+            if (y > maxY) maxY = y;
+            if (y < minY) minY = y;
+        }
+        texFloatY = maxY + TEX_FLOAT;
+        texBottomY = minY;
+
+        texTiles = data.texTiles.map((tile, k) => {
+            const r0 = tileEdge(Math.floor(k / n), n, gh), r1 = tileEdge(Math.floor(k / n) + 1, n, gh);
+            const c0 = tileEdge(k % n, n, gw), c1 = tileEdge(k % n + 1, n, gw);
+            const xAt = c => (c / (gw - 1) - 0.5) * sw, zAt = r => (r / (gh - 1) - 0.5) * sd;
+            const cx = (xAt(c0) + xAt(c1)) / 2, cz = (zAt(r0) + zAt(r1)) / 2;
+            const geom = new THREE.PlaneGeometry(1, 1, c1 - c0, r1 - r0);
+            const pos = geom.attributes.position;
+            const terrainY = new Float32Array(pos.count);
+            for (let r = r0; r <= r1; r++) {
+                for (let c = c0; c <= c1; c++) {
+                    const i = (r - r0) * (c1 - c0 + 1) + (c - c0);
+                    pos.setXYZ(i, xAt(c) - cx, 0, zAt(r) - cz);
+                    terrainY[i] = (elev[r * gw + c] - meanE) * scale * ELEV_EXAGGERATION;
+                }
+            }
+            geom.setAttribute('terrainY', new THREE.BufferAttribute(terrainY, 1));
+
+            const tex = new THREE.CanvasTexture(tile.canvas);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.offset.set(...tile.offset);
+            tex.repeat.set(...tile.repeat);
+            renderer.initTexture(tex);  // upload now rather than as the tile first appears
+
+            const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide });
+            const sheetY = { value: texFloatY };
+            mat.onBeforeCompile = sh => {
+                sh.uniforms.uSheetY = sheetY;
+                sh.uniforms.uHeight = terrainHeight;
+                sh.vertexShader = 'attribute float terrainY;\nuniform float uSheetY, uHeight;\n' + sh.vertexShader.replace(
+                    '#include <begin_vertex>', '#include <begin_vertex>\ntransformed.y = max(uSheetY, terrainY * uHeight);');
+            };
+            const mesh = new THREE.Mesh(geom, mat);
+            mesh.position.set(cx, 0, cz);
+            mesh.frustumCulled = false;
+            mesh.visible = false;
+            scene.add(mesh);
+            return { mesh, wave: waveAt(cx, cz), sheetY, w: xAt(c1) - xAt(c0), d: zAt(r1) - zAt(r0),
+                     px: [Math.round(tile.canvas.srcWidth * tile.repeat[0]), Math.round(tile.canvas.srcHeight * tile.repeat[1])] };
+        });
+        // Opening order: by distance from the far corner (ties, on the diagonal, go row by row)
+        [...texTiles].map((t, k) => ({ t, k })).sort((a, b) => a.t.wave - b.t.wave || a.k - b.k).forEach(({ t }, i) => t.order = i);
+        buildRuler(texTiles.find(t => t.order === 0));
+    }
+
+    // Dimension lines along the first tile's two edges facing the isometric camera, at its floating height: a line
+    // with a tick at each end, labeled with the imagery's pixels along that edge
+    function buildRuler(tile) {
+        const { x: cx, z: cz } = tile.mesh.position, y = texFloatY;
+        const hd = ISO_HEADING * Math.PI / 180, sx = Math.sign(Math.sin(hd)) || 1, sz = Math.sign(-Math.cos(hd)) || 1;
+        const size = Math.max(tile.w, tile.d), off = RULER_OFFSET * size, tick = RULER_TICK * size;
+        // Edge along x (width) on the camera's side in z, and along z (depth) on its side in x
+        const zEdge = cz - sz * (tile.d / 2 + off), xEdge = cx - sx * (tile.w / 2 + off);
+        const x0 = cx - tile.w / 2, x1 = cx + tile.w / 2, z0 = cz - tile.d / 2, z1 = cz + tile.d / 2;
+        const segs = [
+            x0, y, zEdge, x1, y, zEdge,  x0, y, zEdge - tick, x0, y, zEdge + tick,  x1, y, zEdge - tick, x1, y, zEdge + tick,
+            xEdge, y, z0, xEdge, y, z1,  xEdge - tick, y, z0, xEdge + tick, y, z0,  xEdge - tick, y, z1, xEdge + tick, y, z1,
+        ];
+        const geom = new LineSegmentsGeometry().setPositions(segs);
+        const lines = new LineSegments2(geom, new LineMaterial({
+            color: '#ffffff', linewidth: RULER_WIDTH, resolution: new THREE.Vector2(innerWidth, innerHeight), transparent: true }));
+        lines.renderOrder = 8;
+        lines.frustumCulled = false;
+        lines.visible = false;
+        scene.add(lines);
+        const label = (text, x, z) => {
+            const div = document.createElement('div');
+            div.textContent = text;
+            div.style.cssText = `color:#fff;font-size:${SETTLE_LABEL_SIZE}px;padding:2px 6px;background:rgba(0,0,0,0.7);border-radius:4px;white-space:nowrap;opacity:0;`;
+            const obj = new CSS2DObject(div);
+            obj.position.set(x, y, z);
+            obj.visible = false;
+            scene.add(obj);
+            return obj;
+        };
+        ruler = { lines, labels: [label(`${tile.px[0].toLocaleString()} px`, cx, zEdge), label(`${tile.px[1].toLocaleString()} px`, xEdge, cz)] };
+    }
+
+    function parseTrackName(raw) {
+        const tag = /\s*\[farthest\]\s*$/i;
+        const farthest = tag.test(raw);
+        const day = (raw.match(/^(D\d+)\s/) || [])[1] || '';
+        const display = raw.replace(/^D\d+\s+/, '').replace(tag, '');
+        const parts = display.split(' to ');
+        if (parts.length < 2) return { display, day, start: display, end: '', endMode: 'none' };
+        return { display, day, start: parts[0], end: parts.slice(1).join(' to '), endMode: farthest ? 'farthest' : 'end' };
+    }
+
+    // Cubic Hermite through values (arrays of numbers) at increasing positions ss, with Catmull-Rom tangents taken
+    // per unit of s, so the rate of change doesn't jump at the keys. At keys marked gentle, the tangent is capped at
+    // the neighboring segments' slopes. Returns s -> array of numbers. (From 3d.html.)
+    function smoothSpline(ss, values, gentle = []) {
+        const n = ss.length, dims = values[0].length;
+        const norm = v => Math.hypot(...v);
+        const slope = k => norm(values[k + 1].map((v, d) => v - values[k][d])) / (ss[k + 1] - ss[k]);
+        const tangents = values.map((_, k) => {
+            const a = Math.max(k - 1, 0), b = Math.min(k + 1, n - 1);
+            const m = values[0].map((_, d) => (values[b][d] - values[a][d]) / (ss[b] - ss[a]));
+            if (!gentle[k]) return m;
+            const cap = Math.min(k > 0 ? slope(k - 1) : Infinity, k < n - 1 ? slope(k) : Infinity);
+            const len = norm(m);
+            return len > cap ? m.map(v => v * cap / len) : m;
+        });
+        return s => {
+            let k = 0;
+            while (k < n - 2 && s > ss[k + 1]) k++;
+            const h = ss[k + 1] - ss[k], u = Math.min(Math.max((s - ss[k]) / h, 0), 1);
+            const u2 = u * u, u3 = u2 * u;
+            const h00 = 2 * u3 - 3 * u2 + 1, h10 = u3 - 2 * u2 + u, h01 = -2 * u3 + 3 * u2, h11 = u3 - u2;
+            const out = [];
+            for (let d = 0; d < dims; d++) {
+                out.push(h00 * values[k][d] + h10 * h * tangents[k][d] + h01 * values[k + 1][d] + h11 * h * tangents[k + 1][d]);
+            }
+            return out;
+        };
+    }
+
+    // The heading averaged over FLY_TURN_SMOOTH_M each way (tabulated every 50 m). (From 3d.html.)
+    function averagedHeading(heading, total) {
+        const STEP = 50, n = Math.ceil(total / STEP) + 1, w = Math.round(FLY_TURN_SMOOTH_M / STEP);
+        const prefix = new Float64Array(n + 1);
+        for (let i = 0; i < n; i++) prefix[i + 1] = prefix[i] + heading(i * STEP)[0];
+        const avg = new Float64Array(n);
+        for (let i = 0; i < n; i++) {
+            const a = Math.max(0, i - w), b = Math.min(n - 1, i + w);
+            avg[i] = (prefix[b + 1] - prefix[a]) / (b - a + 1);
+        }
+        return s => {
+            const x = Math.min(Math.max(s / STEP, 0), n - 1), i = Math.min(Math.floor(x), Math.max(n - 2, 0)), f = x - i;
+            return [avg[i] + ((avg[i + 1] ?? avg[i]) - avg[i]) * f];
+        };
+    }
+
+    // The flyover camera's eye along the route, as 3d.html's startFlyover/flightView set it up: a Hermite spline
+    // through the days' end points for the point it follows, the camera behind and above it facing the averaged
+    // heading. Sampled by route distance (the flight's timing, stops and time-averaging aside). Heights in real meters
+    // are computed as in 3d.html, then exaggerated like the terrain. The followed point's spline is shown draped on
+    // the terrain (between keys it cuts through hills and floats over valleys).
+    function buildCameraPath(toScene, heightAt, heightAtXZ, scale, resolution) {
+        const names = (data.trackNames || []).map(parseTrackName);
+        const pt = p => { const [x, z] = toScene(p.lat, p.lon); return [x, heightAt(p.lat, p.lon) / ELEV_EXAGGERATION, z]; };
+        // The trek as one route: tracks back to back in day order, distances in meters along the 3D track
+        let offset = 0;
+        const legs = data.tracks.map((pts, i) => {
+            let len = 0, prev = pt(pts[0]);
+            for (let k = 1; k < pts.length; k++) { const q = pt(pts[k]); len += Math.hypot(q[0] - prev[0], q[1] - prev[1], q[2] - prev[2]) / scale; prev = q; }
+            const leg = { offset, len, first: pt(pts[0]), last: prev, label: names[i] || parseTrackName('') };
+            offset += len;
+            return leg;
+        });
+        const total = offset;
+
+        // Keys at the trek's start and each track's end, named after the place there: a day ending where it started
+        // (out and back, or a loop) has its start's name
+        const keyS = [0], keyPts = [legs[0].first], keyHeadings = [null], keyTurnThrough = [false], keyLoop = [false];
+        const keyNames = [legs[0].label.start];
+        for (const leg of legs) {
+            const end = leg.offset + leg.len;
+            if (end <= keyS[keyS.length - 1] + 1) continue;
+            keyS.push(end);
+            keyPts.push(leg.last);
+            const back = Math.hypot(leg.last[0] - leg.first[0], leg.last[2] - leg.first[2]) / scale < 300;
+            keyNames.push(back || !leg.label.end ? leg.label.start : leg.label.end);
+            keyHeadings.push(FLY_HEADINGS[leg.label.display] ?? null);
+            keyTurnThrough.push(FLY_TURN_THROUGH.includes(leg.label.display));
+            keyLoop.push(leg.label.endMode === 'none');
+        }
+        const places = keyPts.map(v => v.slice());  // where the places really are (loop keys move below)
+        const gentle = [];
+        keyLoop.forEach((loop, k) => {
+            if (!loop || k === 0 || k === keyS.length - 1) return;
+            keyPts[k] = keyPts[k - 1].map((v, d) => v + (keyPts[k + 1][d] - v) * FLY_LOOP_DRIFT);
+            keyTurnThrough[k] = keyHeadings[k] === null;
+            gentle[k - 1] = gentle[k] = true;
+        });
+        const target = smoothSpline(keyS, keyPts, gentle);
+        const headingS = [], headings = [];
+        keyHeadings.forEach((h, k) => {
+            if (keyTurnThrough[k]) return;
+            const a = target(keyS[k] - 1), b = target(keyS[k] + 1);
+            headingS.push(keyS[k]);
+            headings.push(h ?? Math.atan2(b[0] - a[0], -(b[2] - a[2])) * 180 / Math.PI);
+        });
+        for (const point of FLY_HEADING_POINTS) {
+            const leg = legs.find(l => l.label.display === point.track);
+            if (!leg) continue;
+            const at = leg.offset + point.at * leg.len;
+            const i = headingS.findIndex(x => x > at);
+            headingS.splice(i < 0 ? headingS.length : i, 0, at);
+            headings.splice(i < 0 ? headings.length : i, 0, point.heading);
+        }
+        for (let k = 1; k < headings.length; k++) {
+            headings[k] = headings[k - 1] + ((((headings[k] - headings[k - 1]) % 360) + 540) % 360 - 180);
+        }
+        const linear = s => {
+            let k = 0;
+            while (k < headingS.length - 2 && s > headingS[k + 1]) k++;
+            if (headingS.length < 2) return [headings[0]];
+            const u = Math.min(Math.max((s - headingS[k]) / (headingS[k + 1] - headingS[k]), 0), 1);
+            return [headings[k] + (headings[k + 1] - headings[k]) * u];
+        };
+        const heading = averagedHeading(linear, total);
+
+        // Eye: behind the followed point (theta = -heading, as in flightView), heights exaggerated
+        const eye = s => {
+            const [x, y, z] = target(s), [h] = heading(s);
+            const off = new THREE.Vector3().setFromSpherical(new THREE.Spherical(FLY_DISTANCE_M * scale, FLY_POLAR, -h * Math.PI / 180));
+            return new THREE.Vector3(x + off.x, (y + off.y) * ELEV_EXAGGERATION, z + off.z);
+        };
+        // Aim: a bit above the followed point, as in flightView
+        const aim = s => {
+            const [x, y, z] = target(s);
+            return new THREE.Vector3(x, (y + FLY_AIM_UP_M * scale) * ELEV_EXAGGERATION, z);
+        };
+        const ground = s => {
+            const [x, , z] = target(s);
+            return new THREE.Vector3(x, heightAtXZ(x, z) + CAM_GROUND_LIFT, z);
+        };
+        const STEP = 100, samples = [];
+        for (let s = 0; s < total; s += STEP) samples.push(s);
+        samples.push(total);
+        const dotGeom = new THREE.SphereGeometry(CAM_KEY_RADIUS, 16, 12);
+        const makePath = (at, color, withKeys = true) => {
+            const pts = samples.flatMap(s => at(s).toArray());
+            const geom = new LineGeometry();
+            geom.setPositions(pts);
+            geom.instanceCount = 0;
+            const line = new Line2(geom, new LineMaterial({ color, linewidth: CAM_PATH_WIDTH, resolution, transparent: true }));
+            line.userData = { segments: samples.length - 1, pts, step: STEP, eye: at,
+                              segmentData: geom.attributes.instanceStart.data.array.slice() };  // per segment: start xyz, end xyz
+            line.renderOrder = 3;
+            line.frustumCulled = false;
+            scene.add(line);
+            const dotMat = new THREE.MeshBasicMaterial({ color, transparent: true });
+            const keys = !withKeys ? [] : keyS.map(ks => {
+                const dot = new THREE.Mesh(dotGeom, dotMat);
+                dot.position.copy(at(ks));
+                dot.visible = false;
+                scene.add(dot);
+                return { dot, at: ks / total };
+            });
+            return [line, keys];
+        };
+        [lookPath] = makePath(ground, CAM_LOOK_COLOR, false);
+        // The look-at spline follows the terrain when it's flattened
+        lookPath.userData.groundY = new Float32Array(samples.map(s => ground(s).y - CAM_GROUND_LIFT));
+
+        // Settlements: a dot and name at each key's place, once per name, in day order
+        const settleMat = new THREE.MeshBasicMaterial({ color: CAM_LOOK_COLOR, transparent: true });
+        const seen = new Set();
+        settlements = [];
+        keyNames.forEach((name, k) => {
+            if (!name || seen.has(name)) return;
+            seen.add(name);
+            const [x, , z] = places[k], groundY = heightAtXZ(x, z);
+            const dot = new THREE.Mesh(dotGeom, settleMat);
+            dot.position.set(x, groundY + CAM_GROUND_LIFT, z);
+            dot.visible = false;
+            const div = document.createElement('div');
+            div.textContent = name;
+            div.style.cssText = `color:#fff;font-size:${SETTLE_LABEL_SIZE}px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;opacity:0;`;
+            const label = new CSS2DObject(div);
+            label.center.set(0.5, 1.4);  // just above the dot
+            dot.add(label);
+            scene.add(dot);
+            settlements.push({ dot, label, groundY });
+        });
+        [camPath, camKeys] = makePath(eye, CAM_PATH_COLOR);
+
+        // Arrow: a shaft and a cone head with its tip at the origin, pointing along +y
+        const shaftGeom = new LineGeometry();
+        shaftGeom.setPositions([0, 0, 0, 0, 1, 0]);
+        const shaft = new Line2(shaftGeom, new LineMaterial({ color: CAM_ARROW_COLOR, linewidth: CAM_ARROW_WIDTH, resolution, transparent: true }));
+        const [headLen, headRadius] = CAM_ARROW_HEAD;
+        const head = new THREE.Mesh(new THREE.ConeGeometry(headRadius, headLen, 24).translate(0, -headLen / 2, 0),
+                                    new THREE.MeshBasicMaterial({ color: CAM_ARROW_COLOR, transparent: true }));
+        shaft.frustumCulled = head.frustumCulled = false;
+        shaft.renderOrder = head.renderOrder = 4;
+        shaft.visible = head.visible = false;
+        scene.add(shaft, head);
+        camArrow = { shaft, head };
+
+        // The flying camera: a dot and its field of view as a pyramid of depth 1 with its apex at the origin, opening
+        // along -z like a camera's view, its 16:9 base level with the horizon (scaled to the aim distance and turned
+        // toward the aim each frame)
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(CAM_DOT_RADIUS, 24, 16), new THREE.MeshBasicMaterial({ color: CAM_DOT_COLOR, transparent: true }));
+        const hh = Math.tan(FLY_FOV / 2 * Math.PI / 180), hw = hh * 16 / 9;
+        const corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => [x, y, -1]);
+        const sides = [];
+        for (let i = 0; i < 4; i++) sides.push(0, 0, 0, ...corners[i], ...corners[(i + 1) % 4]);
+        const sideGeom = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(sides, 3));
+        const edges = [];
+        for (let i = 0; i < 4; i++) edges.push(0, 0, 0, ...corners[i], ...corners[i], ...corners[(i + 1) % 4]);
+        const edgeGeom = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(edges, 3));
+        const cone = new THREE.Group();
+        cone.add(
+            new THREE.Mesh(sideGeom, new THREE.MeshBasicMaterial({
+                color: CAM_CONE_COLOR, transparent: true, opacity: CAM_CONE_OPACITY, side: THREE.DoubleSide, depthWrite: false })),
+            new THREE.LineSegments(edgeGeom, new THREE.LineBasicMaterial({
+                color: CAM_CONE_COLOR, transparent: true, opacity: CAM_EDGE_OPACITY, depthWrite: false })));
+        cone.children.forEach(o => { o.renderOrder = 5; o.frustumCulled = false; });
+        dot.visible = cone.visible = false;
+        dot.renderOrder = 4;
+        scene.add(dot, cone);
+        camRig = { eye, aim, total, dot, cone, view: new THREE.PerspectiveCamera(FLY_FOV, 16 / 9, 0.01, 5000) };
+    }
+
+    // Puts the look-at spline and its dots on the terrain scaled by h
+    function setLookHeight(h) {
+        const ud = lookPath.userData;
+        if (ud.height === h) return;
+        ud.height = h;
+        const buf = lookPath.geometry.attributes.instanceStart.data, n = ud.segments + 1;  // per segment: start xyz, end xyz
+        for (let k = 0; k < n; k++) {
+            const y = ud.groundY[k] * h + CAM_GROUND_LIFT;
+            if (k < n - 1) buf.array[k * 6 + 1] = y;
+            if (k > 0) buf.array[(k - 1) * 6 + 4] = y;
+        }
+        buf.needsUpdate = true;
+        for (const st of settlements) st.dot.position.y = st.groundY * h + CAM_GROUND_LIFT;
+    }
+
+    // Shows fraction f of a path (line and key dots) at the given opacity
+    function setPath(line, keys, f, opacity) {
+        line.geometry.instanceCount = Math.round(f * line.userData.segments);
+        line.material.opacity = opacity;
+        line.visible = f > 0 && opacity > 0;
+        for (const key of keys) {
+            key.dot.material.opacity = opacity;
+            key.dot.visible = line.visible && f >= key.at;
+        }
+    }
+
+    // Points the arrow from sample k of the eye's path to sample k of the look-at spline
+    function setCamArrow(k, opacity) {
+        const { shaft, head } = camArrow, at = (line, k) => new THREE.Vector3().fromArray(line.userData.pts, k * 3);
+        const from = at(camPath, k), to = at(lookPath, k), dir = to.clone().sub(from).normalize();
+        const shaftEnd = to.clone().addScaledVector(dir, -CAM_ARROW_HEAD[0]);
+        const buf = shaft.geometry.attributes.instanceStart.data;
+        buf.array.set([...from.toArray(), ...shaftEnd.toArray()]);
+        buf.needsUpdate = true;
+        head.position.copy(to);
+        head.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+        shaft.material.opacity = head.material.opacity = opacity;
+        shaft.visible = head.visible = opacity > 0;
+    }
+
+    // Shows the eye's path from route distance s on (the flying camera eats it up behind itself); s = 0 shows it all
+    function eatCamPath(s) {
+        const ud = camPath.userData, buf = camPath.geometry.attributes.instanceStart.data;
+        const k = Math.min(Math.floor(s / ud.step), ud.segments - 1);
+        buf.array.set(ud.segmentData.subarray(k * 6));
+        if (s > 0) buf.array.set(ud.eye(s).toArray(), 0);  // the first segment starts at the camera
+        buf.needsUpdate = true;
+        return s >= camRig.total ? 0 : ud.segments - k;
+    }
+
+    // Puts the flying camera at route distance s
+    function setCamRig(s) {
+        const { eye, aim, dot, cone, view } = camRig, e = eye(s), dir = aim(s).sub(e);
+        const len = dir.length();
+        // The inset's camera sees the real heights (renderPip flattens the scene back by the exaggeration)
+        const real = v => v.clone().setY(v.y / ELEV_EXAGGERATION);
+        view.position.copy(real(e));
+        view.lookAt(real(aim(s)));
+        dot.position.copy(e);
+        cone.position.copy(e);
+        cone.scale.setScalar(len);
+        // Camera-style orientation: -z toward the aim, x level with the horizon
+        const forward = dir.divideScalar(len);
+        const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0, 1, 0)).normalize();
+        const up = new THREE.Vector3().crossVectors(right, forward);
+        cone.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(right, up, forward.negate()));
+    }
+
+    // 3d.html's clouds: tileable fractal value noise, octaves of 4x4 to 64x64 cells at halving amplitudes, summed and
+    // normalized, then painted (white puffs where the noise is high, see-through elsewhere) and projected onto a flat
+    // deck above the camera. Here each octave gets a plane showing its noise, plus a deck plane for the sum, which
+    // a uniform blends from gray noise to painted clouds over the sky blue.
+    function buildClouds() {
+        const N = 256, octaves = [], sum = new Float32Array(N * N);
+        let amp = 0.5, total = 0;
+        for (let cells = 4; cells <= 64; cells *= 2, amp *= 0.5) {
+            const tile = new Float32Array(N * N);
+            const lattice = new Float32Array(cells * cells).map(() => Math.random());
+            const step = N / cells;
+            for (let y = 0; y < N; y++) {
+                const gy = y / step, y0 = Math.floor(gy), ty = gy - y0, sy = ty * ty * (3 - 2 * ty);
+                const r0 = y0 * cells, r1 = ((y0 + 1) % cells) * cells;
+                for (let x = 0; x < N; x++) {
+                    const gx = x / step, x0 = Math.floor(gx), x1 = (x0 + 1) % cells;
+                    const tx = gx - x0, sx = tx * tx * (3 - 2 * tx);
+                    const top = lattice[r0 + x0] + (lattice[r0 + x1] - lattice[r0 + x0]) * sx;
+                    const bot = lattice[r1 + x0] + (lattice[r1 + x1] - lattice[r1 + x0]) * sx;
+                    tile[y * N + x] = top + (bot - top) * sy;
+                    sum[y * N + x] += amp * tile[y * N + x];
+                }
+            }
+            octaves.push(tile);
+            total += amp;
+        }
+        for (let i = 0; i < sum.length; i++) sum[i] /= total;
+
+        const noiseTex = values => {
+            const px = new Uint8Array(N * N * 4);
+            for (let i = 0; i < values.length; i++) { px.fill(Math.round(values[i] * 255), i * 4, i * 4 + 3); px[i * 4 + 3] = 255; }
+            const tex = new THREE.DataTexture(px, N, N);
+            tex.magFilter = tex.minFilter = THREE.LinearFilter;
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.needsUpdate = true;
+            return tex;
+        };
+        const hex = parseInt(SKY_COLOR.slice(1), 16);
+        const sky = new THREE.Vector3((hex >> 16) / 255, (hex >> 8 & 255) / 255, (hex & 255) / 255);  // sRGB, written as is
+        const side = Math.abs(boxInner[1][0] - boxInner[0][0]) * CLOUD_DECK_SIZE;
+        const plane = values => {
+            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(side, side).rotateX(-Math.PI / 2), new THREE.ShaderMaterial({
+                uniforms: { map: { value: noiseTex(values) }, uOpacity: { value: 0 }, uPaint: { value: 0 }, uSky: { value: sky } },
+                vertexShader: `
+                    varying vec2 vUv;
+                    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+                fragmentShader: `
+                    uniform sampler2D map;
+                    uniform float uOpacity, uPaint;
+                    uniform vec3 uSky;
+                    varying vec2 vUv;
+                    void main() {
+                        float n = texture2D(map, vUv).r;
+                        // 3d.html's CLOUD_PAINT: gray level and opacity from the noise
+                        float gray = (230.0 + 25.0 * smoothstep(0.55, 0.8, n)) / 255.0;
+                        vec3 painted = mix(uSky, vec3(gray), smoothstep(0.48, 0.68, n));
+                        gl_FragColor = vec4(mix(vec3(n), painted, uPaint), uOpacity);
+                    }`,
+                transparent: true,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+            }));
+            mesh.visible = false;
+            mesh.renderOrder = 6;
+            scene.add(mesh);
+            return mesh;
+        };
+        clouds = {
+            layers: octaves.map(plane),
+            deck: plane(sum),
+            deckY: texFloatY - TEX_FLOAT + CLOUD_DECK_ABOVE,
+            dome: skyDome(noiseTex(sum), sky),
+        };
+        scene.add(clouds.dome);
+    }
+
+    // The sky as 3d.html projects it: the noise tile repeated over a flat deck above the camera (its horizon lowered
+    // by CLOUD_HORIZON_DROP, as the camera usually looks down), painted over the blue, on a dome kept centered on the
+    // camera. The sky is black but for the tiles shown (out to uReveal tiles from overhead) and, faded in by uRest,
+    // the part beyond the deck. Tile outlines are drawn out to uGrid tiles, at strength uLines.
+    function skyDome(map, sky) {
+        map.minFilter = THREE.LinearMipmapLinearFilter;  // the tile shrinks a lot toward the horizon
+        map.generateMipmaps = true;
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(1000, 64, 32), new THREE.ShaderMaterial({
+            uniforms: {
+                map: { value: map }, uSky: { value: sky }, uRest: { value: 0 }, uReveal: { value: 0 }, uGrid: { value: 0 }, uLines: { value: 0 },
+                uTilesPerUnit: { value: CLOUD_TILES_PER_UNIT },
+                uLineColor: { value: new THREE.Vector3(...CLOUD_TILE_LINE_COLOR) },
+            },
+            vertexShader: `
+                varying vec3 vDir;
+                void main() { vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+            fragmentShader: `
+                uniform sampler2D map;
+                uniform vec3 uSky, uLineColor;
+                uniform float uRest, uReveal, uGrid, uLines, uTilesPerUnit;
+                varying vec3 vDir;
+                const float CLOUD_HORIZON_DROP = 0.35;
+                void main() {
+                    vec3 d = normalize(vDir), col = uSky;
+                    float lat = asin(clamp(d.y, -1.0, 1.0)) + CLOUD_HORIZON_DROP;
+                    float lit = uRest, line = 0.0;
+                    if (lat > 0.0) {
+                        vec2 hz = d.xz / max(length(d.xz), 1e-5);
+                        vec2 p = hz * cos(lat) / sin(lat) * uTilesPerUnit;  // where this view ray meets the deck, in tiles
+                        float n = texture2D(map, p).r;
+                        float horizonFade = smoothstep(0.01, 0.09, lat);
+                        float r = length(floor(p) + 0.5);  // the tile's distance from overhead, in tiles
+                        float gray = (230.0 + 25.0 * smoothstep(0.55, 0.8, n)) / 255.0;
+                        col = mix(col, vec3(gray), smoothstep(0.48, 0.68, n) * horizonFade);
+                        lit = max(lit, clamp(uReveal - r, 0.0, 1.0));
+                        // Tile edges, ~3px, fading out where the tiles get too small to tell apart
+                        vec2 fw = fwidth(p), e = abs(fract(p + 0.5) - 0.5) / fw;
+                        line = (1.0 - clamp(min(e.x, e.y) - 1.5, 0.0, 1.0)) * (1.0 - smoothstep(0.05, 0.2, max(fw.x, fw.y)))
+                             * uLines * horizonFade * clamp(uGrid - r, 0.0, 1.0);
+                    }
+                    gl_FragColor = vec4(mix(col * lit, uLineColor, line), 1.0);
+                }`,
+            side: THREE.BackSide,
+            depthWrite: false,
+            depthTest: false,
+        }));
+        dome.renderOrder = -1;  // drawn first, behind everything
+        dome.frustumCulled = false;
+        return dome;
+    }
+
+    // Grid surface at GRID_MESH resolution, so the GRID_SHOWN lines lie along its edges
+    function gridGeometry(sw, sd, bb, heightAt, waveAt) {
+        const geom = new THREE.PlaneGeometry(sw, sd, GRID_MESH, GRID_MESH).rotateX(-Math.PI / 2);
+        const pos = geom.attributes.position;
+        gridHeights = new Float32Array(pos.count);
+        gridWave = new Float32Array(pos.count);
+        for (let i = 0; i < pos.count; i++) {
+            const lon = bb.minLon + (pos.getX(i) / sw + 0.5) * (bb.maxLon - bb.minLon);
+            const lat = bb.maxLat - (pos.getZ(i) / sd + 0.5) * (bb.maxLat - bb.minLat);
+            gridHeights[i] = heightAt(lat, lon);
+            gridWave[i] = waveAt(pos.getX(i), pos.getZ(i));
+        }
+        return geom;
+    }
+
+    // Raises grid and tracks to fraction p of the elevation step: a smooth wave front sweeps from the far corner
+    // (wave 0) to the close one (wave 1), each point easing from flat up to ELEV_OVERSHOOT times its height as the
+    // front's first half passes, then settling back to its height
+    // h scales all heights (flattening the terrain at 0)
+    function applyElevation(p, h = 1) {
+        if (lastElev && lastElev[0] === p && lastElev[1] === h) return;
+        lastElev = [p, h];
+        const front = p * (1 + ELEV_WAVE);
+        const rise = w => {
+            const u = (front - w) / ELEV_WAVE;
+            return h * (u < 0.5 ? ELEV_OVERSHOOT * smoothstep(0, 0.5, u) : ELEV_OVERSHOOT + (1 - ELEV_OVERSHOOT) * smoothstep(0.5, 1, u));
+        };
+        const pos = grid.geometry.attributes.position;
+        for (let i = 0; i < pos.count; i++) pos.setY(i, gridHeights[i] * rise(gridWave[i]));
+        pos.needsUpdate = true;
+        for (const tr of tracks) {
+            const buf = tr.line.geometry.attributes.instanceStart.data;  // per segment: start xyz, end xyz
+            const n = tr.heights.length;
+            let y = tr.heights[0] * rise(tr.wave[0]);
+            for (let k = 0; k < n - 1; k++) {
+                buf.array[k * 6 + 1] = y;
+                y = tr.heights[k + 1] * rise(tr.wave[k + 1]);
+                buf.array[k * 6 + 4] = y;
+            }
+            buf.needsUpdate = true;
+        }
+    }
+
+    function interpElev(lat, lon, bb, elev, gw, gh) {
+        const fr = (bb.maxLat - lat) / (bb.maxLat - bb.minLat) * (gh - 1);
+        const fc = (lon - bb.minLon) / (bb.maxLon - bb.minLon) * (gw - 1);
+        const r0 = Math.max(0, Math.min(Math.floor(fr), gh - 2));
+        const c0 = Math.max(0, Math.min(Math.floor(fc), gw - 2));
+        const dr = fr - r0, dc = fc - c0;
+        return elev[r0*gw+c0]*(1-dr)*(1-dc) + elev[r0*gw+c0+1]*(1-dr)*dc +
+               elev[(r0+1)*gw+c0]*dr*(1-dc) + elev[(r0+1)*gw+c0+1]*dr*dc;
+    }
+
+    // Camera height at which a square of the given side fills FIT of the 16:9 frame's height
+    function fitHeight(side) {
+        const frameFrac = Math.min(innerHeight, innerWidth * 9 / 16) / innerHeight;
+        return side / (2 * Math.tan(FOV / 2 * Math.PI / 180) * FIT * frameFrac);
+    }
+
+    // Camera at distance r from the target (default the origin), elevation and view heading in degrees (90 =
+    // top-down). The view heading doubles as the up vector, so straight down it stays the screen's up and the
+    // orientation never flips.
+    function setCamera(r, elevation = 90, heading = 0, target = new THREE.Vector3()) {
+        const el = elevation * Math.PI / 180, hd = heading * Math.PI / 180;
+        const fx = Math.sin(hd), fz = -Math.cos(hd);  // horizontal view direction (north = -z, east = +x)
+        camera.position.set(-fx * r * Math.cos(el), r * Math.sin(el), -fz * r * Math.cos(el)).add(target);
+        camera.up.set(fx, 0, fz);
+        camera.lookAt(target);
+    }
+
+    // When the tile opening in place `order` starts (ms into the texture step), its opening and sinking times, and when
+    // it's done
+    // (the camera zooms in on the first tile before it starts, and out after it ends)
+    function texTiming(order) {
+        const first = FIRST_TILE_OPEN_MS + FIRST_TILE_LOWER_MS;
+        const t = order === 0
+            ? { start: TEX_ZOOM_MS, openMs: FIRST_TILE_OPEN_MS, lowerMs: FIRST_TILE_LOWER_MS }
+            : { start: TEX_ZOOM_MS + first + TEX_ZOOM_MS + (order - 1) * TILE_STAGGER_MS, openMs: TILE_OPEN_MS, lowerMs: TILE_LOWER_MS };
+        return { ...t, end: t.start + t.openMs + t.lowerMs };
+    }
+
+    // Box outline at expansion k (0 = tracks' square, 1 = scene bounds), traced up to fraction `drawn` of its perimeter
+    function setBox(k, drawn) {
+        const pts = boxInner.map((p, i) => [p[0] + (boxOuter[i][0] - p[0]) * k, p[1] + (boxOuter[i][1] - p[1]) * k]);
+        const arr = box.geometry.attributes.instanceStart.data.array;  // per segment: start xyz, end xyz
+        const along = drawn * 4;
+        for (let s = 0; s < 4; s++) {
+            const a = pts[s], b = pts[(s + 1) % 4], f = clamp01(along - s);
+            arr.set([a[0], 0, a[1], a[0] + (b[0] - a[0]) * f, 0, a[1] + (b[1] - a[1]) * f], s * 6);
+        }
+        box.geometry.attributes.instanceStart.data.needsUpdate = true;
+        box.geometry.instanceCount = Math.min(4, Math.ceil(along));
+    }
+
+    // Draws the route up to fraction f of its length; returns the number of points shown
+    function revealTracks(f) {
+        const dist = f * routeLength;
+        let shown = 0;
+        for (const t of tracks) {
+            const d = dist - t.start, n = t.cum.length;
+            let k;  // segments drawn
+            if (d <= 0) k = 0;
+            else if (d >= t.cum[n - 1]) k = n - 1;
+            else {
+                let lo = 0, hi = n - 1;
+                while (lo < hi) { const m = (lo + hi + 1) >> 1; if (t.cum[m] <= d) lo = m; else hi = m - 1; }
+                k = lo;
+            }
+            t.line.geometry.instanceCount = k;
+            shown += k ? k + 1 : 0;
+        }
+        return shown;
+    }
+
+    function setSubtitle(key, html) {
+        if (key === subtitleKey) return;
+        const first = subtitleKey === null;
+        subtitleKey = key;
+        if (first) { $subtitleText.innerHTML = html; return; }
+        $subtitleText.style.opacity = 0;
+        setTimeout(() => {
+            if (subtitleKey !== key) return;
+            $subtitleText.innerHTML = html;
+            $subtitleText.style.opacity = 1;
+        }, 200);
+    }
+
+    // Step start times, in order, and the subtitles shown from each step's label on
+    function buildSchedule() {
+        T = {};
+        let at = 0;
+        const step = (name, ms) => { T[name] = at; at += ms; };
+        const n = Math.round(Math.sqrt(texTiles.length));
+        step('pointsLabel', LABEL_MS); step('dots', DOTS_MS); step('lineLabel', LABEL_MS); step('line', REVEAL_MS); step('pointsHold', HOLD_MS);
+        // (the expansion follows the drawing right away, and the grid starts with its subtitle: both are slow already)
+        step('boxLabel', LABEL_MS); step('boxDraw', BOX_DRAW_MS);
+        step('growLabel', 0); step('boxGrow', BOX_GROW_MS); step('boxGrownHold', HOLD_MS);
+        step('gridLabel', 0); step('grid', GRID_MS); step('gridHold', HOLD_MS);
+        step('elevLabel', LABEL_MS); step('tilt', TILT_MS); step('elev', ELEV_MS); step('elevHold', HOLD_MS);
+        step('texLabel', LABEL_MS); step('tex', texTiming(texTiles.length - 1).end); step('texHold', HOLD_MS);
+        step('octavesLabel', LABEL_MS); step('octaves', CLOUD_LAYERS_MS); step('octavesHold', HOLD_MS);
+        step('sumLabel', LABEL_MS); step('merge', CLOUD_MERGE_MS); step('sumHold', HOLD_MS);
+        step('paintLabel', LABEL_MS); step('paint', CLOUD_PAINT_MS); step('paintHold', HOLD_MS);
+        step('tileLabel', LABEL_MS); step('sky', CLOUD_SKY_MS); step('tileGrid', CLOUD_GRID_MS); step('tile', CLOUD_TILE_MS); step('tileHold', HOLD_MS);
+        step('settleLabel', LABEL_MS); step('overhead', OVERHEAD_MS); step('settle', SETTLE_MS); step('settleHold', HOLD_MS);
+        step('splineLabel', LABEL_MS); step('spline', CAM_PATH_MS); step('splineHold', HOLD_MS);
+        step('eyeLabel', LABEL_MS); step('raise', RAISE_MS); step('eye', CAM_EYE_MS); step('eyeHold', HOLD_MS);
+        step('flyLabel', LABEL_MS); step('flyView', FLY_VIEW_MS); step('fly', CAM_FLY_MS);
+        step('end', HOLD_MS); step('outro', 0);  // the camera fades as it lands, then the inset and the subtitle
+        subtitles = [
+            ['pointsLabel', 'points', 'Load GPS points: <span id="sub-points">0</span>'],
+            ['lineLabel', 'smoothing', `Moving average: ${SMOOTH_WINDOW} points`],
+            ['boxLabel', 'box', 'Bounding box'],
+            ['growLabel', 'box-grow', `Expanded ${BOX_SCALE}&times;`],
+            ['gridLabel', 'grid', `${data.gw}&times;${data.gh} grid`],
+            ['elevLabel', 'elevation', 'Elevation data'],
+            ['texLabel', 'texture', `Satellite imagery &middot; ${n}&times;${n} tiles`],
+            ['octavesLabel', 'cloud-octaves', `Clouds: ${clouds.layers.length} octaves of value noise`],
+            ['sumLabel', 'cloud-sum', 'Summed into fractal noise'],
+            ['paintLabel', 'cloud-paint', 'Thresholded and colored'],
+            ['tileLabel', 'cloud-tile', 'Tiled across the sky'],
+            ['settleLabel', 'settlements', 'Settlements: where each day starts and ends'],
+            ['splineLabel', 'spline', 'Look-at path: Hermite spline through the settlements'],
+            ['eyeLabel', 'eye', 'Camera path: behind and above, turning with the heading'],
+            ['flyLabel', 'fly', 'Flying the camera path'],
+        ].map(([name, key, html]) => [T[name], key, html]);
+    }
+
+    function update(t) {
+        const h1 = fitHeight(Math.abs(boxInner[1][0] - boxInner[0][0]));
+        const since = name => t - T[name];
+        const ease = (name, ms) => smoothstep(0, 1, since(name) / ms);
+
+        // Subtitle: the latest one whose step has begun
+        const outro = ease('outro', CAM_FADE_MS);
+        $subtitle.style.opacity = clamp01(t / SUBTITLE_FADE_MS) * (1 - outro);
+        pipOpacity = 1 - outro;
+        const sub = subtitles.filter(([start]) => t >= start).pop() || subtitles[0];
+        setSubtitle(sub[1], sub[2]);
+
+        // GPS points: sample dots appear one by one (the counter running through all points meanwhile), then the
+        // tracks connect them, and the dots fade in the hold
+        const dotsShown = clamp01(since('dots') / DOTS_MS);
+        dots.geometry.setDrawRange(0, Math.ceil(dotsShown * DOTS));
+        dots.material.opacity = 1 - ease('pointsHold', DOTS_FADE_MS);
+        dots.visible = dotsShown > 0 && dots.material.opacity > 0;
+        revealTracks(clamp01(since('line') / REVEAL_MS));
+        const $p = document.getElementById('sub-points');
+        if ($p) $p.textContent = Math.round(dotsShown * totalPoints).toLocaleString();
+
+        // Box: traced, then expanded while the camera pulls back to fit it (the box swells a little on screen
+        // meanwhile, so it reads as growing rather than the tracks shrinking)
+        const grow = ease('boxGrow', BOX_GROW_MS);
+        setBox(grow, clamp01(since('boxDraw') / BOX_DRAW_MS));
+        const k = 1 + (BOX_SCALE - 1) * grow;
+        const swell = 1 + 0.25 * Math.sin(Math.PI * clamp01(since('boxGrow') / BOX_GROW_MS));
+        // Camera: then tilted to the isometric view, brought down for the sky, moved top-down over the tracks for the
+        // look-at spline, then back to the isometric view closer in. [distance, elevation, heading]
+        const tilt = ease('tilt', TILT_MS), low = ease('sky', CLOUD_SKY_MS);
+        const overhead = ease('overhead', OVERHEAD_MS), back = ease('raise', RAISE_MS);
+        const mix = (a, b, e) => a.map((v, i) => v + (b[i] - v) * e);
+        let view = [h1 * k / swell, 90 + (ISO_ELEVATION - 90) * tilt + (CLOUD_ELEVATION - ISO_ELEVATION) * low, ISO_HEADING * tilt];
+        view = mix(view, [h1, 90, 0], overhead);
+        view = mix(view, [h1 * ZOOM_FIT, ISO_ELEVATION, ISO_HEADING], back);
+        view = mix(view, [h1 * FLY_VIEW_FIT, FLY_VIEW_ELEVATION, ISO_HEADING], ease('flyView', FLY_VIEW_MS));
+        // (closer in on the first satellite tile while it opens and settles)
+        const firstTile = texTiles.find(tile => tile.order === 0);
+        const onTile = ease('tex', TEX_ZOOM_MS) - smoothstep(0, 1, (since('tex') - texTiming(0).end) / TEX_ZOOM_MS);
+        view[0] *= 1 + (TEX_ZOOM_FIT - 1) * onTile;
+        const target = firstTile ? new THREE.Vector3(firstTile.mesh.position.x, texFloatY / 2, firstTile.mesh.position.z).multiplyScalar(onTile) : undefined;
+        setCamera(...view, target);
+
+        // Grid: 1x1, 2x2, 4x4, ... up to GRID_SHOWN cells, evenly spaced so the last arrives at the end of GRID_MS
+        const steps = Math.round(Math.log2(GRID_SHOWN)) + 1;
+        // Each step's new lines fade in over most of the time until the next
+        const stepMs = GRID_MS / (steps - 1), sinceGrid = since('grid');
+        const step = Math.min(steps - 1, Math.max(0, Math.floor(sinceGrid / stepMs)));
+        grid.material.uniforms.uCells.value.set(2 ** step, 2 ** step);
+        grid.material.uniforms.uNewLines.value = step === 0 ? 1 : smoothstep(0, 1, (sinceGrid - step * stepMs) / (stepMs * 0.8));
+        // Once the grid is complete, the box fades away
+        box.material.opacity = 1 - ease('gridHold', BOX_FADE_MS);
+        box.visible = box.material.opacity > 0;
+        // (fading out as the texture covers it)
+        grid.material.uniforms.uOpacity.value = GRID_OPACITY * ease('grid', GRID_FADE_MS) * (1 - smoothstep(0.5, 1, since('tex') / (T.texHold - T.tex)));
+
+        // Elevation
+        // (flattened for a moment while the look-at spline is drawn)
+        const height = 1 - overhead + back;
+        applyElevation(clamp01(since('elev') / ELEV_MS), height);
+        terrainHeight.value = height;
+        setLookHeight(height);
+
+        // Texture: one tile after the other opens (growing from its center), then right away sinks from its floating
+        // height to below the lowest terrain, resting on the terrain wherever it's higher
+        for (const tile of texTiles) {
+            const { start, openMs, lowerMs } = texTiming(tile.order);
+            const open = clamp01((since('tex') - start) / openMs);
+            const s = 1 - (1 - open) ** 3;
+            tile.mesh.visible = open > 0;
+            tile.mesh.scale.set(Math.max(s, 1e-4), 1, Math.max(s, 1e-4));
+            const lower = smoothstep(0, 1, (since('tex') - start - openMs) / lowerMs);
+            tile.sheetY.value = texFloatY + (texBottomY - texFloatY) * lower;
+            const dim = 1 - (1 - TEXTURE_DIM) * (overhead - back);  // dimmed for the look-at spline (as seen, so sRGB)
+            tile.mesh.material.color.setRGB(dim, dim, dim, THREE.SRGBColorSpace);
+        }
+        // The first tile's dimension lines: once it has opened, until the camera zooms back out
+        const first = texTiming(0), rulerOpacity = smoothstep(0, 1, (since('tex') - first.start - first.openMs) / RULER_FADE_MS)
+            * (1 - smoothstep(0, 1, (since('tex') - first.end) / RULER_FADE_MS));
+        ruler.lines.material.opacity = rulerOpacity;
+        ruler.lines.visible = rulerOpacity > 0;
+        for (const label of ruler.labels) {
+            label.element.style.opacity = rulerOpacity;
+            label.visible = rulerOpacity > 0;
+        }
+
+        // Clouds: octave layers drop in one by one, bottom (coarsest) to top, then sink onto the deck and fade into
+        // their sum, which turns into painted clouds and rises away
+        const layerStagger = (CLOUD_LAYERS_MS - CLOUD_LAYER_IN_MS) / Math.max(clouds.layers.length - 1, 1);
+        const merge = ease('merge', CLOUD_MERGE_MS);
+        clouds.layers.forEach((layer, i) => {
+            const appear = smoothstep(0, 1, (since('octaves') - i * layerStagger) / CLOUD_LAYER_IN_MS);
+            layer.position.y = clouds.deckY + (i * CLOUD_LAYER_GAP + (1 - appear) * CLOUD_LAYER_GAP) * (1 - merge);
+            layer.material.uniforms.uOpacity.value = CLOUD_LAYER_OPACITY * appear * (1 - merge);
+            layer.visible = layer.material.uniforms.uOpacity.value > 0;
+        });
+        const rise = ease('sky', CLOUD_SKY_MS);
+        clouds.deck.position.y = clouds.deckY + CLOUD_RISE * rise * rise;
+        clouds.deck.material.uniforms.uOpacity.value = merge * (1 - rise);
+        clouds.deck.material.uniforms.uPaint.value = ease('paint', CLOUD_PAINT_MS);
+        clouds.deck.visible = clouds.deck.material.uniforms.uOpacity.value > 0;
+        // Sky: black at first; the tile outlines are drawn, then the tiles fill in, then the sky beyond the deck
+        const domeU = clouds.dome.material.uniforms, tiling = clamp01(since('tile') / CLOUD_TILE_MS);
+        // (outward from overhead, slowly at first where the tiles are big; the outlines fade in the hold)
+        const spread = f => f > 0 ? 0.5 * Math.pow(CLOUD_TILES_MAX / 0.5, f ** 1.5) : 0;
+        domeU.uGrid.value = spread(clamp01(since('tileGrid') / CLOUD_GRID_MS));
+        domeU.uReveal.value = spread(tiling);
+        domeU.uLines.value = 1 - ease('tileHold', HOLD_MS / 2);
+        domeU.uRest.value = smoothstep(0, 1, (since('tile') - CLOUD_TILE_MS + CLOUD_REST_MS) / CLOUD_REST_MS);
+
+        // Settlements: dots and names one by one in day order; the names fade as the terrain rises back
+        const fade = 1 - ease('eyeHold', CAM_FADE_MS);
+        const settleStagger = (SETTLE_MS - SETTLE_IN_MS) / Math.max(settlements.length - 1, 1);
+        settlements.forEach((st, i) => {
+            const shown = smoothstep(0, 1, (since('settle') - i * settleStagger) / SETTLE_IN_MS);
+            st.dot.material.opacity = fade;
+            st.dot.visible = shown > 0 && fade > 0;
+            const labelOpacity = shown * (1 - ease('raise', RAISE_MS));
+            st.label.element.style.opacity = labelOpacity;
+            st.label.visible = st.dot.visible && labelOpacity > 0;
+        });
+
+        // Camera paths: the look-at spline drawn through the settlements, then the eye's path with the arrow from its
+        // tip to the matching look-at point (its dots at the keys appearing as it reaches them), then the look-at
+        // spline and the arrow fade in the hold
+        setPath(lookPath, [], ease('spline', CAM_PATH_MS), fade);
+        const eyeDrawn = ease('eye', CAM_EYE_MS);
+        setPath(camPath, camKeys, eyeDrawn, 1);
+        setCamArrow(Math.round(eyeDrawn * camPath.userData.segments), t >= T.eye ? fade : 0);
+
+        // Flying camera: along the route, easing in and out, eating up the path behind it (and its dots); it fades
+        // (dot and view pyramid) once it has landed, the inset staying
+        const flying = t >= T.fly, flown = camRig.total * ease('fly', CAM_FLY_MS);
+        const left = eatCamPath(flying ? flown : 0);
+        if (flying) {
+            camPath.geometry.instanceCount = left;
+            for (const key of camKeys) key.dot.visible = key.at * camRig.total > flown;  // (gone once reached)
+        }
+        const coneFade = 1 - ease('end', CAM_FADE_MS);
+        camRig.flying = flying;
+        camRig.dot.visible = camRig.cone.visible = flying && coneFade > 0;
+        camRig.dot.material.opacity = coneFade;
+        camRig.cone.children[0].material.opacity = CAM_CONE_OPACITY * coneFade;
+        camRig.cone.children[1].material.opacity = CAM_EDGE_OPACITY * coneFade;
+        if (flying) setCamRig(flown);
+    }
+
+    function animate(now) {
+        requestAnimationFrame(animate);
+        if (startTime === null) startTime = now;
+        update(now - startTime - LEAD_MS);
+        renderPip();  // into its render target, before the main view
+        clouds.dome.position.copy(camera.position);
+        renderer.render(scene, camera);
+        if ($pip.style.display !== 'none') {  // then the inset over it
+            renderer.autoClear = false;
+            renderer.render(pip.hud, pip.hudCamera);
+            renderer.autoClear = true;
+        }
+        labelRenderer.render(scene, camera);
+    }
+
+    // The flying camera's view, shown small at the top left of the 16:9 frame: the terrain and tracks only, without
+    // the height exaggeration, under the clouds built earlier. It's rendered into a texture drawn on a screen quad,
+    // so it can fade.
+    function renderPip() {
+        const show = camRig.flying && pipOpacity > 0;
+        $pip.style.display = show ? 'block' : 'none';
+        if (!show) return;
+        const frameW = Math.min(innerWidth, innerHeight * 16 / 9), frameH = Math.min(innerHeight, innerWidth * 9 / 16);
+        const w = Math.round(frameW * PIP_WIDTH), h = Math.round(w * 9 / 16);
+        const left = Math.round((innerWidth - frameW) / 2 + PIP_MARGIN), top = Math.round((innerHeight - frameH) / 2 + PIP_MARGIN);
+        Object.assign($pip.style, { left: left + 'px', top: top + 'px', width: w + 'px', height: h + 'px', opacity: pipOpacity });
+
+        if (!pip) {
+            // An sRGB target, so the shader materials' colors (written as sRGB) come out the same as on screen
+            const target = new THREE.WebGLRenderTarget(1, 1, { samples: 4, colorSpace: THREE.SRGBColorSpace });
+            const quad = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+                                        new THREE.MeshBasicMaterial({ map: target.texture, transparent: true, depthTest: false }));
+            const hud = new THREE.Scene();
+            hud.add(quad);
+            pip = { target, hud, hudCamera: new THREE.OrthographicCamera(0, 1, 1, 0, -1, 1), quad };
+        }
+        const dpr = renderer.getPixelRatio();
+        pip.target.setSize(Math.round(w * dpr), Math.round(h * dpr));
+        Object.assign(pip.hudCamera, { right: innerWidth, top: innerHeight });
+        pip.hudCamera.updateProjectionMatrix();
+        pip.quad.scale.set(w, h, 1);
+        pip.quad.position.set(left + w / 2, innerHeight - top - h / 2, 0);
+        pip.quad.material.opacity = pipOpacity;
+
+        const helpers = [camRig.dot, camRig.cone, lookPath, camPath, camArrow.shaft, camArrow.head, box, grid,
+                         ...settlements.map(st => st.dot), ...camKeys.map(k => k.dot)];
+        const wasVisible = helpers.map(o => o.visible);
+        helpers.forEach(o => o.visible = false);
+        // Line widths are in pixels of the resolution, so give the tracks the viewport's
+        tracks.forEach(t => t.line.material.resolution.set(w, h));
+        // The scene loses its height exaggeration; the dome, centered on the camera, is stretched back to a sphere
+        scene.scale.y = 1 / ELEV_EXAGGERATION;
+        clouds.dome.scale.y = ELEV_EXAGGERATION;
+        clouds.dome.material.uniforms.uTilesPerUnit.value = 0.6;  // 3d.html's DECK_SCALE / N
+        clouds.dome.position.copy(camRig.view.position).setY(camRig.view.position.y * ELEV_EXAGGERATION);
+
+        renderer.setRenderTarget(pip.target);
+        renderer.render(scene, camRig.view);
+        renderer.setRenderTarget(null);
+
+        scene.scale.y = 1;
+        clouds.dome.scale.y = 1;
+        clouds.dome.material.uniforms.uTilesPerUnit.value = CLOUD_TILES_PER_UNIT;
+        tracks.forEach(t => t.line.material.resolution.set(innerWidth, innerHeight));
+        helpers.forEach((o, i) => o.visible = wasVisible[i]);
+    }
+
+    function restart() {
+        startTime = null;
+        subtitleKey = null;
+        $subtitleText.style.opacity = 1;
+    }
+
+    addEventListener('resize', () => {
+        if (!renderer) return;
+        camera.aspect = innerWidth / innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(innerWidth, innerHeight);
+        labelRenderer.setSize(innerWidth, innerHeight);
+        for (const o of [box, lookPath, camPath, camArrow.shaft, ruler.lines, ...tracks.map(t => t.line)]) o.material.resolution.set(innerWidth, innerHeight);
+    });
+
+    // Space replays from the start
+    addEventListener('keydown', e => {
+        if (e.code === 'Space' && renderer) { e.preventDefault(); restart(); }
+    });
+
+    // ── Scene import (from 3d.html) ─────────────────────────────
+
+    const SCENE_MAGIC = 'GPX3DSCN';
+
+    async function canvasFromImage(src) {
+        // src is a Blob from a scene file, or a data URL from an older JSON export
+        const img = src instanceof Blob ? await createImageBitmap(src) : await new Promise((res, rej) => {
+            const i = new Image();
+            i.onload = () => res(i);
+            i.onerror = () => rej(new Error('Could not decode texture tile'));
+            i.src = src;
+        });
+        const canvas = document.createElement('canvas');
+        const k = Math.min(1, TEX_TILE_PX / Math.max(img.width, img.height));
+        canvas.width = Math.round(img.width * k);
+        canvas.height = Math.round(img.height * k);
+        const ctx = canvas.getContext('2d');
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.srcWidth = img.width;  // the imagery's real size, for the dimension labels
+        canvas.srcHeight = img.height;
+        if (img.close) img.close();
+        return canvas;
+    }
+
+    async function readSceneFile(file, onTile) {
+        const bytes = async (start, end) => new Uint8Array(await file.slice(start, end).arrayBuffer());
+
+        if (new TextDecoder().decode(await bytes(0, SCENE_MAGIC.length)) !== SCENE_MAGIC) {
+            // Older JSON export
+            const data = JSON.parse(await file.text());
+            if (!data.texTiles) throw new Error('Unsupported scene file');
+            const texTiles = [];
+            for (const [i, t] of data.texTiles.entries()) {
+                texTiles.push({ canvas: await canvasFromImage(t.dataURL), offset: t.offset, repeat: t.repeat });
+                onTile(i + 1, data.texTiles.length);
+            }
+            return { ...data, elev: new Float64Array(data.elev), texTiles };
+        }
+
+        let pos = SCENE_MAGIC.length;
+        const headerLen = new DataView((await bytes(pos, pos + 4)).buffer).getUint32(0, true);
+        pos += 4;
+        const { elevBytes, texTiles: tileInfo, ...rest } = JSON.parse(new TextDecoder().decode(await bytes(pos, pos + headerLen)));
+        pos += headerLen;
+        const elev = new Float64Array(await file.slice(pos, pos + elevBytes).arrayBuffer());
+        pos += elevBytes;
+        const texTiles = [];
+        for (const [i, t] of tileInfo.entries()) {
+            texTiles.push({ canvas: await canvasFromImage(file.slice(pos, pos + t.bytes, 'image/jpeg')), offset: t.offset, repeat: t.repeat });
+            pos += t.bytes;
+            onTile(i + 1, tileInfo.length);
+        }
+        if (pos !== file.size) throw new Error('Scene file is truncated or corrupt');
+        return { ...rest, elev, texTiles };
+    }
+
+    document.getElementById('import-input').addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        $status.textContent = 'Loading scene data...';
+        try {
+            data = await readSceneFile(file, (d, t) => $status.textContent = `Restoring texture tile ${d} / ${t}`);
+            data.tracks = (data.tracks || []).map(pts => pts.map(p => ({ ...p, time: p.time ? new Date(p.time) : null })));
+            if (!data.tracks.length) throw new Error('No tracks in the scene file');
+            buildScene();
+            $landing.style.display = 'none';
+            $viewer.style.display = 'block';
+            $subtitle.style.display = 'block';
+            document.body.classList.add('recording');
+            requestAnimationFrame(animate);
+        } catch (err) {
+            $status.textContent = 'Error: ' + err.message;
+            console.error(err);
+        }
+    });
+    </script>
+</body>
+</html>
