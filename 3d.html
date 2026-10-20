@@ -2284,22 +2284,23 @@
     const PEAK_GROW_MS = 500;        // A peak's line grows up from the summit,
     const PEAK_LABEL_FADE_MS = 500;  // then its label fades in
     // EBC-specific peaks: a label with the altitude above the peak, on a short black line (official altitudes; the
-    // terrain model is too coarse for the summits). lineM overrides the line's height, e.g. to keep labels apart.
+    // terrain model is too coarse for the summits). Peak coordinates are moved onto the local high point of a
+    // 1000-point elevation grid, so the lines rise from the summits as they appear in the terrain. lineM overrides the line's height, e.g. to keep labels apart.
     // Landmarks without an altitude (ele: null) show just the name.
     const PEAKS = {
-        'Cho Oyu': { lat: 28.0941, lon: 86.6608, ele: 8188 },
-        'Everest': { lat: 27.9881, lon: 86.9250, ele: 8849 },
-        'Lhotse': { lat: 27.9617, lon: 86.9336, ele: 8516, lineM: FLY_PEAK_LINE_M + 200 },
-        'Ama Dablam': { lat: 27.8614, lon: 86.8614, ele: 6812 },
-        'Makalu': { lat: 27.8897, lon: 87.0886, ele: 8485 },
-        'Nuptse': { lat: 27.9664, lon: 86.8900, ele: 7861 },
-        'Pumori': { lat: 28.0153, lon: 86.8263, ele: 7161 },
-        'Cholatse': { lat: 27.9179, lon: 86.7667, ele: 6440 },
-        'Tobuche': { lat: 27.8967, lon: 86.7776, ele: 6495 },
-        'Lobuche East': { lat: 27.9595, lon: 86.7899, ele: 6119 },
-        'Thamserku': { lat: 27.7903, lon: 86.7875, ele: 6623 },
-        'Kangtega': { lat: 27.7995, lon: 86.8082, ele: 6782 },
-        'Phari Lapcha': { lat: 27.9296, lon: 86.6808, ele: 6017 },
+        'Cho Oyu': { lat: 28.09720, lon: 86.65997, ele: 8188 },
+        'Everest': { lat: 27.98881, lon: 86.92438, ele: 8849 },
+        'Lhotse': { lat: 27.96265, lon: 86.93278, ele: 8516, lineM: FLY_PEAK_LINE_M + 200 },
+        'Ama Dablam': { lat: 27.86174, lon: 86.86003, ele: 6812 },
+        'Makalu': { lat: 27.89164, lon: 87.08807, ele: 8485 },
+        'Nuptse': { lat: 27.96763, lon: 86.88661, ele: 7861 },
+        'Pumori': { lat: 28.01622, lon: 86.82645, ele: 7161 },
+        'Cholatse': { lat: 27.92029, lon: 86.76489, ele: 6440 },
+        'Tobuche': { lat: 27.89787, lon: 86.77888, ele: 6495 },
+        'Lobuche East': { lat: 27.95767, lon: 86.79287, ele: 6119 },
+        'Thamserku': { lat: 27.79073, lon: 86.78728, ele: 6623 },
+        'Kangtega': { lat: 27.79696, lon: 86.80826, ele: 6782 },
+        'Phari Lapcha': { lat: 27.92901, lon: 86.68095, ele: 6017 },
         'Khumbu Icefall': { lat: 28.0000, lon: 86.8650, ele: null, lineM: 1000 },  // above Base Camp
     };
     // In the flyover, a peak shows for 2 * FLY_PEAK_SHOW_MS: centered on the pulse passing the middle of each of its
