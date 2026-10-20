@@ -2329,15 +2329,26 @@
     // label (default), 'end', an extra place's label (e.g. 'Cho La Pass'), or a fraction of the day's distance (when
     // the pulse gets there).
     const DAILY_PEAKS = [
+        { peak: 'Thamserku', tracks: ['Phakding to Namche'], at: 0.5 },
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
+        { peak: 'Phari Lapcha', tracks: ['Machhermo to Gokyo'], at: 0.5 },
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
         { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
         { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass', delayMs: 500 },
+        { peak: 'Cholatse', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass', delayMs: 500 },
+        { peak: 'Tobuche', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass', delayMs: 500 },
+        { peak: 'Lobuche East', tracks: ['Dzongla to Lobuche'], at: 0.5 },
         { peak: 'Everest', tracks: ['Gorakshep to EBC'], at: 'end' },
         { peak: 'Lhotse', tracks: ['Gorakshep to EBC'], at: 'end' },
         { peak: 'Nuptse', tracks: ['Gorakshep to EBC'], at: 'end' },
         { peak: 'Khumbu Icefall', tracks: ['Gorakshep to EBC'], at: 'end' },
+        { peak: 'Pumori', tracks: ['Gorakshep to EBC'], at: 'end' },
+        { peak: 'Cholatse', tracks: ['Gorakshep to Somare'], at: 0.08 },  // shortly after leaving Gorakshep, as in the flyover
+        { peak: 'Tobuche', tracks: ['Gorakshep to Somare'], at: 0.08 },
+        { peak: 'Ama Dablam', tracks: ['Gorakshep to Somare'], at: 0.15 },
+        { peak: 'Kangtega', tracks: ['Somare to Namche'] },  // right after the Somare (start) label
+        { peak: 'Thamserku', tracks: ['Somare to Namche'] },
         { peak: 'Cho Oyu', tracks: ['Gokyo to Thagnak'], at: 0.5 },
     ];
     const FLY_PEAK_SHOW_MS = 2000;  // shown from this long before to this long after the pulse passes the track's middle
