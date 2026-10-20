@@ -2327,7 +2327,7 @@
     ];
     // In a daily animation, a peak appears delayMs after a label does and stays, like the start/end labels. at: the start
     // label (default), 'end', an extra place's label (e.g. 'Cho La Pass'), or a fraction of the day's distance (when
-    // the pulse gets there).
+    // the pulse gets there). lineM overrides the line height for that entry.
     const DAILY_PEAKS = [
         { peak: 'Thamserku', tracks: ['Phakding to Namche'], at: 0.5 },
         { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
@@ -2335,9 +2335,9 @@
         { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
         { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
         { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
-        { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass', delayMs: 500 },
-        { peak: 'Cholatse', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass', delayMs: 500 },
-        { peak: 'Tobuche', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass', delayMs: 500 },
+        { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass' },
+        { peak: 'Cholatse', tracks: ['Thagnak to Dzongla'], at: 0.85, lineM: FLY_PEAK_LINE_M + 200 },  // just before Dzongla
+        { peak: 'Tobuche', tracks: ['Thagnak to Dzongla'], at: 0.85, lineM: FLY_PEAK_LINE_M + 200 },
         { peak: 'Lobuche East', tracks: ['Dzongla to Lobuche'], at: 0.5 },
         { peak: 'Everest', tracks: ['Gorakshep to EBC'], at: 'end' },
         { peak: 'Lhotse', tracks: ['Gorakshep to EBC'], at: 'end' },
@@ -2356,9 +2356,9 @@
     const $flyStats = document.getElementById('fly-stats');
     let fly = null;
 
-    // A marker for a peak (null if it's outside the terrain)
-    function makePeakMarker(name) {
-        const { lat, lon, ele, lineM = FLY_PEAK_LINE_M } = PEAKS[name], { bb } = D;
+    // A marker for a peak (null if it's outside the terrain); lineM overrides the peak's line height
+    function makePeakMarker(name, lineM = PEAKS[name].lineM ?? FLY_PEAK_LINE_M) {
+        const { lat, lon, ele } = PEAKS[name], { bb } = D;
         if (lat < bb.minLat || lat > bb.maxLat || lon < bb.minLon || lon > bb.maxLon) return null;
         const base = terrainPoint(lat, lon);
         return makeTrailMarker(name, () => base, ele, null, { color: '#000000', heightM: lineM });
@@ -2802,7 +2802,7 @@
         animHolds.sort((a, b) => a.frac - b.frac);
         const display = trackLabels[animTrack.userData.trackIdx].display;
         animPeakMarkers = DAILY_PEAKS.filter(p => p.tracks.includes(display))
-            .map(p => ({ marker: makePeakMarker(p.peak), at: p.at ?? 'start', delayMs: p.delayMs ?? 0 })).filter(p => p.marker);
+            .map(p => ({ marker: makePeakMarker(p.peak, p.lineM), at: p.at ?? 'start', delayMs: p.delayMs ?? 0 })).filter(p => p.marker);
         animMarkers.push(...animPeakMarkers.map(p => p.marker));
         // Camera motion starts with the animation proper (startTimeline), after the zoom-in if there is one
         if (animOverview === 'in') startZoomIn();
