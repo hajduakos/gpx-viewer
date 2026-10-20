@@ -151,7 +151,7 @@
             transition: all 0.2s; flex-shrink: 0;
         }
         #rot-speed { width: 80px; flex: 1; }
-        #sel-highlight, #sel-camera-mode, #sel-end-marker, #sel-sky, #sel-overview, #txt-start-label, #txt-end-label {
+        #sel-highlight, #sel-camera-mode, #sel-end-marker, #sel-sky, #sel-precip, #sel-overview, #txt-start-label, #txt-end-label {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 4px;
@@ -294,6 +294,17 @@
         }
         #frame-guide.active { display: block; }
 
+        /* Rain/snow over the 3D view, under the labels and stats */
+        #precip {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 4;
+        }
+
         /* No mouse pointer in the picture while an animation (a recording) runs */
         body.recording, body.recording * { cursor: none !important; }
 
@@ -387,6 +398,7 @@
     </div>
 
     <div id="viewer"></div>
+    <canvas id="precip"></canvas>
 
     <div id="stats-box"></div>
 
@@ -489,6 +501,19 @@
                     <option value="night">Night</option>
                     <option value="night-to-day">Night to day</option>
                 </select>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Precipitation</span>
+                <select id="sel-precip">
+                    <option value="none" selected>None</option>
+                    <option value="rain">Rain</option>
+                    <option value="snow">Snow</option>
+                </select>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Intensity</span>
+                <input type="range" id="sld-precip" min="0" max="100" value="50" step="1" style="flex:1">
+                <span class="ctrl-label" id="precip-val">50%</span>
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Fog</span>
@@ -1580,6 +1605,85 @@
     document.getElementById('sld-phi').addEventListener('input', setCameraFromSliders);
 
     document.getElementById('sel-sky').addEventListener('change', updateSky);
+
+    // ── Precipitation ──
+    // Rain or snow drawn on a 2D canvas over the 3D view: a screen-space layer, independent of the camera. Intensity
+    // sets how many drops/flakes there are.
+    const PRECIP = {
+        rain: { max: 1200, speed: [900, 1400], wind: 160, size: [12, 24] },  // streaks: speed px/s, size = length px
+        snow: { max: 700, speed: [40, 110], wind: 25, size: [0.6, 2] },      // flakes: size = radius px
+    };
+    const $precip = document.getElementById('precip'), precipCtx = $precip.getContext('2d');
+    const $selPrecip = document.getElementById('sel-precip'), $sldPrecip = document.getElementById('sld-precip');
+    let precipParticles = [], precipLast = 0, precipRunning = false;
+
+    function newParticle(kind, anywhere) {
+        const cfg = PRECIP[kind], r = (a, b) => a + Math.random() * (b - a);
+        return {
+            x: Math.random() * innerWidth, y: anywhere ? Math.random() * innerHeight : -30,
+            speed: r(...cfg.speed), size: r(...cfg.size), phase: Math.random() * Math.PI * 2,
+        };
+    }
+
+    function updatePrecip() {
+        const kind = $selPrecip.value;
+        document.getElementById('precip-val').textContent = $sldPrecip.value + '%';
+        if (kind === 'none' || +$sldPrecip.value === 0) {
+            $precip.style.display = 'none';
+            precipParticles = [];
+            precipRunning = false;
+            return;
+        }
+        const count = Math.round(PRECIP[kind].max * $sldPrecip.value / 100);
+        if (precipParticles.kind !== kind) precipParticles = Object.assign([], { kind });
+        while (precipParticles.length < count) precipParticles.push(newParticle(kind, true));
+        precipParticles.length = count;
+        $precip.style.display = 'block';
+        if (!precipRunning) { precipRunning = true; precipLast = performance.now(); requestAnimationFrame(drawPrecip); }
+    }
+
+    function drawPrecip(now) {
+        if (!precipRunning) return;
+        requestAnimationFrame(drawPrecip);
+        const dt = Math.min((now - precipLast) / 1000, 0.1);
+        precipLast = now;
+        const dpr = Math.min(devicePixelRatio, 2), w = innerWidth, h = innerHeight;
+        if ($precip.width !== Math.round(w * dpr) || $precip.height !== Math.round(h * dpr)) {
+            $precip.width = Math.round(w * dpr);
+            $precip.height = Math.round(h * dpr);
+        }
+        precipCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        precipCtx.clearRect(0, 0, w, h);
+        const kind = precipParticles.kind, cfg = PRECIP[kind];
+        if (kind === 'rain') {
+            precipCtx.strokeStyle = 'rgba(210,220,235,0.45)';
+            precipCtx.lineWidth = 1;
+            precipCtx.beginPath();
+        } else {
+            precipCtx.fillStyle = 'rgba(255,255,255,0.85)';
+        }
+        for (let i = 0; i < precipParticles.length; i++) {
+            const p = precipParticles[i];
+            p.y += p.speed * dt;
+            if (kind === 'rain') {
+                p.x += cfg.wind * dt;
+                const k = p.size / p.speed;  // streak along the direction of motion
+                precipCtx.moveTo(p.x, p.y);
+                precipCtx.lineTo(p.x - cfg.wind * k, p.y - p.size);
+            } else {
+                p.phase += dt;
+                p.x += (cfg.wind + Math.sin(p.phase) * 20) * dt;  // drift side to side
+                precipCtx.beginPath();
+                precipCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                precipCtx.fill();
+            }
+            if (p.y > h + 30 || p.x > w + 30) precipParticles[i] = newParticle(kind, false);
+        }
+        if (kind === 'rain') precipCtx.stroke();
+    }
+
+    $selPrecip.addEventListener('change', updatePrecip);
+    $sldPrecip.addEventListener('input', updatePrecip);
 
     document.getElementById('sld-fog').addEventListener('input', e => {
         if (!scene) return;
