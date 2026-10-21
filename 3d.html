@@ -1610,7 +1610,10 @@
 
     // ── Precipitation ──
     // Rain or snow drawn on a 2D canvas over the 3D view: a screen-space layer, independent of the camera. Intensity
-    // sets how many drops/flakes there are.
+    // sets how many drops/flakes there are. In a daily animation it's off for the first half of the day, then builds up
+    // from nothing to DAILY_PRECIP_PEAK% by the day's end and stays there (the slider applies otherwise).
+    const DAILY_PRECIP_FROM = 0.5;
+    const DAILY_PRECIP_PEAK = 70;
     const PRECIP = {
         rain: { max: 1200, speed: [900, 1400], wind: 160, size: [12, 24] },  // streaks: speed px/s, size = length px
         snow: { max: 700, speed: [40, 110], wind: 25, size: [0.6, 2] },      // flakes: size = radius px
@@ -1627,16 +1630,16 @@
         };
     }
 
-    function updatePrecip() {
+    function updatePrecip(intensity = +$sldPrecip.value) {
         const kind = $selPrecip.value;
         document.getElementById('precip-val').textContent = $sldPrecip.value + '%';
-        if (kind === 'none' || +$sldPrecip.value === 0) {
+        if (kind === 'none' || intensity <= 0) {
             $precip.style.display = 'none';
             precipParticles = [];
             precipRunning = false;
             return;
         }
-        const count = Math.round(PRECIP[kind].max * $sldPrecip.value / 100);
+        const count = Math.round(PRECIP[kind].max * intensity / 100);
         if (precipParticles.kind !== kind) precipParticles = Object.assign([], { kind });
         while (precipParticles.length < count) precipParticles.push(newParticle(kind, true));
         precipParticles.length = count;
@@ -1684,8 +1687,8 @@
         if (kind === 'rain') precipCtx.stroke();
     }
 
-    $selPrecip.addEventListener('change', updatePrecip);
-    $sldPrecip.addEventListener('input', updatePrecip);
+    $selPrecip.addEventListener('change', () => updatePrecip());
+    $sldPrecip.addEventListener('input', () => updatePrecip());
 
     document.getElementById('sld-fog').addEventListener('input', e => {
         if (!scene) return;
@@ -2124,6 +2127,7 @@
         }
         const progress = clamp01((pe ?? pt - passed) / duration);
         if (document.getElementById('sel-sky').value === 'night-to-day') applyNightToDay(progress);
+        updatePrecip(DAILY_PRECIP_PEAK * clamp01((progress - DAILY_PRECIP_FROM) / (1 - DAILY_PRECIP_FROM)));
         // Stays at the track's end once done, until the camera stops
         updatePulse(progress, t >= pulseStart, clamp01((t - pulseEnd) / FILL_MS));
         updateAnimStats(progress, clamp01((t - ANIM_LEAD_MS) / STATS_FADE_MS));
@@ -2859,6 +2863,7 @@
         fly = null;
         $flyStats.style.display = 'none';
         updateSky();  // back to the sky's starting state (night for Night to day)
+        updatePrecip();  // and the precipitation to the slider's
         if (controlsWereVisible) $rotBox.classList.add('active');
         $frameGuide.classList.add('active');
         document.body.classList.remove('recording');
@@ -2885,6 +2890,7 @@
         if (!animTrack) { startFlyover(); return; }
         animOverview = document.getElementById('sel-overview').value;
         timelineStarted = false;
+        updatePrecip(0);  // off until the pulse is halfway (also through a zoom-in)
         startPulse();
         startAnimStats();
         const animEle = trackCumStats[animTrack.userData.trackIdx].ele;
