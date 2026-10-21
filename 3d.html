@@ -2907,15 +2907,16 @@
             animMarkers.push(animEndMarker);
             if (animEndMode === 'farthest') animHolds.push({ frac: fracAt(farIdx), ms: MARKER_MS, farthest: true });
         }
-        // Extra places along the track (e.g. Cho La Pass): as in the flyover, the pulse stops while the label appears
+        // Extra places along the track (e.g. Cho La Pass): as in the flyover, the pulse stops while the label appears.
+        // Only this track's own extras: a place can be an extra elsewhere and the start or end here (Phakding).
+        const display = trackLabels[animTrack.userData.trackIdx].display;
         for (const place of trackPlaces(animTrack)) {
-            if (!EXTRA_PLACES.some(e => e.text === place.text)) continue;
+            if (!EXTRA_PLACES.some(e => e.text === place.text && e.track === display)) continue;
             const marker = makeTrailMarker(place.text, trackPoint(animTrack, place.k), animEle[place.k]);
             animMarkers.push(marker);
             animHolds.push({ frac: fracAt(place.k), ms: FLY_PAUSE_MS, growMs: FLY_GROW_MS, marker });
         }
         animHolds.sort((a, b) => a.frac - b.frac);
-        const display = trackLabels[animTrack.userData.trackIdx].display;
         animPeakMarkers = DAILY_PEAKS.filter(p => p.tracks.includes(display))
             .map(p => ({ marker: makePeakMarker(p.peak, p.lineM), at: p.at ?? 'start', delayMs: p.delayMs ?? 0 })).filter(p => p.marker);
         animMarkers.push(...animPeakMarkers.map(p => p.marker));
