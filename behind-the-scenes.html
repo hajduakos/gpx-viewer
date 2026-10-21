@@ -144,16 +144,16 @@
     const TRACK_LIFT = 0.03;     // tracks sit this far above the terrain, so the texture stays below them
     const OVERHEAD_MS = 2000;    // settlements step: the camera moves to the opening top-down view of the tracks, the
                                  // terrain flattens and the texture dims for the look-at spline,
-    const TEXTURE_DIM = 0.2;     // to this brightness,
+    const TEXTURE_DIM = 0.2;     // to this brightness (until the camera flies, brightening over TEX_UNDIM_MS),
+    const TEX_UNDIM_MS = 1000;
     const SETTLE_MS = 3000;      // then settlements (each day's start and end) appear one by one in day order,
     const SETTLE_IN_MS = 300;    // each fading in over this
     const CAM_PATH_MS = 5000;    // the flyover camera's look-at spline is drawn through them,
-    const RAISE_MS = 2000;       // eye path step: the terrain rises back (the spline with it) at full brightness,
-                                 // settlement names fading, while the camera returns to the isometric view, closer in:
-    const ZOOM_FIT = 1.15;       // this times the distance that fit the tracks' bounding square top-down,
-    const FLY_VIEW_MS = 1500;    // fly step: the view comes down to this angle and a bit closer before the camera flies
-    const FLY_VIEW_ELEVATION = 30;
-    const FLY_VIEW_FIT = 1.0;    // (as ZOOM_FIT)
+    const RAISE_MS = 2000;       // eye path step: the terrain rises back (the spline with it),
+                                 // settlement names fading, while the camera comes down to a lower angle, closer in
+                                 // (kept for the camera's flight):
+    const PATH_VIEW_ELEVATION = 30;
+    const PATH_VIEW_FIT = 1.0;   // this times the distance that fit the tracks' bounding square top-down
     const CAM_EYE_MS = 5000;     // then the eye's path, with an arrow from the eye to the point it looks at
     const CAM_FADE_MS = 1000;    // (the look-at spline and the arrow fade in the hold)
     const CAM_GROUND_LIFT = 0.05;  // the look-at spline's height above the terrain
@@ -263,6 +263,7 @@
     let texTiles = [];           // { mesh, order (opening position, far corner first), sheetY (uniform: the tile's flat
                                  //   height; wherever the terrain is higher, it rests on the terrain) }
     let texFloatY, texBottomY;
+    let texPx;                   // the imagery's full size in pixels [width, height]
     let lastElev = null;
     const terrainHeight = { value: 1 };  // scales all heights (texture, tracks, look-at spline) to flatten the terrain
     let routeLength = 0, totalPoints = 0;
@@ -495,6 +496,8 @@
         // Opening order: by distance from the far corner (ties, on the diagonal, go row by row)
         [...texTiles].map((t, k) => ({ t, k })).sort((a, b) => a.t.wave - b.t.wave || a.k - b.k).forEach(({ t }, i) => t.order = i);
         buildRuler(texTiles.find(t => t.order === 0));
+        // The whole imagery's size: the tiles across the top row, and down the first column
+        texPx = [texTiles.slice(0, n).reduce((sum, t) => sum + t.px[0], 0), texTiles.filter((_, k) => k % n === 0).reduce((sum, t) => sum + t.px[1], 0)];
     }
 
     // Dimension lines along the first tile's two edges facing the isometric camera, at its floating height: a line
@@ -1024,14 +1027,15 @@
         camera.lookAt(target);
     }
 
+    // The texture step's first part: the camera zooms in on the first tile, which opens and settles, and zooms back out
+    const texFirstMs = () => TEX_ZOOM_MS + FIRST_TILE_OPEN_MS + FIRST_TILE_LOWER_MS + TEX_ZOOM_MS;
+
     // When the tile opening in place `order` starts (ms into the texture step), its opening and sinking times, and when
-    // it's done
-    // (the camera zooms in on the first tile before it starts, and out after it ends)
+    // it's done. The rest of the tiles follow the first part after their own subtitle's pause.
     function texTiming(order) {
-        const first = FIRST_TILE_OPEN_MS + FIRST_TILE_LOWER_MS;
         const t = order === 0
             ? { start: TEX_ZOOM_MS, openMs: FIRST_TILE_OPEN_MS, lowerMs: FIRST_TILE_LOWER_MS }
-            : { start: TEX_ZOOM_MS + first + TEX_ZOOM_MS + (order - 1) * TILE_STAGGER_MS, openMs: TILE_OPEN_MS, lowerMs: TILE_LOWER_MS };
+            : { start: texFirstMs() + LABEL_MS + (order - 1) * TILE_STAGGER_MS, openMs: TILE_OPEN_MS, lowerMs: TILE_LOWER_MS };
         return { ...t, end: t.start + t.openMs + t.lowerMs };
     }
 
@@ -1093,7 +1097,9 @@
         step('growLabel', 0); step('boxGrow', BOX_GROW_MS); step('boxGrownHold', HOLD_MS);
         step('gridLabel', 0); step('grid', GRID_MS); step('gridHold', HOLD_MS);
         step('elevLabel', LABEL_MS); step('tilt', TILT_MS); step('elev', ELEV_MS); step('elevHold', HOLD_MS);
-        step('texLabel', LABEL_MS); step('tex', texTiming(texTiles.length - 1).end); step('texHold', HOLD_MS);
+        step('texLabel', LABEL_MS); step('tex', texFirstMs());
+        step('tilesLabel', LABEL_MS); step('texRest', texTiming(texTiles.length - 1).end - texFirstMs() - LABEL_MS);
+        step('pixelsLabel', LABEL_MS); step('texHold', HOLD_MS);
         step('octavesLabel', LABEL_MS); step('octaves', CLOUD_LAYERS_MS); step('octavesHold', HOLD_MS);
         step('sumLabel', LABEL_MS); step('merge', CLOUD_MERGE_MS); step('sumHold', HOLD_MS);
         step('paintLabel', LABEL_MS); step('paint', CLOUD_PAINT_MS); step('paintHold', HOLD_MS);
@@ -1101,7 +1107,7 @@
         step('settleLabel', LABEL_MS); step('overhead', OVERHEAD_MS); step('settle', SETTLE_MS); step('settleHold', HOLD_MS);
         step('splineLabel', LABEL_MS); step('spline', CAM_PATH_MS); step('splineHold', HOLD_MS);
         step('eyeLabel', LABEL_MS); step('raise', RAISE_MS); step('eye', CAM_EYE_MS); step('eyeHold', HOLD_MS);
-        step('flyLabel', LABEL_MS); step('flyView', FLY_VIEW_MS); step('fly', CAM_FLY_MS);
+        step('flyLabel', LABEL_MS); step('fly', CAM_FLY_MS);
         step('end', HOLD_MS); step('outro', 0);  // the camera fades as it lands, then the inset and the subtitle
         subtitles = [
             ['pointsLabel', 'points', 'Load GPS points: <span id="sub-points">0</span>'],
@@ -1110,7 +1116,10 @@
             ['growLabel', 'box-grow', `Expanded ${BOX_SCALE}&times;`],
             ['gridLabel', 'grid', `${data.gw}&times;${data.gh} grid`],
             ['elevLabel', 'elevation', 'Elevation data'],
-            ['texLabel', 'texture', `Satellite imagery &middot; ${n}&times;${n} tiles`],
+            ['texLabel', 'texture', 'Satellite imagery'],
+            ['tilesLabel', 'texture-tiles', `${n}&times;${n} tiles`],
+            ['pixelsLabel', 'texture-pixels', `${texPx[0].toLocaleString()} &times; ${texPx[1].toLocaleString()} px`
+                + ` &middot; ${(texPx[0] * texPx[1] / 1e9).toFixed(2)} gigapixels`],
             ['octavesLabel', 'cloud-octaves', `Clouds: ${clouds.layers.length} octaves of value noise`],
             ['sumLabel', 'cloud-sum', 'Summed into fractal noise'],
             ['paintLabel', 'cloud-paint', 'Thresholded and colored'],
@@ -1151,14 +1160,13 @@
         const k = 1 + (BOX_SCALE - 1) * grow;
         const swell = 1 + 0.25 * Math.sin(Math.PI * clamp01(since('boxGrow') / BOX_GROW_MS));
         // Camera: then tilted to the isometric view, brought down for the sky, moved top-down over the tracks for the
-        // look-at spline, then back to the isometric view closer in. [distance, elevation, heading]
+        // look-at spline, then lower and closer in for the eye path and the flight. [distance, elevation, heading]
         const tilt = ease('tilt', TILT_MS), low = ease('sky', CLOUD_SKY_MS);
         const overhead = ease('overhead', OVERHEAD_MS), back = ease('raise', RAISE_MS);
         const mix = (a, b, e) => a.map((v, i) => v + (b[i] - v) * e);
         let view = [h1 * k / swell, 90 + (ISO_ELEVATION - 90) * tilt + (CLOUD_ELEVATION - ISO_ELEVATION) * low, ISO_HEADING * tilt];
         view = mix(view, [h1, 90, 0], overhead);
-        view = mix(view, [h1 * ZOOM_FIT, ISO_ELEVATION, ISO_HEADING], back);
-        view = mix(view, [h1 * FLY_VIEW_FIT, FLY_VIEW_ELEVATION, ISO_HEADING], ease('flyView', FLY_VIEW_MS));
+        view = mix(view, [h1 * PATH_VIEW_FIT, PATH_VIEW_ELEVATION, ISO_HEADING], back);
         // (closer in on the first satellite tile while it opens and settles)
         const firstTile = texTiles.find(tile => tile.order === 0);
         const onTile = ease('tex', TEX_ZOOM_MS) - smoothstep(0, 1, (since('tex') - texTiming(0).end) / TEX_ZOOM_MS);
@@ -1196,7 +1204,8 @@
             tile.mesh.scale.set(Math.max(s, 1e-4), 1, Math.max(s, 1e-4));
             const lower = smoothstep(0, 1, (since('tex') - start - openMs) / lowerMs);
             tile.sheetY.value = texFloatY + (texBottomY - texFloatY) * lower;
-            const dim = 1 - (1 - TEXTURE_DIM) * (overhead - back);  // dimmed for the look-at spline (as seen, so sRGB)
+            // (dimmed for the camera paths, as seen so in sRGB, until the camera flies)
+            const dim = 1 - (1 - TEXTURE_DIM) * (overhead - ease('fly', TEX_UNDIM_MS));
             tile.mesh.material.color.setRGB(dim, dim, dim, THREE.SRGBColorSpace);
         }
         // The first tile's dimension lines: once it has opened, until the camera zooms back out
