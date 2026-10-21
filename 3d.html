@@ -2412,10 +2412,13 @@
         'Kangtega': { lat: 27.79696, lon: 86.80826, ele: 6782 },
         'Phari Lapcha': { lat: 27.92901, lon: 86.68095, ele: 6017 },
         'Khumbu Icefall': { lat: 28.0000, lon: 86.8650, ele: null, lineM: 1000 },  // above Base Camp
+        'Ngozumpa Glacier': { lat: 27.950292, lon: 86.701547, ele: null },  // on the Gokyo to Thagnak track, where it
+                                                                           // crosses the glacier
+        'Khumbu Glacier': { lat: 27.942126, lon: 86.814967, ele: null },
     };
     // In the flyover, a peak shows for 2 * FLY_PEAK_SHOW_MS: centered on the pulse passing the middle of each of its
-    // tracks, or starting when the pulse reaches fraction at of them, or when a place's (first) label appears; delayMs
-    // shifts it later
+    // tracks, or starting when the pulse reaches fraction at of them, or when a place's label appears (the visit-th
+    // time it does, default the first); delayMs shifts it later (or earlier, if negative)
     const FLY_PEAKS = [
         { peak: 'Thamserku', tracks: ['Namche'] },  // around the middle of the rest day
         { peak: 'Ama Dablam', tracks: ['Namche'], at: 1, delayMs: FLY_PAUSE_MS / 2 },  // as the day switches to day 4,
@@ -2432,6 +2435,9 @@
         { peak: 'Tobuche', tracks: ['Thagnak to Dzongla'], at: 0.85 },
         { peak: 'Pumori', place: 'Gorakshep', delayMs: 500 },
         { peak: 'Khumbu Icefall', place: 'EBC' },
+        { peak: 'Ngozumpa Glacier', place: 'Gokyo', visit: 2, delayMs: 2500 },  // just after Gokyo's label, as the trek
+                                                                              // heads across it to Thagnak
+        { peak: 'Khumbu Glacier', place: 'Lobuche', delayMs: -FLY_GROW_MS - 3500 },  // just before Lobuche's label
         { peak: 'Cholatse', tracks: ['Gorakshep to Somare'], at: 0.08 },  // after leaving Gorakshep, just before Ama Dablam
         { peak: 'Tobuche', tracks: ['Gorakshep to Somare'], at: 0.08 },
         { peak: 'Ama Dablam', tracks: ['Gorakshep to Somare'], at: 0.15 },  // just after leaving Gorakshep for good
@@ -2643,13 +2649,13 @@
             animMarkers.push(marker);
             fly.peaks.push({ marker, from, to: from + 2 * FLY_PEAK_SHOW_MS });
         };
-        for (const { peak, tracks = [], at, place, delayMs = 0 } of FLY_PEAKS) {
+        for (const { peak, tracks = [], at, place, visit = 1, delayMs = 0 } of FLY_PEAKS) {
             for (const track of tracks) {
                 const leg = legs.find(l => trackLabels[l.track.userData.trackIdx].display === track);
                 if (!leg) continue;
                 addPeak(peak, delayMs + (at != null ? flightTimeAt(leg.offset + at * leg.len) : flightTimeAt(leg.offset + leg.len / 2) - FLY_PEAK_SHOW_MS));
             }
-            const event = place && events.find(e => e.text === place && e.growStart != null);
+            const event = place && events.filter(e => e.text === place && e.growStart != null)[visit - 1];
             if (event) addPeak(peak, event.growStart + FLY_GROW_MS + delayMs);  // once the place's line has grown and its label is up
         }
         fly.valueEls = makeStatsBar($flyStats);
