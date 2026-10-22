@@ -402,6 +402,11 @@
                 <span class="ctrl-label" id="lead-out-val">4s</span>
             </div>
             <div class="ctrl-row">
+                <span class="ctrl-label">Pulse radius</span>
+                <input type="range" id="sld-pulse" min="10" max="2000" value="1000" step="10" style="flex:1" title="How far the pulse reaches before and after its center">
+                <span class="ctrl-label" id="pulse-val">1000 m</span>
+            </div>
+            <div class="ctrl-row">
                 <label class="ctrl-label"><input type="checkbox" id="chk-hide-ui" checked> Hide cursor and settings while playing</label>
             </div>
             <div class="ctrl-row">
@@ -1302,6 +1307,8 @@
             showStatsBox(pts);
             renderLabelList();
             updatePosValue();
+            $sldPulse.value = Math.round(Math.min(PULSE_RADIUS_M, trackStats.dist[trackStats.dist.length - 1] / 10) / 10) * 10;
+            showPulseRadius();
             $btnAnimate.disabled = false;
         } catch (err) {
             prog('Error', 0, err.message);
@@ -1578,7 +1585,12 @@
     const LABEL_FADE_MS = 300;     // then its name fades in
     const LABEL_MS = LABEL_GROW_MS + LABEL_FADE_MS;
     const FILL_MS = 1000;          // after the pulse arrives, the whole track fades to the highlight color
-    const PULSE_RADIUS_M = 1000;   // the pulse fades out this far before and after its center
+    // The pulse fades out over its radius (slider) before and after its center; by default the smaller of
+    // PULSE_RADIUS_M and a tenth of the track
+    const PULSE_RADIUS_M = 1000;
+    const $sldPulse = document.getElementById('sld-pulse');
+    const showPulseRadius = () => document.getElementById('pulse-val').textContent = $sldPulse.value + ' m';
+    $sldPulse.addEventListener('input', showPulseRadius);
     const PULSE_LIFT = 0.005;      // and lifts the track by up to this, so it stays on top where the track overlaps itself
 
     const $btnAnimate = document.getElementById('btn-animate');
@@ -1589,7 +1601,7 @@
     let anim = null;               // { duration, cum, markers: [{ marker, show (ms) }], holds: [{ frac, ms }], phases }
 
     // ── Pulse ──
-    // Recolors the track itself: highlight color at the current point, fading to the track color PULSE_RADIUS_M
+    // Recolors the track itself: highlight color at the current point, fading to the track color over the pulse radius
     // before and after it, those points raised a little. cum: the distance in meters to each track point; range: the
     // points currently recolored.
     let pulse = null;
@@ -1634,17 +1646,18 @@
             pulse.range = null;
         }
         if (active || fill > 0) {
+            const radius = +$sldPulse.value;
             // Points [first, end) to update: the pulse window, or the whole track while filling
             let first = 0, end = n;
             if (fill === 0) {
                 let hi = n;
-                while (first < hi) { const mid = (first + hi) >> 1; if (cum[mid] < dCur - PULSE_RADIUS_M) first = mid + 1; else hi = mid; }
+                while (first < hi) { const mid = (first + hi) >> 1; if (cum[mid] < dCur - radius) first = mid + 1; else hi = mid; }
                 end = first;
-                while (end < n && cum[end] <= dCur + PULSE_RADIUS_M) end++;
+                while (end < n && cum[end] <= dCur + radius) end++;
             }
             const c = new THREE.Color();
             for (let k = first; k < end; k++) {
-                const t = active ? Math.max(0, 1 - Math.abs(cum[k] - dCur) / PULSE_RADIUS_M) : 0;
+                const t = active ? Math.max(0, 1 - Math.abs(cum[k] - dCur) / radius) : 0;
                 c.copy(base).lerp(peak, t + (1 - t) * fill);
                 setTrackPoint(k, [p[k*3], p[k*3+1] + PULSE_LIFT * t, p[k*3+2]], [c.r, c.g, c.b]);
             }
