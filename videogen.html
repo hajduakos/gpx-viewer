@@ -1184,6 +1184,7 @@
         function animate(now) {
             requestAnimationFrame(animate);
             if (trackAnimating) updateAnimation(now - animStart);
+            else for (const m of staticMarkers) updateMarker(m, Infinity);  // fully shown, on the track as it is
             controls.update();
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
@@ -1309,6 +1310,7 @@
     }
 
     function renderLabelList() {
+        showStaticLabels();
         $labelList.innerHTML = '';
         if (!labels.length) {
             $labelList.innerHTML = '<div id="label-empty">No labels yet</div>';
@@ -1623,13 +1625,26 @@
         m.label.element.style.opacity = fade;
     }
 
-    function removeMarkers() {
-        for (const { marker: m } of anim.markers) {
-            scene.remove(m.line, m.label);
-            m.line.geometry.dispose();
-            m.line.material.dispose();
-            m.label.element.remove();
-        }
+    function disposeMarker(m) {
+        scene.remove(m.line, m.label);
+        m.line.geometry.dispose();
+        m.line.material.dispose();
+        m.label.element.remove();
+    }
+
+    // While no animation plays, every label is shown in full (they follow edits to the list); playing hides them so
+    // the animation can reveal them
+    let staticMarkers = [];
+
+    function showStaticLabels() {
+        hideStaticLabels();
+        if (!track || trackAnimating) return;
+        staticMarkers = labels.map(lb => makeMarker(lb.name, placementIdx(lb.placement), lb.heightM));
+    }
+
+    function hideStaticLabels() {
+        staticMarkers.forEach(disposeMarker);
+        staticMarkers = [];
     }
 
     // ── Stats bar ──
@@ -1682,6 +1697,7 @@
     }
 
     function startAnimation() {
+        hideStaticLabels();
         trackAnimating = true;
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
@@ -1742,8 +1758,9 @@
         $btnAnimate.innerHTML = '&#9654;';
         controls.autoRotate = false;
         stopPulse();
-        removeMarkers();
+        anim.markers.forEach(({ marker }) => disposeMarker(marker));
         anim = null;
+        showStaticLabels();
         $animStats.style.display = 'none';
         if (animStartView) {
             controls.enableDamping = false;
