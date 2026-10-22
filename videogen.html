@@ -395,21 +395,23 @@
             <span class="ctrl-label" id="animate-dur-val">4s</span>
         </div>
         <hr class="divider">
-        <div class="section-title">Labels</div>
-        <div id="label-list"></div>
-        <div class="ctrl-row">
-            <input type="text" id="new-label-name" placeholder="Name">
-            <input type="number" id="new-label-height" value="500" min="0" step="50" title="Height above the ground (m)">
-            <span class="ctrl-label">m</span>
-        </div>
-        <div class="ctrl-row">
-            <select id="new-label-place">
-                <option value="start">Beginning of track</option>
-                <option value="end">End of track</option>
-                <option value="highest">Highest point</option>
-                <option value="farthest">Farthest point</option>
-            </select>
-            <button id="btn-add-label" class="ctrl-btn">Add label</button>
+        <button class="section-title open">Labels</button>
+        <div class="section-body open">
+            <div id="label-list"></div>
+            <div class="ctrl-row">
+                <input type="text" id="new-label-name" placeholder="Name">
+                <input type="number" id="new-label-height" value="500" min="0" step="50" title="Height above the ground (m)">
+                <span class="ctrl-label">m</span>
+            </div>
+            <div class="ctrl-row">
+                <select id="new-label-place">
+                    <option value="start">Beginning of track</option>
+                    <option value="end">End of track</option>
+                    <option value="highest">Highest point</option>
+                    <option value="farthest">Farthest point</option>
+                </select>
+                <button id="btn-add-label" class="ctrl-btn">Add label</button>
+            </div>
         </div>
         <hr class="divider">
         <button class="section-title">Track</button>
