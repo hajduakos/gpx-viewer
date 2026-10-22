@@ -445,6 +445,7 @@
                     <option value="sunset">Sunset</option>
                     <option value="night">Night</option>
                 </select>
+                <button id="btn-sky-random" class="ctrl-btn" title="Generate the sky again (new clouds or stars)">Randomize</button>
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Precipitation</span>
@@ -1251,6 +1252,16 @@
     // ── Scene settings ──
 
     document.getElementById('sel-sky').addEventListener('change', updateSky);
+
+    // Builds the current sky again: new clouds or stars (the plain and gradient skies come out the same)
+    document.getElementById('btn-sky-random').addEventListener('click', () => {
+        const mode = document.getElementById('sel-sky').value;
+        if (skyTextures[mode]) {
+            skyTextures[mode].dispose();
+            delete skyTextures[mode];
+        }
+        updateSky();
+    });
 
     document.getElementById('sld-fog').addEventListener('input', e => {
         if (!scene) return;
