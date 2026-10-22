@@ -2435,9 +2435,10 @@
         { peak: 'Tobuche', tracks: ['Thagnak to Dzongla'], at: 0.85 },
         { peak: 'Pumori', place: 'Gorakshep', delayMs: 500 },
         { peak: 'Khumbu Icefall', place: 'EBC' },
-        { peak: 'Ngozumpa Glacier', place: 'Gokyo', visit: 2, delayMs: 2500 },  // just after Gokyo's label, as the trek
-                                                                              // heads across it to Thagnak
-        { peak: 'Khumbu Glacier', place: 'Lobuche', delayMs: -FLY_GROW_MS - 3500 },  // just before Lobuche's label
+        // The glaciers are timed by where the pulse is (not by a delay from a label), so they show near the camera at
+        // any flyover speed
+        { peak: 'Ngozumpa Glacier', tracks: ['Gokyo to Thagnak'], at: 0.3 },  // as the pulse crosses it, after Gokyo
+        { peak: 'Khumbu Glacier', tracks: ['Dzongla to Lobuche'], at: 0.4 },  // on the way to Lobuche, before its label
         { peak: 'Cholatse', tracks: ['Gorakshep to Somare'], at: 0.08 },  // after leaving Gorakshep, just before Ama Dablam
         { peak: 'Tobuche', tracks: ['Gorakshep to Somare'], at: 0.08 },
         { peak: 'Ama Dablam', tracks: ['Gorakshep to Somare'], at: 0.15 },  // just after leaving Gorakshep for good
