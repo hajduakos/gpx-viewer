@@ -142,14 +142,15 @@
             color: #999;
             white-space: nowrap;
         }
-        #btn-animate:hover { background: rgba(255,255,255,0.1); color: #fff; }
-        #btn-animate.playing { color: #4facfe; border-color: #4facfe; }
+        #btn-animate:hover:not(:disabled) { background: #34b35a; }
+        #btn-animate.playing { background: #1e6e36; }
+        #btn-animate:disabled { opacity: 0.4; cursor: default; }
         #btn-animate {
-            width: 32px; height: 32px;
-            border: 1px solid rgba(255,255,255,0.15);
+            width: 36px; height: 36px;
+            border: 1px solid #3fcf6a;
             border-radius: 6px;
-            background: rgba(255,255,255,0.04);
-            color: #ccc; font-size: 14px;
+            background: #2a9d4c;
+            color: #fff; font-size: 15px;
             cursor: pointer;
             display: flex; align-items: center; justify-content: center;
             transition: all 0.2s; flex-shrink: 0;
