@@ -341,8 +341,8 @@
         <table class="settings">
             <tr>
                 <td>Grid resolution</td>
-                <td><input type="range" id="set-grid" min="50" max="1000" value="600" step="10"></td>
-                <td class="val" id="set-grid-v">600</td>
+                <td><input type="range" id="set-grid" min="50" max="1000" value="1000" step="10"></td>
+                <td class="val" id="set-grid-v">1000</td>
                 <td>Texture tiles</td>
                 <td><input type="range" id="set-tiles" min="1" max="4" value="1" step="1"></td>
                 <td class="val" id="set-tiles-v">1×1</td>
@@ -350,20 +350,20 @@
                 <td><input type="range" id="set-tex" min="1024" max="8192" value="2048" step="1024"></td>
                 <td class="val" id="set-tex-v">2048</td>
                 <td>Padding</td>
-                <td><input type="range" id="set-pad" min="1" max="10" value="2" step="0.1" title="Terrain size, as a multiple of the track's extent (1× = no padding)"></td>
-                <td class="val" id="set-pad-v">2.0×</td>
+                <td><input type="range" id="set-pad" min="1" max="10" value="5" step="0.1" title="Terrain size, as a multiple of the track's extent (1× = no padding)"></td>
+                <td class="val" id="set-pad-v">5.0×</td>
             </tr>
             <tr>
                 <td>Low-res grid</td>
-                <td><input type="range" id="set-lowgrid" min="20" max="1000" value="100" step="10"></td>
-                <td class="val" id="set-lowgrid-v">100</td>
+                <td><input type="range" id="set-lowgrid" min="20" max="1000" value="1000" step="10"></td>
+                <td class="val" id="set-lowgrid-v">1000</td>
                 <td></td><td></td><td></td>
                 <td>Low-res texture</td>
                 <td><input type="range" id="set-lowtex" min="512" max="8192" value="1024" step="512"></td>
                 <td class="val" id="set-lowtex-v">1024</td>
                 <td>Low-res padding</td>
-                <td><input type="range" id="set-lowpad" min="1" max="50" value="1" step="1" title="A coarse terrain around the padded one, this many times its size (1× = none)"></td>
-                <td class="val" id="set-lowpad-v">1×</td>
+                <td><input type="range" id="set-lowpad" min="1" max="50" value="10" step="1" title="A coarse terrain around the padded one, this many times its size (1× = none)"></td>
+                <td class="val" id="set-lowpad-v">10×</td>
             </tr>
         </table>
     </div>
