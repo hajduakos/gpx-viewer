@@ -1229,38 +1229,53 @@
         const lowPad = +$setLowPad.value;     // the low-res surroundings: that many times the padded terrain's size
 
         try {
-            prog('Step 1/4 — Parsing GPX file...', 2);
+            // Loading steps and their share of the progress bar: the low-res surroundings get theirs if there are any
+            const steps = lowPad > 1
+                ? { parse: [2, 5], elev: [6, 50], tex: [50, 75], lowElev: [75, 83], lowTex: [83, 93] }
+                : { parse: [2, 5], elev: [6, 65], tex: [66, 93] };
+            const count = Object.keys(steps).length + 1;
+            const step = (key, text, f = 0, detail = '') => {
+                const i = Object.keys(steps).indexOf(key) + 1, [a, b] = steps[key];
+                prog(`Step ${i}/${count} — ${text}`, a + (b - a) * f, detail);
+            };
+
+            step('parse', 'Parsing GPX file...');
             const { points, name } = parseGPXPoints(await file.text());
             if (points.length < 2) throw new Error('No track points found in the GPX file');
             const pts = smoothPoints(points, SMOOTH_WINDOW);
             trackName = name || file.name.replace(/\.gpx$/i, '');
-            prog('Step 1/4 — Parsing GPX file...', 5, `${pts.length} points`);
+            step('parse', 'Parsing GPX file...', 1, `${pts.length} points`);
 
             const bb = bbox(pts, padding);
             const gw = gridSize, gh = gridSize;
 
-            prog('Step 2/4 — Fetching elevation data...', 6, `Grid ${gw}×${gh} = ${(gw*gh).toLocaleString()} points`);
+            step('elev', 'Fetching elevation data...', 0, `Grid ${gw}×${gh} = ${(gw*gh).toLocaleString()} points`);
             const elev = await fetchElevations(bb, gw, gh, (d, t) => {
-                prog('Step 2/4 — Fetching elevation data...', 6 + (d / t) * 59, `Terrain tile ${d} / ${t}`);
+                step('elev', 'Fetching elevation data...', d / t, `Terrain tile ${d} / ${t}`);
             });
 
-            prog('Step 3/4 — Loading satellite imagery...', 66);
+            step('tex', 'Loading satellite imagery...');
             const texTiles = await fetchTexture(bb, texRes, texTileCount, gw, gh, (d, t) => {
-                prog('Step 3/4 — Loading satellite imagery...', 66 + (d / t) * 27, `Tile ${d} / ${t}`);
+                step('tex', 'Loading satellite imagery...', d / t, `Tile ${d} / ${t}`);
             });
 
             // Low-res surroundings: a coarse elevation grid and a single texture (their sliders) over the larger square
             let low = null;
             if (lowPad > 1) {
                 const lowBB = bbox(pts, (padding + 1) * lowPad - 1);
-                prog('Step 4/4 — Loading the low-res surroundings...', 93);
                 const grid = +$setLowGrid.value;
-                const lowElev = await fetchElevations(lowBB, grid, grid, () => {});
-                const [lowTex] = await fetchTexture(lowBB, +$setLowTex.value, 1, grid, grid, () => {});
+                step('lowElev', 'Fetching low-res elevation data...', 0, `Grid ${grid}×${grid}`);
+                const lowElev = await fetchElevations(lowBB, grid, grid, (d, t) => {
+                    step('lowElev', 'Fetching low-res elevation data...', d / t, `Terrain tile ${d} / ${t}`);
+                });
+                step('lowTex', 'Loading low-res satellite imagery...');
+                const [lowTex] = await fetchTexture(lowBB, +$setLowTex.value, 1, grid, grid, (d, t) => {
+                    step('lowTex', 'Loading low-res satellite imagery...', d / t, `Tile ${d} / ${t}`);
+                });
                 low = { bb: lowBB, elev: lowElev, tex: lowTex, L: lowPad, grid };
             }
 
-            prog('Step 4/4 — Building 3D scene...', 95);
+            prog(`Step ${count}/${count} — Building 3D scene...`, 95);
             await new Promise(r => setTimeout(r, 80));
             buildScene(elev, texTiles, pts, bb, gw, gh, padding, low);
 
