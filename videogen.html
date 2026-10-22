@@ -47,19 +47,18 @@
             opacity: 0;
             cursor: pointer;
         }
+        /* Landing settings: a row for the terrain, one for the low-res surroundings, each setting a name, a slider
+           and its value */
         .settings {
-            display: flex;
-            gap: 32px;
+            border-collapse: collapse;
             font-size: 0.85rem;
             color: #777;
         }
-        .settings label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .settings input[type=range] { width: 100px; }
-        .settings .val { min-width: 32px; text-align: right; color: #bbb; }
+        .settings td { padding: 7px 0; white-space: nowrap; }
+        .settings td:nth-child(3n + 1) { padding-right: 8px; }
+        .settings td:nth-child(3n + 1):not(:first-child) { padding-left: 32px; }
+        .settings input[type=range] { width: 100px; vertical-align: middle; }
+        .settings .val { min-width: 32px; padding-left: 8px; text-align: right; color: #bbb; }
 
         #progress {
             display: none;
@@ -338,28 +337,35 @@
             <span>Browse or drop a GPX file</span>
             <input type="file" accept=".gpx" id="file-input">
         </div>
-        <div class="settings">
-            <label>
-                Grid resolution
-                <input type="range" id="set-grid" min="50" max="1000" value="600" step="10">
-                <span class="val" id="set-grid-v">600</span>
-            </label>
-            <label>
-                Texture tiles
-                <input type="range" id="set-tiles" min="1" max="4" value="1" step="1">
-                <span class="val" id="set-tiles-v">1×1</span>
-            </label>
-            <label>
-                Resolution per tile
-                <input type="range" id="set-tex" min="1024" max="8192" value="2048" step="1024">
-                <span class="val" id="set-tex-v">2048</span>
-            </label>
-            <label>
-                Padding
-                <input type="range" id="set-pad" min="1" max="10" value="2" step="0.1" title="Terrain size, as a multiple of the track's extent (1× = no padding)">
-                <span class="val" id="set-pad-v">2.0×</span>
-            </label>
-        </div>
+        <!-- The detailed terrain's settings, and under them the low-res surroundings' counterparts -->
+        <table class="settings">
+            <tr>
+                <td>Grid resolution</td>
+                <td><input type="range" id="set-grid" min="50" max="1000" value="600" step="10"></td>
+                <td class="val" id="set-grid-v">600</td>
+                <td>Texture tiles</td>
+                <td><input type="range" id="set-tiles" min="1" max="4" value="1" step="1"></td>
+                <td class="val" id="set-tiles-v">1×1</td>
+                <td>Resolution per tile</td>
+                <td><input type="range" id="set-tex" min="1024" max="8192" value="2048" step="1024"></td>
+                <td class="val" id="set-tex-v">2048</td>
+                <td>Padding</td>
+                <td><input type="range" id="set-pad" min="1" max="10" value="2" step="0.1" title="Terrain size, as a multiple of the track's extent (1× = no padding)"></td>
+                <td class="val" id="set-pad-v">2.0×</td>
+            </tr>
+            <tr>
+                <td>Low-res grid</td>
+                <td><input type="range" id="set-lowgrid" min="20" max="1000" value="100" step="10"></td>
+                <td class="val" id="set-lowgrid-v">100</td>
+                <td></td><td></td><td></td>
+                <td>Low-res texture</td>
+                <td><input type="range" id="set-lowtex" min="512" max="8192" value="1024" step="512"></td>
+                <td class="val" id="set-lowtex-v">1024</td>
+                <td>Low-res padding</td>
+                <td><input type="range" id="set-lowpad" min="1" max="50" value="1" step="1" title="A coarse terrain around the padded one, this many times its size (1× = none)"></td>
+                <td class="val" id="set-lowpad-v">1×</td>
+            </tr>
+        </table>
     </div>
 
     <div id="progress">
@@ -528,6 +534,12 @@
     $setTex.oninput  = () => $setTexV.textContent = $setTex.value;
     $setTiles.oninput = () => $setTilesV.textContent = `${$setTiles.value}×${$setTiles.value}`;
     $setPad.oninput  = () => $setPadV.textContent = (+$setPad.value).toFixed(1) + '×';
+    const $setLowPad = document.getElementById('set-lowpad');
+    const $setLowPadV = document.getElementById('set-lowpad-v');
+    $setLowPad.oninput = () => $setLowPadV.textContent = $setLowPad.value + '×';
+    const $setLowGrid = document.getElementById('set-lowgrid'), $setLowTex = document.getElementById('set-lowtex');
+    $setLowGrid.oninput = () => document.getElementById('set-lowgrid-v').textContent = $setLowGrid.value;
+    $setLowTex.oninput = () => document.getElementById('set-lowtex-v').textContent = $setLowTex.value;
 
     function prog(step, pct, detail = '') {
         $pStep.textContent = step;
@@ -755,15 +767,15 @@
         return tex;
     }
 
-    // The terrain block's earthy sides and bottom
-    function buildBox(elev, gw, gh, sw, sd, meanE, scale, minE) {
-        const bottomY = (minE - 200 - meanE) * scale;
+    // The terrain block's earthy sides and bottom. edges: the top vertices along each side ([x, y, z], north and south
+    // by increasing x, west and east by increasing z); sw × sd: the block's size; bottomY: where it ends
+    function buildBox(edges, sw, sd, bottomY) {
         const brownMat = new THREE.MeshStandardMaterial({ map: makeEarthTexture(512, 512), roughness: 0.95, metalness: 0 });
 
-        function makeSide(count, getTopVertex, flip) {
-            const positions = [], uvs = [], indices = [];
+        function makeSide(top, flip) {
+            const positions = [], uvs = [], indices = [], count = top.length;
             for (let i = 0; i < count; i++) {
-                const [x, y, z] = getTopVertex(i);
+                const [x, y, z] = top[i];
                 const u = i / (count - 1);
                 positions.push(x, y, z);
                 uvs.push(u, 1);
@@ -783,15 +795,84 @@
             return new THREE.Mesh(geom, brownMat);
         }
 
-        scene.add(makeSide(gw, c => [(c / (gw - 1) - 0.5) * sw, (elev[c] - meanE) * scale, -sd / 2], false));
-        scene.add(makeSide(gw, c => [(c / (gw - 1) - 0.5) * sw, (elev[(gh - 1) * gw + c] - meanE) * scale, sd / 2], true));
-        scene.add(makeSide(gh, r => [-sw / 2, (elev[r * gw] - meanE) * scale, (r / (gh - 1) - 0.5) * sd], true));
-        scene.add(makeSide(gh, r => [sw / 2, (elev[r * gw + gw - 1] - meanE) * scale, (r / (gh - 1) - 0.5) * sd], false));
+        scene.add(makeSide(edges.north, false), makeSide(edges.south, true), makeSide(edges.west, true), makeSide(edges.east, false));
 
         const bGeom = new THREE.PlaneGeometry(sw, sd);
         bGeom.rotateX(Math.PI / 2);
         bGeom.translate(0, bottomY, 0);
         scene.add(new THREE.Mesh(bGeom, brownMat));
+    }
+
+    // ── Low-res surroundings ──
+    // A coarse terrain around the padded one, L times its size, with a hole where the padded terrain is: four strips
+    // (north and south over the full width, west and east between them). Their vertices along the hole's edge are the
+    // padded terrain's own edge vertices, so the two meet without gaps; elsewhere they're spaced as the coarse grid's
+    // points (low.grid across the whole) and take its elevation. Returns the strips' outer edges, for the block's sides.
+    function buildLowRes(low, L, bb, elev, gw, gh, sw, sd, meanE, scale) {
+        const N = low.grid;
+        const lonAt = x => bb.minLon + (x / sw + 0.5) * (bb.maxLon - bb.minLon);
+        const latAt = z => bb.maxLat - (z / sd + 0.5) * (bb.maxLat - bb.minLat);
+        const lowY = (x, z) => (interpElev(latAt(z), lonAt(x), low.bb, low.elev, N, N) - meanE) * scale;
+        const hiY = (r, c) => (elev[r * gw + c] - meanE) * scale;
+        const W = sw * L, Dp = sd * L;
+        // Coordinates from the outer edge to the hole's (inclusive), evenly at about the coarse spacing
+        const outward = (from, to, spacing) => {
+            const n = Math.max(1, Math.round(Math.abs(to - from) / spacing));
+            return Array.from({ length: n + 1 }, (_, i) => from + (to - from) * i / n);
+        };
+        const xs0 = outward(-W / 2, -sw / 2, W / (N - 1)), xs1 = outward(sw / 2, W / 2, W / (N - 1));
+        const zs0 = outward(-Dp / 2, -sd / 2, Dp / (N - 1)), zs1 = outward(sd / 2, Dp / 2, Dp / (N - 1));
+        const innerX = Array.from({ length: gw }, (_, c) => (c / (gw - 1) - 0.5) * sw);
+        const innerZ = Array.from({ length: gh }, (_, r) => (r / (gh - 1) - 0.5) * sd);
+        // Columns across the full width: outer west, the padded terrain's own, outer east (shared edges once)
+        const fullX = [...xs0.slice(0, -1), ...innerX, ...xs1.slice(1)];
+
+        const tex = new THREE.CanvasTexture(low.tex.canvas);
+        tex.minFilter = THREE.LinearFilter;
+        tex.offset.set(...low.tex.offset);
+        tex.repeat.set(...low.tex.repeat);
+        const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 });
+
+        // A strip: a grid over xsList × zsList (rows top to bottom), heights from y(x, z, i, j)
+        const strip = (xsList, zsList, y) => {
+            const nx = xsList.length, nz = zsList.length, positions = [], uvs = [], indices = [];
+            zsList.forEach((z, j) => xsList.forEach((x, i) => {
+                positions.push(x, y(x, z, i, j), z);
+                uvs.push((x + W / 2) / W, 1 - (z + Dp / 2) / Dp);
+            }));
+            for (let j = 0; j < nz - 1; j++) for (let i = 0; i < nx - 1; i++) {
+                const a = j * nx + i, b = a + 1, c = a + nx, d = c + 1;
+                indices.push(a, c, b, b, c, d);
+            }
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            geom.setIndex(indices);
+            geom.computeVertexNormals();
+            scene.add(new THREE.Mesh(geom, mat));
+            const at = (i, j) => positions.slice((j * nx + i) * 3, (j * nx + i) * 3 + 3);
+            return { at, nx, nz };
+        };
+        const innerCol = i => i - (xs0.length - 1);  // the padded terrain's column at fullX[i], if within it
+        const edgeOrLow = (r, x, z, i) => { const c = innerCol(i); return c >= 0 && c < gw ? hiY(r, c) : lowY(x, z); };
+        const north = strip(fullX, zs0, (x, z, i, j) => j === zs0.length - 1 ? edgeOrLow(0, x, z, i) : lowY(x, z));
+        const south = strip(fullX, zs1, (x, z, i, j) => j === 0 ? edgeOrLow(gh - 1, x, z, i) : lowY(x, z));
+        const west = strip(xs0, innerZ, (x, z, i, j) => i === xs0.length - 1 ? hiY(j, 0) : lowY(x, z));
+        const east = strip(xs1, innerZ, (x, z, i, j) => i === 0 ? hiY(j, gw - 1) : lowY(x, z));
+
+        const column = (st, i) => Array.from({ length: st.nz }, (_, j) => st.at(i, j));
+        const row = (st, j) => Array.from({ length: st.nx }, (_, i) => st.at(i, j));
+        let minY = Infinity;
+        for (const e of low.elev) minY = Math.min(minY, (e - meanE) * scale);
+        return {
+            edges: {
+                north: row(north, 0),
+                south: row(south, south.nz - 1),
+                west: [...column(north, 0), ...column(west, 0), ...column(south, 0)],
+                east: [...column(north, north.nx - 1), ...column(east, east.nx - 1), ...column(south, south.nx - 1)],
+            },
+            minY,
+        };
     }
 
     // ── Sky ──
@@ -970,7 +1051,8 @@
         scene.background = skyTextures[mode];
     }
 
-    function buildScene(elev, texTiles, pts, bb, gw, gh, pad) {
+    // low: the low-res surroundings ({ bb, elev, tex, L }) or null
+    function buildScene(elev, texTiles, pts, bb, gw, gh, pad, low) {
         const mid = (bb.maxLat + bb.minLat) / 2;
         const wm = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
         const dm = (bb.maxLat - bb.minLat) * 110540;
@@ -1004,7 +1086,7 @@
         trackStats = { dist, gain, ele };
 
         scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
+        camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, Math.max(1000, 300 * (low ? low.L : 1)));
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(innerWidth, innerHeight);
@@ -1053,7 +1135,20 @@
         });
         geom.dispose();
 
-        buildBox(elev, gw, gh, sw, sd, meanE, scale, minE);
+        // The block's sides: around the low-res surroundings if there are any, else around the padded terrain
+        if (low) {
+            const ring = buildLowRes(low, low.L, bb, elev, gw, gh, sw, sd, meanE, scale);
+            buildBox(ring.edges, sw * low.L, sd * low.L, Math.min((minE - meanE) * scale, ring.minY) - 200 * scale);
+        } else {
+            const y = (r, c) => (elev[r * gw + c] - meanE) * scale;
+            const xAt = c => (c / (gw - 1) - 0.5) * sw, zAt = r => (r / (gh - 1) - 0.5) * sd;
+            buildBox({
+                north: Array.from({ length: gw }, (_, c) => [xAt(c), y(0, c), -sd / 2]),
+                south: Array.from({ length: gw }, (_, c) => [xAt(c), y(gh - 1, c), sd / 2]),
+                west: Array.from({ length: gh }, (_, r) => [-sw / 2, y(r, 0), zAt(r)]),
+                east: Array.from({ length: gh }, (_, r) => [sw / 2, y(r, gw - 1), zAt(r)]),
+            }, sw, sd, (minE - 200 - meanE) * scale);
+        }
 
         // The track
         const arr = [];
@@ -1131,6 +1226,7 @@
         const texRes = +$setTex.value;
         const texTileCount = +$setTiles.value;
         const padding = +$setPad.value - 1;  // the terrain is the track's extent times the slider: padding beyond 1×
+        const lowPad = +$setLowPad.value;     // the low-res surroundings: that many times the padded terrain's size
 
         try {
             prog('Step 1/4 — Parsing GPX file...', 2);
@@ -1153,9 +1249,20 @@
                 prog('Step 3/4 — Loading satellite imagery...', 66 + (d / t) * 27, `Tile ${d} / ${t}`);
             });
 
+            // Low-res surroundings: a coarse elevation grid and a single texture (their sliders) over the larger square
+            let low = null;
+            if (lowPad > 1) {
+                const lowBB = bbox(pts, (padding + 1) * lowPad - 1);
+                prog('Step 4/4 — Loading the low-res surroundings...', 93);
+                const grid = +$setLowGrid.value;
+                const lowElev = await fetchElevations(lowBB, grid, grid, () => {});
+                const [lowTex] = await fetchTexture(lowBB, +$setLowTex.value, 1, grid, grid, () => {});
+                low = { bb: lowBB, elev: lowElev, tex: lowTex, L: lowPad, grid };
+            }
+
             prog('Step 4/4 — Building 3D scene...', 95);
             await new Promise(r => setTimeout(r, 80));
-            buildScene(elev, texTiles, pts, bb, gw, gh, padding);
+            buildScene(elev, texTiles, pts, bb, gw, gh, padding, low);
 
             prog('Done!', 100);
             await new Promise(r => setTimeout(r, 350));
