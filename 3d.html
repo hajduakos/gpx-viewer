@@ -2081,8 +2081,9 @@
     let animStatsBar = null;
 
     function startAnimStats() {
-        const cum = trackCumStats[animTrack.userData.trackIdx], last = cum.dist.length - 1;
+        const i = animTrack.userData.trackIdx, cum = trackCumStats[i], last = cum.dist.length - 1;
         animStatsBar = { valueEls: makeStatsBar($animStats), widths: statsBarWidths(cum.dist[last], cum.ele.reduce((a, b) => Math.max(a, b), 0), cum.gain[last]) };
+        if (!trackLabels[i].day) $animStats.firstElementChild.style.display = 'none';  // no day column for a hike without one
     }
 
     function updateAnimStats(progress, opacity) {
