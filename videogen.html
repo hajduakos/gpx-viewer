@@ -155,7 +155,8 @@
             display: flex; align-items: center; justify-content: center;
             transition: all 0.2s; flex-shrink: 0;
         }
-        #rot-speed { width: 80px; flex: 1; min-width: 0; }
+        #rot-speed { width: 80px; flex: 1; }
+        #rotate-box input[type=range] { min-width: 0; }  /* sliders shrink to fit their row */
         #rotate-box select, #rotate-box input[type=text], #rotate-box input[type=number] {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
