@@ -1891,6 +1891,8 @@
     }
 
     document.addEventListener('keydown', e => {
+        // Esc stops the animation, back to how things were before it (camera, controls, labels)
+        if (e.key === 'Escape' && trackAnimating) { stopAnimation(); return; }
         if (isKeyClaimedByFocus(e)) return;
         if (e.key === 'c' || e.key === 'C') $rotBox.classList.toggle('active');
         if (e.key === 'a' || e.key === 'A') $btnAnimate.click();
