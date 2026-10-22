@@ -430,8 +430,14 @@
                     <option value="end">End of track</option>
                     <option value="highest">Highest point</option>
                     <option value="farthest">Farthest point</option>
+                    <option value="position">Given position</option>
                 </select>
                 <button id="btn-add-label" class="ctrl-btn">Add label</button>
+            </div>
+            <div class="ctrl-row" id="row-label-pos" style="display:none">
+                <span class="ctrl-label">Position</span>
+                <input type="range" id="new-label-pos" min="0" max="1000" value="500" step="1" style="flex:1" title="Along the track, from its start to its end">
+                <span class="ctrl-label" id="new-label-pos-val"></span>
             </div>
         </div>
         <hr class="divider">
@@ -1184,7 +1190,13 @@
         function animate(now) {
             requestAnimationFrame(animate);
             if (trackAnimating) updateAnimation(now - animStart);
-            else for (const m of staticMarkers) updateMarker(m, Infinity);  // fully shown, on the track as it is
+            else {
+                for (const m of staticMarkers) updateMarker(m, Infinity);  // fully shown, on the track as it is
+                if (preview) {
+                    updateMarker(preview.marker, Infinity);
+                    preview.dot.position.copy(preview.marker.base());
+                }
+            }
             controls.update();
             renderer.render(scene, camera);
             labelRenderer.render(scene, camera);
@@ -1289,6 +1301,7 @@
             showFrameGuide();
             showStatsBox(pts);
             renderLabelList();
+            updatePosValue();
             $btnAnimate.disabled = false;
         } catch (err) {
             prog('Error', 0, err.message);
@@ -1301,13 +1314,23 @@
     // animation, a label at the start appears before the pulse sets off, one at the end once it arrives, and one in
     // between when the pulse gets there (the pulse holds meanwhile).
     const PLACEMENTS = { start: 'Beginning', end: 'End', highest: 'Highest point', farthest: 'Farthest point' };
-    let labels = [];  // { name, heightM, placement }
+    let labels = [];  // { name, heightM, placement, frac (for a given position: of the track's distance) }
     const $labelList = document.getElementById('label-list');
 
-    function placementIdx(placement) {
-        const last = trackStats.ele.length - 1;
+    // The track point a label goes at
+    function placementIdx(placement, frac = 0) {
+        const dist = trackStats.dist, last = dist.length - 1;
+        if (placement === 'position') {
+            // The point nearest to that fraction of the distance
+            const d = frac * dist[last];
+            let lo = 0, hi = last;
+            while (lo < hi) { const mid = (lo + hi) >> 1; if (dist[mid] < d) lo = mid + 1; else hi = mid; }
+            return lo > 0 && d - dist[lo - 1] < dist[lo] - d ? lo - 1 : lo;
+        }
         return { start: 0, end: last, highest: trackHighestIdx, farthest: trackFarthestIdx }[placement];
     }
+
+    const kmAt = frac => `${(frac * trackStats.dist[trackStats.dist.length - 1] / 1000).toFixed(1)} km`;
 
     function renderLabelList() {
         showStaticLabels();
@@ -1324,7 +1347,7 @@
             name.textContent = lb.name;
             const info = document.createElement('span');
             info.className = 'label-info';
-            info.textContent = `${PLACEMENTS[lb.placement]} · ${lb.heightM} m`;
+            info.textContent = `${lb.placement === 'position' ? 'At ' + kmAt(lb.frac) : PLACEMENTS[lb.placement]} · ${lb.heightM} m`;
             const del = document.createElement('button');
             del.title = 'Delete';
             del.innerHTML = '&times;';
@@ -1334,20 +1357,78 @@
         });
     }
 
-    function addLabel(name, heightM, placement) {
-        labels.push({ name, heightM, placement });
+    function addLabel(name, heightM, placement, frac) {
+        labels.push({ name, heightM, placement, frac });
         renderLabelList();
     }
 
     const $newLabelName = document.getElementById('new-label-name');
     const $newLabelHeight = document.getElementById('new-label-height');
+    const $newLabelPlace = document.getElementById('new-label-place');
+    const $newLabelPos = document.getElementById('new-label-pos');
+    // The label the controls describe
+    const newLabel = () => ({
+        name: $newLabelName.value.trim(), heightM: Math.max(0, +$newLabelHeight.value || 0),
+        placement: $newLabelPlace.value, frac: +$newLabelPos.value / 1000,
+    });
+
     document.getElementById('btn-add-label').addEventListener('click', () => {
-        const name = $newLabelName.value.trim();
-        if (!name) { $newLabelName.focus(); return; }
-        addLabel(name, Math.max(0, +$newLabelHeight.value || 0), document.getElementById('new-label-place').value);
+        const lb = newLabel();
+        if (!lb.name) { $newLabelName.focus(); return; }
+        addLabel(lb.name, lb.heightM, lb.placement, lb.frac);
         $newLabelName.value = '';
+        hidePreview();
     });
     $newLabelName.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-add-label').click(); });
+
+    // Preview: touching any of the label controls shows where the label would go (a red dot on the track) and how
+    // it would look, until it's added
+    let preview = null;  // { marker, dot }
+    const PREVIEW_COLOR = '#ff2020';
+
+    function updatePreview() {
+        hidePreview();
+        if (!track || trackAnimating) return;
+        const lb = newLabel(), k = placementIdx(lb.placement, lb.frac);
+        const marker = makeMarker(lb.name, k, lb.heightM, PREVIEW_COLOR);
+        const dot = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3)),
+            new THREE.PointsMaterial({ color: PREVIEW_COLOR, size: 14, sizeAttenuation: false, map: dotTexture(), transparent: true, depthTest: false }));
+        dot.renderOrder = 10;
+        scene.add(dot);
+        preview = { marker, dot };
+    }
+
+    function hidePreview() {
+        if (!preview) return;
+        disposeMarker(preview.marker);
+        scene.remove(preview.dot);
+        preview.dot.geometry.dispose();
+        preview.dot.material.dispose();
+        preview = null;
+    }
+
+    // A round dot sprite
+    let dotTex = null;
+    function dotTexture() {
+        if (dotTex) return dotTex;
+        const cv = document.createElement('canvas');
+        cv.width = cv.height = 64;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(32, 32, 28, 0, 2 * Math.PI);
+        ctx.fill();
+        return dotTex = new THREE.CanvasTexture(cv);
+    }
+
+    function updatePosValue() {
+        document.getElementById('row-label-pos').style.display = $newLabelPlace.value === 'position' ? '' : 'none';
+        if (trackStats) document.getElementById('new-label-pos-val').textContent = kmAt(+$newLabelPos.value / 1000);
+    }
+    $newLabelPlace.addEventListener('change', () => { updatePosValue(); updatePreview(); });
+    $newLabelPos.addEventListener('input', () => { updatePosValue(); updatePreview(); });
+    $newLabelName.addEventListener('input', updatePreview);
+    $newLabelHeight.addEventListener('input', updatePreview);
 
     // ── Camera ──────────────────────────────────────────────────
 
@@ -1594,7 +1675,8 @@
         return new THREE.Vector3(p[k * 3], p[k * 3 + 1] + track.position.y, p[k * 3 + 2]);
     };
 
-    function makeMarker(text, k, heightM) {
+    // color: the line's, if not the highlight color
+    function makeMarker(text, k, heightM, color = null) {
         const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
             new LineMaterial({ linewidth: 4, transparent: true, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
@@ -1608,7 +1690,7 @@
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
         scene.add(line, label);
-        return { line, label, base: trackPoint(k), heightM };
+        return { line, label, base: trackPoint(k), heightM, color };
     }
 
     // since: ms since the marker started to appear
@@ -1619,7 +1701,7 @@
         m.line.scale.y = Math.max(growth, 1e-4) * h;
         m.line.visible = growth > 0;
         m.line.material.resolution.set(innerWidth, innerHeight);
-        m.line.material.color.set(document.getElementById('clr-highlight').value);
+        m.line.material.color.set(m.color ?? document.getElementById('clr-highlight').value);
         m.label.position.set(b.x, b.y + h, b.z);
         m.label.visible = fade > 0;
         m.label.element.style.opacity = fade;
@@ -1639,7 +1721,7 @@
     function showStaticLabels() {
         hideStaticLabels();
         if (!track || trackAnimating) return;
-        staticMarkers = labels.map(lb => makeMarker(lb.name, placementIdx(lb.placement), lb.heightM));
+        staticMarkers = labels.map(lb => makeMarker(lb.name, placementIdx(lb.placement, lb.frac), lb.heightM));
     }
 
     function hideStaticLabels() {
@@ -1698,6 +1780,7 @@
 
     function startAnimation() {
         hideStaticLabels();
+        hidePreview();
         trackAnimating = true;
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
@@ -1716,7 +1799,7 @@
         anim = { duration: seconds('sld-animate-dur'), leadInMs: seconds('sld-lead-in'), leadOutMs: seconds('sld-lead-out'), cum, markers: [], holds: [] };
         // Labels at the start or the end, or in between: there the pulse holds while they appear (once per point)
         for (const lb of labels) {
-            const k = placementIdx(lb.placement);
+            const k = placementIdx(lb.placement, lb.frac);
             const where = k === 0 ? 'start' : k === n - 1 ? 'end' : 'between';
             const frac = total > 0 ? cum[k] / total : 0;
             anim.markers.push({ marker: makeMarker(lb.name, k, lb.heightM), where, frac });
