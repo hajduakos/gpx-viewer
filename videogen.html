@@ -1,0 +1,1651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPX Video Generator</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f1a;
+            color: #e0e0e0;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        #landing {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            gap: 28px;
+        }
+        #landing h1 {
+            font-size: 2rem;
+            font-weight: 300;
+            letter-spacing: 2px;
+        }
+        .file-picker {
+            position: relative;
+            padding: 24px 48px;
+            background: rgba(255,255,255,0.04);
+            border: 2px dashed rgba(255,255,255,0.2);
+            border-radius: 12px;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 1rem;
+        }
+        .file-picker:hover, .file-picker.dragover {
+            border-color: #4facfe;
+            background: rgba(79,172,254,0.06);
+        }
+        .file-picker input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .settings {
+            display: flex;
+            gap: 32px;
+            font-size: 0.85rem;
+            color: #777;
+        }
+        .settings label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .settings input[type=range] { width: 100px; }
+        .settings .val { min-width: 32px; text-align: right; color: #bbb; }
+
+        #progress {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: #0f0f1a;
+            z-index: 100;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+        }
+        #progress.active { display: flex; }
+        #progress-step {
+            font-size: 1.05rem;
+            color: #aaa;
+        }
+        .bar-wrap {
+            width: 420px;
+            max-width: 80vw;
+            height: 5px;
+            background: rgba(255,255,255,0.08);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        #progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #4facfe, #00f2fe);
+            border-radius: 3px;
+            transition: width 0.15s;
+        }
+        #progress-pct {
+            font-size: 1.6rem;
+            font-weight: 300;
+            color: #4facfe;
+        }
+        #progress-detail {
+            font-size: 0.8rem;
+            color: #555;
+            height: 18px;
+        }
+
+        #viewer {
+            display: none;
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+        }
+        #viewer.active { display: block; }
+        #viewer canvas { display: block; }
+
+        #rotate-box {
+            display: none;
+            position: fixed;
+            top: 16px;
+            right: 16px;
+            background: rgba(15,15,26,0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 12px 16px;
+            z-index: 10;
+            flex-direction: column;
+            gap: 10px;
+            width: 420px;
+            max-width: calc(100vw - 32px);
+            max-height: calc(100vh - 32px);
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+        #rotate-box.active { display: flex; }
+        .ctrl-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .ctrl-label {
+            font-size: 0.8rem;
+            color: #999;
+            white-space: nowrap;
+        }
+        #btn-animate:hover { background: rgba(255,255,255,0.1); color: #fff; }
+        #btn-animate.playing { color: #4facfe; border-color: #4facfe; }
+        #btn-animate {
+            width: 32px; height: 32px;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            background: rgba(255,255,255,0.04);
+            color: #ccc; font-size: 14px;
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; flex-shrink: 0;
+        }
+        #rot-speed { width: 80px; flex: 1; min-width: 0; }
+        #rotate-box select, #rotate-box input[type=text], #rotate-box input[type=number] {
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 4px;
+            color: #ccc;
+            font-size: 0.8rem;
+            padding: 4px 6px;
+            flex: 1;
+            min-width: 0;
+        }
+        #sel-camera-mode { flex: none !important; }
+        #new-label-height { flex: none !important; width: 64px; }
+        #btn-advanced {
+            background: none;
+            border: none;
+            color: #777;
+            font-size: 0.8rem;
+            cursor: pointer;
+            padding: 0;
+            text-align: left;
+            transition: color 0.2s;
+        }
+        #btn-advanced:hover { color: #bbb; }
+        .ctrl-btn {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            color: #ccc;
+            font-size: 0.8rem;
+            padding: 5px 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .ctrl-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+        #advanced-settings {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+        }
+        #advanced-settings.open { display: flex; }
+        .section-title {
+            font-size: 0.75rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+        .divider {
+            border: none;
+            border-top: 1px solid rgba(255,255,255,0.08);
+            margin: 4px 0 2px;
+        }
+
+        /* Labels: the list, then a row to add one */
+        #label-list {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .label-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            color: #ccc;
+            background: rgba(255,255,255,0.04);
+            border-radius: 4px;
+            padding: 3px 4px 3px 8px;
+        }
+        .label-item .label-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .label-item .label-info { color: #888; white-space: nowrap; }
+        .label-item button {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 1rem;
+            line-height: 1;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+        .label-item button:hover { color: #ff6b6b; }
+        #label-empty { font-size: 0.8rem; color: #666; }
+
+        #stats-box {
+            display: none;
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            background: rgba(15,15,26,0.65);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 10px;
+            padding: 12px 16px;
+            z-index: 20;
+            flex-direction: column;
+            gap: 6px;
+            max-width: 520px;
+        }
+        #stats-box.active { display: flex; }
+        #stats-box .stat-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            gap: 16px;
+        }
+        #stats-box .stat-label { color: #999; }
+        #stats-box .stat-value { color: #e0e0e0; text-align: right; }
+        #stats-box .stat-title {
+            font-size: 0.9rem;
+            color: #ccc;
+            font-weight: 500;
+            margin-bottom: 2px;
+        }
+
+        /* Largest centered 16:9 rectangle that fits the window: the crop for the final video */
+        #frame-guide {
+            display: none;
+            position: fixed;
+            left: 50%;
+            top: 50%;
+            width: min(100vw, calc(100vh * 16 / 9));
+            height: min(100vh, calc(100vw * 9 / 16));
+            transform: translate(-50%, -50%);
+            outline: 2px dashed rgba(255,255,255,0.7);
+            outline-offset: -2px;
+            box-shadow: 0 0 0 100vmax rgba(0,0,0,0.35);
+            pointer-events: none;
+            z-index: 6;
+        }
+        #frame-guide.active { display: block; }
+
+        /* Rain/snow over the 3D view, under the labels and stats */
+        #precip {
+            display: none;
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            pointer-events: none;
+            z-index: 4;
+        }
+
+        /* No mouse pointer in the picture while an animation (a recording) runs */
+        body.recording, body.recording * { cursor: none !important; }
+
+        /* Stats bar during the animation: 50px above the bottom of the 16:9 frame, so it stays inside the video crop */
+        #anim-stats {
+            display: none;
+            position: fixed;
+            bottom: calc((100vh - min(100vh, calc(100vw * 9 / 16))) / 2 + 50px);
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 15;
+            pointer-events: none;
+            /* Sizes in em so the whole box shrinks with the text */
+            padding: 0.27em 0.64em;
+            border-radius: 0.36em;
+            background: rgba(0,0,0,0.55);
+            color: #fff;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            white-space: pre;
+            gap: 0.9em;
+            font-size: min(36px, calc(min(100vw, calc(100vh * 16 / 9)) / 28));
+        }
+        .bar-label {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 0.4em;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255,255,255,0.75);
+        }
+        .bar-unit { font-size: 0.55em; color: rgba(255,255,255,0.8); }
+    </style>
+</head>
+<body>
+    <div id="landing">
+        <h1>GPX Video Generator</h1>
+        <div class="file-picker" id="dropzone">
+            <span>Browse or drop a GPX file</span>
+            <input type="file" accept=".gpx" id="file-input">
+        </div>
+        <div class="settings">
+            <label>
+                Grid resolution
+                <input type="range" id="set-grid" min="50" max="1000" value="600" step="10">
+                <span class="val" id="set-grid-v">600</span>
+            </label>
+            <label>
+                Texture tiles
+                <input type="range" id="set-tiles" min="1" max="4" value="1" step="1">
+                <span class="val" id="set-tiles-v">1×1</span>
+            </label>
+            <label>
+                Resolution per tile
+                <input type="range" id="set-tex" min="1024" max="8192" value="2048" step="1024">
+                <span class="val" id="set-tex-v">2048</span>
+            </label>
+            <label>
+                Padding
+                <input type="range" id="set-pad" min="0" max="600" value="100" step="5">
+                <span class="val" id="set-pad-v">100%</span>
+            </label>
+        </div>
+    </div>
+
+    <div id="progress">
+        <div id="progress-step">Initializing...</div>
+        <div class="bar-wrap"><div id="progress-fill"></div></div>
+        <div id="progress-pct">0%</div>
+        <div id="progress-detail"></div>
+    </div>
+
+    <div id="viewer"></div>
+    <canvas id="precip"></canvas>
+
+    <div id="stats-box"></div>
+
+    <div id="anim-stats"></div>
+
+    <div id="frame-guide"></div>
+
+    <div id="rotate-box">
+        <div class="ctrl-row">
+            <span class="ctrl-label">Camera</span>
+            <button id="btn-recenter" class="ctrl-btn">Re-center</button>
+            <select id="sel-camera-mode">
+                <option value="orbit-left">Orbit (left)</option>
+                <option value="orbit-right">Orbit (right)</option>
+            </select>
+            <span class="ctrl-label">Speed</span>
+            <input type="range" id="rot-speed" min="0.25" max="5" value="0.5" step="0.25">
+        </div>
+        <div class="ctrl-row">
+            <span class="ctrl-label">Animate</span>
+            <button id="btn-animate" title="Play the animation (A)" disabled>&#9654;</button>
+            <span class="ctrl-label">Duration</span>
+            <input type="range" id="sld-animate-dur" min="1" max="10" value="4" step="1" style="flex:1">
+            <span class="ctrl-label" id="animate-dur-val">4s</span>
+        </div>
+        <hr class="divider">
+        <div class="section-title">Labels</div>
+        <div id="label-list"></div>
+        <div class="ctrl-row">
+            <input type="text" id="new-label-name" placeholder="Name">
+            <input type="number" id="new-label-height" value="500" min="0" step="50" title="Height above the ground (m)">
+            <span class="ctrl-label">m</span>
+        </div>
+        <div class="ctrl-row">
+            <select id="new-label-place">
+                <option value="start">Beginning of track</option>
+                <option value="end">End of track</option>
+                <option value="highest">Highest point</option>
+                <option value="farthest">Farthest point</option>
+            </select>
+            <button id="btn-add-label" class="ctrl-btn">Add label</button>
+        </div>
+        <hr class="divider">
+        <button id="btn-advanced">&#9662; Advanced settings</button>
+        <div id="advanced-settings">
+            <div class="section-title">Track</div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Offset</span>
+                <input type="range" id="sld-track-offset" min="0" max="0.2" value="0.01" step="0.01" style="flex:1">
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Width</span>
+                <input type="range" id="sld-track-width" min="1" max="10" value="3" step="0.5" style="flex:1">
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Track color</span>
+                <input type="color" id="clr-track" value="#ff3333">
+                <span class="ctrl-label">Highlight</span>
+                <input type="color" id="clr-highlight" value="#ffee00">
+            </div>
+            <hr class="divider">
+            <div class="section-title">Scene</div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Sky</span>
+                <select id="sel-sky">
+                    <option value="clear">Clear</option>
+                    <option value="clouds" selected>Clouds</option>
+                    <option value="overcast">Overcast</option>
+                    <option value="sunset">Sunset</option>
+                    <option value="night">Night</option>
+                </select>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Precipitation</span>
+                <select id="sel-precip">
+                    <option value="none" selected>None</option>
+                    <option value="rain">Rain</option>
+                    <option value="snow">Snow</option>
+                </select>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Intensity</span>
+                <input type="range" id="sld-precip" min="0" max="100" value="50" step="1" style="flex:1">
+                <span class="ctrl-label" id="precip-val">50%</span>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Fog</span>
+                <input type="range" id="sld-fog" min="0" max="3" value="0" step="0.01" style="flex:1">
+            </div>
+            <div class="ctrl-row">
+                <label class="ctrl-label"><input type="checkbox" id="chk-frame" checked> Show 16:9 frame</label>
+            </div>
+        </div>
+    </div>
+
+    <script src="gpx-utils.js"></script>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { Line2 } from 'three/addons/lines/Line2.js';
+    import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
+    import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+    import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+    const SAT_TILE_URL = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile';
+    const TERR_TILE_URL = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium';
+    const TILE_PX = 256;
+    const SMOOTH_WINDOW = 5;  // GPS points are smoothed with a moving average over this many points
+
+    // DOM
+    const $landing   = document.getElementById('landing');
+    const $progress  = document.getElementById('progress');
+    const $pStep     = document.getElementById('progress-step');
+    const $pFill     = document.getElementById('progress-fill');
+    const $pPct      = document.getElementById('progress-pct');
+    const $pDetail   = document.getElementById('progress-detail');
+    const $viewer    = document.getElementById('viewer');
+    const $fileInput = document.getElementById('file-input');
+    const $dropzone  = document.getElementById('dropzone');
+    const $setGrid   = document.getElementById('set-grid');
+    const $setGridV  = document.getElementById('set-grid-v');
+    const $setTex    = document.getElementById('set-tex');
+    const $setTexV   = document.getElementById('set-tex-v');
+    const $setTiles  = document.getElementById('set-tiles');
+    const $setTilesV = document.getElementById('set-tiles-v');
+    const $setPad    = document.getElementById('set-pad');
+    const $setPadV   = document.getElementById('set-pad-v');
+    $setGrid.oninput = () => $setGridV.textContent = $setGrid.value;
+    $setTex.oninput  = () => $setTexV.textContent = $setTex.value;
+    $setTiles.oninput = () => $setTilesV.textContent = `${$setTiles.value}×${$setTiles.value}`;
+    $setPad.oninput  = () => $setPadV.textContent = $setPad.value + '%';
+
+    function prog(step, pct, detail = '') {
+        $pStep.textContent = step;
+        $pFill.style.width = pct + '%';
+        $pPct.textContent = Math.round(pct) + '%';
+        $pDetail.textContent = detail;
+    }
+
+    const smoothstep = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+    const clamp01 = x => Math.min(Math.max(x, 0), 1);
+
+    // ── GPX ─────────────────────────────────────────────────────
+
+    function computeTrackStats(points) {
+        let dist = 0, elevGain = 0, elapsedSec = 0;
+        let date = null;
+        if (points[0]?.time) date = points[0].time;
+        for (let i = 1; i < points.length; i++) {
+            dist += haversine(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
+            if (points[i].ele != null && points[i - 1].ele != null) {
+                const diff = points[i].ele - points[i - 1].ele;
+                if (diff > 0) elevGain += diff;
+            }
+        }
+        if (points[0]?.time && points[points.length - 1]?.time) {
+            elapsedSec = (points[points.length - 1].time - points[0].time) / 1000;
+        }
+        return { dist, elevGain, elapsedSec, date };
+    }
+
+    // ── Bounding Box ────────────────────────────────────────────
+
+    // A square around the points, padded by pad (a fraction of its side) on every side
+    function bbox(pts, pad) {
+        let minLa = Infinity, maxLa = -Infinity, minLo = Infinity, maxLo = -Infinity;
+        for (const p of pts) {
+            if (p.lat < minLa) minLa = p.lat;
+            if (p.lat > maxLa) maxLa = p.lat;
+            if (p.lon < minLo) minLo = p.lon;
+            if (p.lon > maxLo) maxLo = p.lon;
+        }
+        const cLat = (minLa + maxLa) / 2, cLon = (minLo + maxLo) / 2;
+        const latM = (maxLa - minLa) * 110540;
+        const lonM = (maxLo - minLo) * 111320 * Math.cos(cLat * Math.PI / 180);
+        const halfM = Math.max(latM, lonM, 1) / 2 * (1 + pad);
+        const halfLat = halfM / 110540;
+        const halfLon = halfM / (111320 * Math.cos(cLat * Math.PI / 180));
+        return { minLat: cLat - halfLat, maxLat: cLat + halfLat, minLon: cLon - halfLon, maxLon: cLon + halfLon };
+    }
+
+    // ── Elevation (AWS Terrain Tiles – Terrarium format) ───────
+
+    const lon2t = (lo, z) => Math.floor((lo + 180) / 360 * (1 << z));
+    const lat2t = (la, z) => { const r = la * Math.PI / 180; return Math.floor((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * (1 << z)); };
+
+    function loadTileImage(url) {
+        return new Promise((res, rej) => {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => res(img);
+            img.onerror = () => rej(new Error('Failed to load tile: ' + url));
+            img.src = url;
+        });
+    }
+
+    async function fetchElevations(bb, gw, gh, onProg) {
+        const mid = (bb.maxLat + bb.minLat) / 2;
+        const mw = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
+        let z = Math.round(Math.log2(156543 * Math.cos(mid * Math.PI / 180) / (mw / (gw * 1.5))));
+        z = Math.max(8, Math.min(z, 14));
+
+        const tx0 = lon2t(bb.minLon, z), tx1 = lon2t(bb.maxLon, z);
+        const ty0 = lat2t(bb.maxLat, z), ty1 = lat2t(bb.minLat, z);
+        const tw = tx1 - tx0 + 1, th = ty1 - ty0 + 1;
+        const total = tw * th;
+
+        const cv = document.createElement('canvas');
+        cv.width = tw * TILE_PX; cv.height = th * TILE_PX;
+        const cx = cv.getContext('2d', { willReadFrequently: true });
+
+        let loaded = 0;
+        const proms = [];
+        for (let ty = ty0; ty <= ty1; ty++) {
+            for (let tx = tx0; tx <= tx1; tx++) {
+                proms.push(
+                    loadTileImage(`${TERR_TILE_URL}/${z}/${tx}/${ty}.png`)
+                        .then(img => { cx.drawImage(img, (tx - tx0) * TILE_PX, (ty - ty0) * TILE_PX); })
+                        .catch(() => {})
+                        .finally(() => { loaded++; onProg(loaded, total); })
+                );
+            }
+        }
+        await Promise.all(proms);
+
+        const nn = 1 << z;
+        const lo2px = lo => ((lo + 180) / 360 * nn - tx0) * TILE_PX;
+        const la2px = la => { const r = la * Math.PI / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * nn - ty0) * TILE_PX; };
+
+        const imgData = cx.getImageData(0, 0, cv.width, cv.height).data;
+        const stride = cv.width * 4;
+        const elev = new Float64Array(gw * gh);
+        for (let r = 0; r < gh; r++) {
+            const lat = bb.maxLat - (r / (gh - 1)) * (bb.maxLat - bb.minLat);
+            const py = la2px(lat);
+            const iy = Math.max(0, Math.min(Math.round(py), cv.height - 1));
+            for (let c = 0; c < gw; c++) {
+                const lon = bb.minLon + (c / (gw - 1)) * (bb.maxLon - bb.minLon);
+                const px = lo2px(lon);
+                const ix = Math.max(0, Math.min(Math.round(px), cv.width - 1));
+                const off = iy * stride + ix * 4;
+                elev[r * gw + c] = (imgData[off] * 256 + imgData[off+1] + imgData[off+2] / 256) - 32768;
+            }
+        }
+        return elev;
+    }
+
+    // ── Satellite Tiles ─────────────────────────────────────────
+
+    // Grid row/column where texture tile i of n starts; neighbouring tiles share the edge row/column
+    const tileEdge = (i, n, size) => Math.round(i * (size - 1) / n);
+
+    async function fetchTexture(bb, texRes, n, gw, gh, onProg) {
+        const mid = (bb.maxLat + bb.minLat) / 2;
+        const mw = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
+        let z = Math.round(Math.log2(156543 * Math.cos(mid * Math.PI / 180) / (mw / (texRes * n))));
+        z = Math.max(10, Math.min(z, 19));
+
+        const tx0 = lon2t(bb.minLon, z), tx1 = lon2t(bb.maxLon, z);
+        const ty0 = lat2t(bb.maxLat, z), ty1 = lat2t(bb.minLat, z);
+        const tw = tx1 - tx0 + 1, th = ty1 - ty0 + 1, total = tw * th;
+
+        const nn = 1 << z;
+        const lo2px = lo => ((lo + 180) / 360 * nn - tx0) * TILE_PX;
+        const la2px = la => { const r = la * Math.PI / 180; return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2 * nn - ty0) * TILE_PX; };
+
+        // Each texture tile is a canvas aligned to whole map pixels, slightly larger than its share
+        // of the terrain, so map tiles are drawn unscaled and edge texels hold real imagery.
+        // offset/repeat then map exactly that share onto the terrain chunk's UVs.
+        const texTiles = [];
+        for (let i = 0; i < n; i++) {
+            const latTop = bb.maxLat - tileEdge(i, n, gh) / (gh - 1) * (bb.maxLat - bb.minLat);
+            const latBot = bb.maxLat - tileEdge(i + 1, n, gh) / (gh - 1) * (bb.maxLat - bb.minLat);
+            for (let j = 0; j < n; j++) {
+                const lonL = bb.minLon + tileEdge(j, n, gw) / (gw - 1) * (bb.maxLon - bb.minLon);
+                const lonR = bb.minLon + tileEdge(j + 1, n, gw) / (gw - 1) * (bb.maxLon - bb.minLon);
+                const sx = lo2px(lonL), ex = lo2px(lonR), sy = la2px(latTop), ey = la2px(latBot);
+                const ox = Math.floor(sx), oy = Math.floor(sy);
+                const canvas = document.createElement('canvas');
+                canvas.width = Math.ceil(ex) - ox; canvas.height = Math.ceil(ey) - oy;
+                const w = canvas.width, h = canvas.height;
+                texTiles.push({
+                    canvas, ctx: canvas.getContext('2d'), ox, oy,
+                    offset: [(sx - ox) / w, 1 - (ey - oy) / h],
+                    repeat: [(ex - sx) / w, (ey - sy) / h],
+                });
+            }
+        }
+
+        let loaded = 0;
+        const proms = [];
+        for (let ty = ty0; ty <= ty1; ty++) {
+            for (let tx = tx0; tx <= tx1; tx++) {
+                const px = (tx - tx0) * TILE_PX, py = (ty - ty0) * TILE_PX;
+                proms.push(
+                    loadTileImage(`${SAT_TILE_URL}/${z}/${ty}/${tx}`)
+                        .then(img => {
+                            for (const t of texTiles) {
+                                if (px < t.ox + t.canvas.width && px + TILE_PX > t.ox &&
+                                    py < t.oy + t.canvas.height && py + TILE_PX > t.oy)
+                                    t.ctx.drawImage(img, px - t.ox, py - t.oy);
+                            }
+                        })
+                        .catch(() => {})
+                        .finally(() => { loaded++; onProg(loaded, total); })
+                );
+            }
+        }
+        await Promise.all(proms);
+
+        return texTiles.map(({ canvas, offset, repeat }) => ({ canvas, offset, repeat }));
+    }
+
+    // ── Interpolation ───────────────────────────────────────────
+
+    function interpElev(lat, lon, bb, elev, gw, gh) {
+        const fr = (bb.maxLat - lat) / (bb.maxLat - bb.minLat) * (gh - 1);
+        const fc = (lon - bb.minLon) / (bb.maxLon - bb.minLon) * (gw - 1);
+        const r0 = Math.max(0, Math.min(Math.floor(fr), gh - 2));
+        const c0 = Math.max(0, Math.min(Math.floor(fc), gw - 2));
+        const dr = fr - r0, dc = fc - c0;
+        return elev[r0*gw+c0]*(1-dr)*(1-dc) + elev[r0*gw+c0+1]*(1-dr)*dc +
+               elev[(r0+1)*gw+c0]*dr*(1-dc) + elev[(r0+1)*gw+c0+1]*dr*dc;
+    }
+
+    // ── 3D Scene ────────────────────────────────────────────────
+
+    let renderer, labelRenderer, scene, camera, controls, ambientLight, sunLight;
+    let S = null;          // scene scale: { scale (units per meter), meanE, sw, sd }
+    let track = null;      // the track's Line2; userData.positions holds its points in scene units
+    let trackName = '';
+    let trackStats = null; // per point: { dist, gain, ele } (meters), measured like computeTrackStats
+    let trackFarthestIdx = 0, trackHighestIdx = 0;
+    let homeView = null;   // the view the camera starts with, for Re-center
+
+    function setTerrainY(geom, elev, meanE, scale) {
+        const pos = geom.attributes.position;
+        for (let i = 0; i < pos.count; i++) pos.setY(i, (elev[i] - meanE) * scale);
+        pos.needsUpdate = true;
+        geom.computeVertexNormals();
+    }
+
+    function makeEarthTexture(w, h) {
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const cx = cv.getContext('2d');
+        const img = cx.createImageData(w, h);
+        const d = img.data;
+        for (let i = 0; i < d.length; i += 4) {
+            const t = Math.random();
+            d[i] = 40 + t * 70 | 0; d[i+1] = 25 + t * 40 | 0; d[i+2] = 10 + t * 20 | 0; d[i+3] = 255;
+        }
+        cx.putImageData(img, 0, 0);
+        const tex = new THREE.CanvasTexture(cv);
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        return tex;
+    }
+
+    // The terrain block's earthy sides and bottom
+    function buildBox(elev, gw, gh, sw, sd, meanE, scale, minE) {
+        const bottomY = (minE - 200 - meanE) * scale;
+        const brownMat = new THREE.MeshStandardMaterial({ map: makeEarthTexture(512, 512), roughness: 0.95, metalness: 0 });
+
+        function makeSide(count, getTopVertex, flip) {
+            const positions = [], uvs = [], indices = [];
+            for (let i = 0; i < count; i++) {
+                const [x, y, z] = getTopVertex(i);
+                const u = i / (count - 1);
+                positions.push(x, y, z);
+                uvs.push(u, 1);
+                positions.push(x, bottomY, z);
+                uvs.push(u, 0);
+            }
+            for (let i = 0; i < count - 1; i++) {
+                const t0 = i * 2, b0 = i * 2 + 1, t1 = (i + 1) * 2, b1 = (i + 1) * 2 + 1;
+                if (flip) indices.push(b0, t1, t0, b0, b1, t1);
+                else indices.push(b0, t0, t1, b0, t1, b1);
+            }
+            const geom = new THREE.BufferGeometry();
+            geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+            geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+            geom.setIndex(indices);
+            geom.computeVertexNormals();
+            return new THREE.Mesh(geom, brownMat);
+        }
+
+        scene.add(makeSide(gw, c => [(c / (gw - 1) - 0.5) * sw, (elev[c] - meanE) * scale, -sd / 2], false));
+        scene.add(makeSide(gw, c => [(c / (gw - 1) - 0.5) * sw, (elev[(gh - 1) * gw + c] - meanE) * scale, sd / 2], true));
+        scene.add(makeSide(gh, r => [-sw / 2, (elev[r * gw] - meanE) * scale, (r / (gh - 1) - 0.5) * sd], true));
+        scene.add(makeSide(gh, r => [sw / 2, (elev[r * gw + gw - 1] - meanE) * scale, (r / (gh - 1) - 0.5) * sd], false));
+
+        const bGeom = new THREE.PlaneGeometry(sw, sd);
+        bGeom.rotateX(Math.PI / 2);
+        bGeom.translate(0, bottomY, 0);
+        scene.add(new THREE.Mesh(bGeom, brownMat));
+    }
+
+    // ── Sky ──
+    // Clear: plain deep blue. Clouds: deep blue with procedural clouds. Overcast: full gray cover. Sunset: orange
+    // horizon fading to blue overhead. Night: black with stars. The textured modes are equirectangular backgrounds,
+    // built once per scene on first use.
+    const SKY_COLOR = '#2f6eb5';
+    const OVERCAST_COLOR = '#a3a9b0';
+    const NIGHT_COLOR = '#000000';
+    const SUNSET_HORIZON = '#ff9c50';
+    // [elevation in degrees, color], top to bottom, relative to a horizon lowered by SUNSET_HORIZON_DROP: the camera
+    // usually looks down on the floating terrain block, so much of the visible sky is below the true horizon
+    const SUNSET_HORIZON_DROP = 10;
+    const SUNSET_STOPS = [
+        [90, '#1d3a73'], [55, '#3f63a8'], [30, '#8d86b3'], [14, '#e6a57e'],
+        [4, SUNSET_HORIZON], [-6, '#ff8a3d'], [-30, '#c4552f'], [-90, '#5a2a22'],
+    ];
+    let skyTextures = {};
+
+    const skyColor = () => ({ night: NIGHT_COLOR, sunset: SUNSET_HORIZON, overcast: OVERCAST_COLOR })[document.getElementById('sel-sky').value] || SKY_COLOR;
+
+    // Cloud paints turn deck noise (0..1) into [gray level, opacity]
+    const CLOUD_PAINT = n => [230 + 25 * smoothstep(0.55, 0.8, n), smoothstep(0.48, 0.68, n)];  // white puffs, brighter cores
+    const OVERCAST_PAINT = n => [150 + 85 * smoothstep(0.3, 0.75, n), 1];  // full cover, mottled dark and light gray
+
+    // Terrain lighting per sky; the track is unlit and stays bright. Night is a dim bluish moonlight, sunset a warm
+    // light from a low sun.
+    const LIGHTING = {
+        day:    { ambient: [0xffffff, 0.65], sun: [0xffffff, 0.8],  sunPos: [50, 80, 30] },
+        overcast: { ambient: [0xe8ecf0, 0.85], sun: [0xffffff, 0.3], sunPos: [50, 80, 30] },  // flat, diffuse
+        sunset: { ambient: [0xffd8b8, 0.45], sun: [0xffa860, 0.95], sunPos: [80, 22, 30] },
+        night:  { ambient: [0xb0c0ff, 0.3],  sun: [0xc8d4ff, 0.35], sunPos: [50, 80, 30] },
+    };
+
+    function makeSunsetSky(w, h) {
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        // Rows of an equirectangular image are linear in elevation: +90° at the top, -90° at the bottom
+        const g = ctx.createLinearGradient(0, 0, 0, h);
+        for (const [deg, color] of SUNSET_STOPS) {
+            g.addColorStop(Math.min(Math.max(0.5 - (deg - SUNSET_HORIZON_DROP) / 180, 0), 1), color);
+        }
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+        return cv;
+    }
+
+    function makeStarSky(w, h) {
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = NIGHT_COLOR;
+        ctx.fillRect(0, 0, w, h);
+        const tints = ['#ffffff', '#ffffff', '#cad7ff', '#fff4e8', '#ffe2b8'];
+        for (let i = 0; i < 6000; i++) {
+            // Uniform over the sphere: uniform height and longitude
+            const lat = Math.asin(Math.random() * 2 - 1), lon = Math.random() * 2 * Math.PI;
+            const x = lon / (2 * Math.PI) * w, y = (0.5 - lat / Math.PI) * h;
+            const b = Math.random() ** 4;  // mostly faint, a few bright
+            const r = 0.5 + 1.5 * b;
+            // Equirectangular images stretch horizontally away from the horizon; pre-squash so stars look round
+            const rx = Math.min(r / Math.cos(lat), w / 8);
+            ctx.globalAlpha = 0.3 + 0.7 * b;
+            ctx.fillStyle = tints[Math.floor(Math.random() * tints.length)];
+            for (const dx of [-w, 0, w]) {  // wrap around the seam
+                if (x + dx + rx < 0 || x + dx - rx > w) continue;
+                ctx.beginPath();
+                ctx.ellipse(x + dx, y, rx, r, 0, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+        }
+        ctx.globalAlpha = 1;
+        return cv;
+    }
+
+    function makeCloudSky(base, paint) {
+        const clouds = makeCloudLayer(1024, 512, paint);
+        const cv = document.createElement('canvas');
+        cv.width = clouds.width; cv.height = clouds.height;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = base;
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(clouds, 0, 0);
+        return cv;
+    }
+
+    function makeCloudLayer(w, h, paint) {
+        // Tileable fractal value noise, projected onto a flat cloud deck above the camera: clouds shrink toward the
+        // horizon like real ones, and nothing seams at the back or pinches at the zenith
+        const N = 256, tile = new Float32Array(N * N);
+        let amp = 0.5, total = 0;
+        for (let cells = 4; cells <= 64; cells *= 2, amp *= 0.5) {
+            const lattice = new Float32Array(cells * cells).map(() => Math.random());
+            const step = N / cells;
+            for (let y = 0; y < N; y++) {
+                const gy = y / step, y0 = Math.floor(gy), ty = gy - y0, sy = ty * ty * (3 - 2 * ty);
+                const r0 = y0 * cells, r1 = ((y0 + 1) % cells) * cells;
+                for (let x = 0; x < N; x++) {
+                    const gx = x / step, x0 = Math.floor(gx), x1 = (x0 + 1) % cells;
+                    const tx = gx - x0, sx = tx * tx * (3 - 2 * tx);
+                    const top = lattice[r0 + x0] + (lattice[r0 + x1] - lattice[r0 + x0]) * sx;
+                    const bot = lattice[r1 + x0] + (lattice[r1 + x1] - lattice[r1 + x0]) * sx;
+                    tile[y * N + x] += amp * (top + (bot - top) * sy);
+                }
+            }
+            total += amp;
+        }
+        const sample = (u, v) => {
+            u = ((u % N) + N) % N; v = ((v % N) + N) % N;
+            const x0 = Math.floor(u), y0 = Math.floor(v), tx = u - x0, ty = v - y0;
+            const x1 = (x0 + 1) % N, y1 = (y0 + 1) % N;
+            const a = tile[y0 * N + x0] + (tile[y0 * N + x1] - tile[y0 * N + x0]) * tx;
+            const b = tile[y1 * N + x0] + (tile[y1 * N + x1] - tile[y1 * N + x0]) * tx;
+            return (a + (b - a) * ty) / total;
+        };
+
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d');
+        const img = ctx.createImageData(w, h);
+        const d = img.data;
+        const DECK_SCALE = N * 0.6;  // noise tile pixels per unit of cloud deck at height 1
+        // The camera looks down on a floating terrain block, so much of the visible sky is below the true horizon;
+        // the cloud deck's horizon is lowered by this angle so clouds continue down there too
+        const CLOUD_HORIZON_DROP = 0.35;
+        for (let row = 0; row < h; row++) {
+            const lat = (0.5 - (row + 0.5) / h) * Math.PI + CLOUD_HORIZON_DROP;
+            if (lat <= 0) break;
+            const toDeck = Math.cos(lat) / Math.sin(lat);  // horizontal distance to where this view ray hits the deck
+            const horizonFade = smoothstep(0.01, 0.09, lat);
+            if (horizonFade === 0) continue;
+            for (let col = 0; col < w; col++) {
+                const lon = (col + 0.5) / w * 2 * Math.PI;
+                const n = sample(Math.cos(lon) * toDeck * DECK_SCALE, Math.sin(lon) * toDeck * DECK_SCALE);
+                const [gray, alpha] = paint(n);
+                const i = (row * w + col) * 4;
+                d[i] = d[i + 1] = d[i + 2] = gray;
+                d[i + 3] = 255 * alpha * horizonFade;
+            }
+        }
+        ctx.putImageData(img, 0, 0);
+        return cv;
+    }
+
+    function applyLighting(light) {
+        ambientLight.color.set(light.ambient[0]);
+        ambientLight.intensity = light.ambient[1];
+        sunLight.color.set(light.sun[0]);
+        sunLight.intensity = light.sun[1];
+        sunLight.position.set(...light.sunPos);
+    }
+
+    function updateSky() {
+        if (!scene) return;
+        const mode = document.getElementById('sel-sky').value;
+        if (scene.fog) scene.fog.color.set(skyColor());
+        applyLighting(LIGHTING[mode] || LIGHTING.day);
+        if (mode === 'clear') {
+            scene.background = new THREE.Color(SKY_COLOR);
+            return;
+        }
+        if (!skyTextures[mode]) {
+            // Stars need a sharper texture than soft clouds or a gradient to stay crisp on screen
+            const make = {
+                night: () => makeStarSky(4096, 2048),
+                sunset: () => makeSunsetSky(1024, 512),
+                clouds: () => makeCloudSky(SKY_COLOR, CLOUD_PAINT),
+                overcast: () => makeCloudSky(OVERCAST_COLOR, OVERCAST_PAINT),
+            };
+            const tex = new THREE.CanvasTexture(make[mode]());
+            tex.mapping = THREE.EquirectangularReflectionMapping;
+            tex.colorSpace = THREE.SRGBColorSpace;
+            skyTextures[mode] = tex;
+        }
+        scene.background = skyTextures[mode];
+    }
+
+    function buildScene(elev, texTiles, pts, bb, gw, gh, pad) {
+        const mid = (bb.maxLat + bb.minLat) / 2;
+        const wm = (bb.maxLon - bb.minLon) * 111320 * Math.cos(mid * Math.PI / 180);
+        const dm = (bb.maxLat - bb.minLat) * 110540;
+        const scale = 100 / Math.max(wm, dm);
+        const sw = wm * scale, sd = dm * scale;
+
+        let minE = Infinity, maxE = -Infinity, sum = 0;
+        for (let i = 0; i < elev.length; i++) {
+            if (elev[i] < minE) minE = elev[i];
+            if (elev[i] > maxE) maxE = elev[i];
+            sum += elev[i];
+        }
+        const meanE = sum / elev.length;
+        S = { scale, meanE, sw, sd };
+
+        // The track's points of interest and cumulative stats
+        trackFarthestIdx = 0;
+        trackHighestIdx = 0;
+        for (let k = 1; k < pts.length; k++) {
+            if (haversine(pts[0].lat, pts[0].lon, pts[k].lat, pts[k].lon) > haversine(pts[0].lat, pts[0].lon, pts[trackFarthestIdx].lat, pts[trackFarthestIdx].lon)) trackFarthestIdx = k;
+            if ((pts[k].ele ?? -Infinity) > (pts[trackHighestIdx].ele ?? -Infinity)) trackHighestIdx = k;
+        }
+        const dist = new Float64Array(pts.length), gain = new Float64Array(pts.length), ele = new Float64Array(pts.length);
+        ele[0] = pts[0].ele ?? 0;
+        for (let k = 1; k < pts.length; k++) {
+            dist[k] = dist[k-1] + haversine(pts[k-1].lat, pts[k-1].lon, pts[k].lat, pts[k].lon);
+            const up = pts[k].ele != null && pts[k-1].ele != null ? pts[k].ele - pts[k-1].ele : 0;
+            gain[k] = gain[k-1] + Math.max(up, 0);
+            ele[k] = pts[k].ele ?? ele[k-1];
+        }
+        trackStats = { dist, gain, ele };
+
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 1000);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(innerWidth, innerHeight);
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        $viewer.innerHTML = '';
+        $viewer.appendChild(renderer.domElement);
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.06;
+        controls.maxPolarAngle = Math.PI * 0.85;
+
+        ambientLight = new THREE.AmbientLight();
+        sunLight = new THREE.DirectionalLight();
+        scene.add(ambientLight, sunLight);
+
+        skyTextures = {};
+        updateSky();
+
+        const geom = new THREE.PlaneGeometry(sw, sd, gw - 1, gh - 1);
+        geom.rotateX(-Math.PI / 2);
+        setTerrainY(geom, elev, meanE, scale);
+
+        // One terrain chunk per texture tile. Positions and normals are copied from the full mesh
+        // so vertices on shared chunk edges match exactly and shading shows no seams.
+        const n = Math.round(Math.sqrt(texTiles.length));
+        const fullPos = geom.attributes.position, fullNorm = geom.attributes.normal;
+        texTiles.forEach((tile, k) => {
+            const r0 = tileEdge(Math.floor(k / n), n, gh), r1 = tileEdge(Math.floor(k / n) + 1, n, gh);
+            const c0 = tileEdge(k % n, n, gw), c1 = tileEdge(k % n + 1, n, gw);
+            const cGeom = new THREE.PlaneGeometry(1, 1, c1 - c0, r1 - r0);
+            const pos = cGeom.attributes.position, norm = cGeom.attributes.normal;
+            for (let r = r0; r <= r1; r++) {
+                for (let c = c0; c <= c1; c++) {
+                    const i = (r - r0) * (c1 - c0 + 1) + (c - c0), j = r * gw + c;
+                    pos.setXYZ(i, fullPos.getX(j), fullPos.getY(j), fullPos.getZ(j));
+                    norm.setXYZ(i, fullNorm.getX(j), fullNorm.getY(j), fullNorm.getZ(j));
+                }
+            }
+            const tex = new THREE.CanvasTexture(tile.canvas);
+            tex.minFilter = THREE.LinearFilter;
+            tex.magFilter = THREE.LinearFilter;
+            tex.offset.set(...tile.offset);
+            tex.repeat.set(...tile.repeat);
+            scene.add(new THREE.Mesh(cGeom, new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85, metalness: 0 })));
+        });
+        geom.dispose();
+
+        buildBox(elev, gw, gh, sw, sd, meanE, scale, minE);
+
+        // The track
+        const arr = [];
+        let mean = new THREE.Vector3();
+        for (const p of pts) {
+            const x = ((p.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
+            const z = ((bb.maxLat - p.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
+            const y = (interpElev(p.lat, p.lon, bb, elev, gw, gh) - meanE) * scale;
+            arr.push(x, y, z);
+            mean.add(new THREE.Vector3(0, y, 0));
+        }
+        const lineGeom = new LineGeometry();
+        lineGeom.setPositions(arr);
+        track = new Line2(lineGeom, new LineMaterial({
+            color: document.getElementById('clr-track').value, linewidth: +document.getElementById('sld-track-width').value,
+            resolution: new THREE.Vector2(innerWidth, innerHeight) }));
+        track.userData.positions = arr;
+        track.position.y = +document.getElementById('sld-track-offset').value;
+        scene.add(track);
+
+        // Start looking at the track from the south-east, framing it: the scene is the track's bounding square,
+        // padded, so the track spans 100 / (1 + pad) units
+        const trackSide = 100 / (1 + pad);
+        const target = new THREE.Vector3(0, mean.y / pts.length, 0);
+        homeView = { target, position: new THREE.Vector3().setFromSpherical(new THREE.Spherical(trackSide * 1.3, 0.95, Math.PI / 4)).add(target) };
+        resetView();
+
+        labelRenderer = new CSS2DRenderer();
+        labelRenderer.setSize(innerWidth, innerHeight);
+        Object.assign(labelRenderer.domElement.style, { position: 'absolute', top: '0', pointerEvents: 'none', zIndex: '5' });
+        $viewer.appendChild(labelRenderer.domElement);
+
+        function animate(now) {
+            requestAnimationFrame(animate);
+            if (trackAnimating) updateAnimation(now - animStart);
+            controls.update();
+            renderer.render(scene, camera);
+            labelRenderer.render(scene, camera);
+        }
+        requestAnimationFrame(animate);
+
+        window.addEventListener('resize', () => {
+            camera.aspect = innerWidth / innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(innerWidth, innerHeight);
+            labelRenderer.setSize(innerWidth, innerHeight);
+            track.material.resolution.set(innerWidth, innerHeight);
+        });
+    }
+
+    function resetView() {
+        controls.target.copy(homeView.target);
+        camera.position.copy(homeView.position);
+        controls.update();
+    }
+
+    // The track's name, date, distance, gain and time (S toggles it)
+    function showStatsBox(pts) {
+        const t = computeTrackStats(pts);
+        document.getElementById('stats-box').innerHTML = `
+            <div class="stat-title">${trackName}</div>
+            <div class="stat-row"><span class="stat-label">Date</span><span class="stat-value">${formatDate(t.date)}</span></div>
+            <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-value">${(t.dist / 1000).toFixed(2)} km</span></div>
+            <div class="stat-row"><span class="stat-label">Elevation gain</span><span class="stat-value">${Math.round(t.elevGain)} m</span></div>
+            <div class="stat-row"><span class="stat-label">Time</span><span class="stat-value">${formatDuration(t.elapsedSec)}</span></div>`;
+    }
+
+    // ── Main Flow ───────────────────────────────────────────────
+
+    async function processFile(file) {
+        $landing.style.display = 'none';
+        $progress.classList.add('active');
+
+        const gridSize = +$setGrid.value;
+        const texRes = +$setTex.value;
+        const texTileCount = +$setTiles.value;
+        const padding = +$setPad.value / 100;
+
+        try {
+            prog('Step 1/4 — Parsing GPX file...', 2);
+            const { points, name } = parseGPXPoints(await file.text());
+            if (points.length < 2) throw new Error('No track points found in the GPX file');
+            const pts = smoothPoints(points, SMOOTH_WINDOW);
+            trackName = name || file.name.replace(/\.gpx$/i, '');
+            prog('Step 1/4 — Parsing GPX file...', 5, `${pts.length} points`);
+
+            const bb = bbox(pts, padding);
+            const gw = gridSize, gh = gridSize;
+
+            prog('Step 2/4 — Fetching elevation data...', 6, `Grid ${gw}×${gh} = ${(gw*gh).toLocaleString()} points`);
+            const elev = await fetchElevations(bb, gw, gh, (d, t) => {
+                prog('Step 2/4 — Fetching elevation data...', 6 + (d / t) * 59, `Terrain tile ${d} / ${t}`);
+            });
+
+            prog('Step 3/4 — Loading satellite imagery...', 66);
+            const texTiles = await fetchTexture(bb, texRes, texTileCount, gw, gh, (d, t) => {
+                prog('Step 3/4 — Loading satellite imagery...', 66 + (d / t) * 27, `Tile ${d} / ${t}`);
+            });
+
+            prog('Step 4/4 — Building 3D scene...', 95);
+            await new Promise(r => setTimeout(r, 80));
+            buildScene(elev, texTiles, pts, bb, gw, gh, padding);
+
+            prog('Done!', 100);
+            await new Promise(r => setTimeout(r, 350));
+
+            $progress.classList.remove('active');
+            $viewer.classList.add('active');
+            $rotBox.classList.add('active');
+            showFrameGuide();
+            showStatsBox(pts);
+            renderLabelList();
+            $btnAnimate.disabled = false;
+        } catch (err) {
+            prog('Error', 0, err.message);
+            console.error(err);
+        }
+    }
+
+    // ── Labels ──────────────────────────────────────────────────
+    // Each label is a name on a vertical line rising from a point of the track, heightM above the ground. During the
+    // animation, a label at the start appears before the pulse sets off, one at the end once it arrives, and one in
+    // between when the pulse gets there (the pulse holds meanwhile).
+    const PLACEMENTS = { start: 'Beginning', end: 'End', highest: 'Highest point', farthest: 'Farthest point' };
+    let labels = [];  // { name, heightM, placement }
+    const $labelList = document.getElementById('label-list');
+
+    function placementIdx(placement) {
+        const last = trackStats.ele.length - 1;
+        return { start: 0, end: last, highest: trackHighestIdx, farthest: trackFarthestIdx }[placement];
+    }
+
+    function renderLabelList() {
+        $labelList.innerHTML = '';
+        if (!labels.length) {
+            $labelList.innerHTML = '<div id="label-empty">No labels yet</div>';
+            return;
+        }
+        labels.forEach((lb, i) => {
+            const item = document.createElement('div');
+            item.className = 'label-item';
+            const name = document.createElement('span');
+            name.className = 'label-name';
+            name.textContent = lb.name;
+            const info = document.createElement('span');
+            info.className = 'label-info';
+            info.textContent = `${PLACEMENTS[lb.placement]} · ${lb.heightM} m`;
+            const del = document.createElement('button');
+            del.title = 'Delete';
+            del.innerHTML = '&times;';
+            del.addEventListener('click', () => { labels.splice(i, 1); renderLabelList(); });
+            item.append(name, info, del);
+            $labelList.appendChild(item);
+        });
+    }
+
+    function addLabel(name, heightM, placement) {
+        labels.push({ name, heightM, placement });
+        renderLabelList();
+    }
+
+    const $newLabelName = document.getElementById('new-label-name');
+    const $newLabelHeight = document.getElementById('new-label-height');
+    document.getElementById('btn-add-label').addEventListener('click', () => {
+        const name = $newLabelName.value.trim();
+        if (!name) { $newLabelName.focus(); return; }
+        addLabel(name, Math.max(0, +$newLabelHeight.value || 0), document.getElementById('new-label-place').value);
+        $newLabelName.value = '';
+    });
+    $newLabelName.addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('btn-add-label').click(); });
+
+    // ── Camera ──────────────────────────────────────────────────
+
+    const $rotBox  = document.getElementById('rotate-box');
+    const $rotSpd  = document.getElementById('rot-speed');
+    const $selCameraMode = document.getElementById('sel-camera-mode');
+    const $frameGuide = document.getElementById('frame-guide');
+
+    // The 16:9 frame guide (the video's crop), unless switched off; always hidden while animating
+    const $chkFrame = document.getElementById('chk-frame');
+    const showFrameGuide = () => $frameGuide.classList.toggle('active', $chkFrame.checked && !trackAnimating);
+    $chkFrame.addEventListener('change', showFrameGuide);
+
+    // A positive OrbitControls autoRotateSpeed swings the camera to its left around the target
+    const orbitSpeed = () => +$rotSpd.value * ($selCameraMode.value === 'orbit-right' ? -1 : 1);
+
+    $selCameraMode.addEventListener('change', () => { if (controls) controls.autoRotateSpeed = orbitSpeed(); });
+    $rotSpd.addEventListener('input', () => { if (controls) controls.autoRotateSpeed = orbitSpeed(); });
+    document.getElementById('btn-recenter').addEventListener('click', () => { if (controls) resetView(); });
+
+    document.getElementById('btn-advanced').addEventListener('click', () => {
+        const panel = document.getElementById('advanced-settings');
+        panel.classList.toggle('open');
+        document.getElementById('btn-advanced').innerHTML = panel.classList.contains('open') ? '&#9652; Advanced settings' : '&#9662; Advanced settings';
+    });
+
+    document.getElementById('sld-animate-dur').addEventListener('input', e => {
+        document.getElementById('animate-dur-val').textContent = e.target.value + 's';
+    });
+
+    // ── Track settings ──
+
+    document.getElementById('sld-track-offset').addEventListener('input', e => { if (track) track.position.y = +e.target.value; });
+    document.getElementById('sld-track-width').addEventListener('input', e => { if (track) track.material.linewidth = +e.target.value; });
+    document.getElementById('clr-track').addEventListener('input', e => { if (track && !trackAnimating) track.material.color.set(e.target.value); });
+
+    // ── Scene settings ──
+
+    document.getElementById('sel-sky').addEventListener('change', updateSky);
+
+    document.getElementById('sld-fog').addEventListener('input', e => {
+        if (!scene) return;
+        const v = +e.target.value;
+        scene.fog = v === 0 ? null : new THREE.FogExp2(skyColor(), v * 0.02);
+    });
+
+    // ── Precipitation ──
+    // Rain or snow drawn on a 2D canvas over the 3D view: a screen-space layer, independent of the camera. Intensity
+    // sets how many drops/flakes there are.
+    const PRECIP = {
+        rain: { max: 1200, speed: [900, 1400], wind: 160, size: [12, 24] },  // streaks: speed px/s, size = length px
+        snow: { max: 700, speed: [40, 110], wind: 25, size: [0.6, 2] },      // flakes: size = radius px
+    };
+    const $precip = document.getElementById('precip'), precipCtx = $precip.getContext('2d');
+    const $selPrecip = document.getElementById('sel-precip'), $sldPrecip = document.getElementById('sld-precip');
+    let precipParticles = [], precipLast = 0, precipRunning = false;
+
+    function newParticle(kind, anywhere) {
+        const cfg = PRECIP[kind], r = (a, b) => a + Math.random() * (b - a);
+        return {
+            x: Math.random() * innerWidth, y: anywhere ? Math.random() * innerHeight : -30,
+            speed: r(...cfg.speed), size: r(...cfg.size), phase: Math.random() * Math.PI * 2,
+        };
+    }
+
+    function updatePrecip() {
+        const kind = $selPrecip.value, intensity = +$sldPrecip.value;
+        document.getElementById('precip-val').textContent = intensity + '%';
+        if (kind === 'none' || intensity <= 0) {
+            $precip.style.display = 'none';
+            precipParticles = [];
+            precipRunning = false;
+            return;
+        }
+        const count = Math.round(PRECIP[kind].max * intensity / 100);
+        if (precipParticles.kind !== kind) precipParticles = Object.assign([], { kind });
+        while (precipParticles.length < count) precipParticles.push(newParticle(kind, true));
+        precipParticles.length = count;
+        $precip.style.display = 'block';
+        if (!precipRunning) { precipRunning = true; precipLast = performance.now(); requestAnimationFrame(drawPrecip); }
+    }
+
+    function drawPrecip(now) {
+        if (!precipRunning) return;
+        requestAnimationFrame(drawPrecip);
+        const dt = Math.min((now - precipLast) / 1000, 0.1);
+        precipLast = now;
+        const dpr = Math.min(devicePixelRatio, 2), w = innerWidth, h = innerHeight;
+        if ($precip.width !== Math.round(w * dpr) || $precip.height !== Math.round(h * dpr)) {
+            $precip.width = Math.round(w * dpr);
+            $precip.height = Math.round(h * dpr);
+        }
+        precipCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        precipCtx.clearRect(0, 0, w, h);
+        const kind = precipParticles.kind, cfg = PRECIP[kind];
+        if (kind === 'rain') {
+            precipCtx.strokeStyle = 'rgba(210,220,235,0.45)';
+            precipCtx.lineWidth = 1;
+            precipCtx.beginPath();
+        } else {
+            precipCtx.fillStyle = 'rgba(255,255,255,0.85)';
+        }
+        for (let i = 0; i < precipParticles.length; i++) {
+            const p = precipParticles[i];
+            p.y += p.speed * dt;
+            if (kind === 'rain') {
+                p.x += cfg.wind * dt;
+                const k = p.size / p.speed;  // streak along the direction of motion
+                precipCtx.moveTo(p.x, p.y);
+                precipCtx.lineTo(p.x - cfg.wind * k, p.y - p.size);
+            } else {
+                p.phase += dt;
+                p.x += (cfg.wind + Math.sin(p.phase) * 20) * dt;  // drift side to side
+                precipCtx.beginPath();
+                precipCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                precipCtx.fill();
+            }
+            if (p.y > h + 30 || p.x > w + 30) precipParticles[i] = newParticle(kind, false);
+        }
+        if (kind === 'rain') precipCtx.stroke();
+    }
+
+    $selPrecip.addEventListener('change', updatePrecip);
+    $sldPrecip.addEventListener('input', updatePrecip);
+
+    // ── Animation ───────────────────────────────────────────────
+    // Lead-in (camera only) → stats bar fades in → labels at the start → pulse along the track (Duration), holding at
+    // each label in between while it appears → labels at the end → the whole track fades to the highlight color →
+    // tail (camera only). The camera orbits throughout; afterwards everything goes back to how it was.
+    const LEAD_MS = 2000;          // before anything appears
+    const TAIL_MS = 4000;          // after the track is highlighted
+    const STATS_FADE_MS = 500;
+    const LABEL_GROW_MS = 500;     // a label's line grows up from the track,
+    const LABEL_FADE_MS = 300;     // then its name fades in
+    const LABEL_MS = LABEL_GROW_MS + LABEL_FADE_MS;
+    const FILL_MS = 1000;          // after the pulse arrives, the whole track fades to the highlight color
+    const PULSE_RADIUS_M = 1000;   // the pulse fades out this far before and after its center
+    const PULSE_LIFT = 0.005;      // and lifts the track by up to this, so it stays on top where the track overlaps itself
+
+    const $btnAnimate = document.getElementById('btn-animate');
+    let trackAnimating = false;
+    let animStart = 0;
+    let animStartView = null;      // the camera when the animation started, restored when it ends
+    let controlsWereVisible = false;
+    let anim = null;               // { duration, cum, markers: [{ marker, show (ms) }], holds: [{ frac, ms }], phases }
+
+    // ── Pulse ──
+    // Recolors the track itself: highlight color at the current point, fading to the track color PULSE_RADIUS_M
+    // before and after it, those points raised a little. cum: the distance in meters to each track point; range: the
+    // points currently recolored.
+    let pulse = null;
+
+    // Track point k is the end of segment k-1 and the start of segment k in Line2's interleaved buffers
+    function setTrackPoint(k, xyz, rgb) {
+        const g = track.geometry, last = pulse.cum.length - 1;
+        const pos = g.attributes.instanceStart.data.array, col = g.attributes.instanceColorStart.data.array;
+        if (k > 0) { pos.set(xyz, (k - 1) * 6 + 3); col.set(rgb, (k - 1) * 6 + 3); }
+        if (k < last) { pos.set(xyz, k * 6); col.set(rgb, k * 6); }
+    }
+
+    function startPulse() {
+        const p = track.userData.positions, n = p.length / 3;
+        const cum = new Float64Array(n);
+        for (let k = 1; k < n; k++) {
+            const dx = p[k*3] - p[k*3-3], dy = p[k*3+1] - p[k*3-2], dz = p[k*3+2] - p[k*3-1];
+            cum[k] = cum[k-1] + Math.hypot(dx, dy, dz) / S.scale;
+        }
+        const g = track.geometry;
+        if (!g.attributes.instanceColorStart) g.setColors(new Float32Array(n * 3));
+        const base = new THREE.Color(document.getElementById('clr-track').value);
+        const col = g.attributes.instanceColorStart.data;
+        for (let i = 0; i < col.array.length; i += 3) col.array.set([base.r, base.g, base.b], i);
+        col.needsUpdate = true;
+        track.material.vertexColors = true;
+        track.material.needsUpdate = true;
+        track.material.color.setRGB(1, 1, 1);  // vertex colors carry the color; keep the tint neutral
+        pulse = { cum, range: null };
+        return cum;
+    }
+
+    // progress 0..1 along the track; fill (0..1) blends the whole track toward the highlight color once it's done
+    function updatePulse(progress, active, fill = 0) {
+        const p = track.userData.positions, cum = pulse.cum, n = cum.length, dCur = progress * cum[n - 1];
+        const base = new THREE.Color(document.getElementById('clr-track').value);
+        const peak = new THREE.Color(document.getElementById('clr-highlight').value);
+
+        // Put last frame's points back to their original height and the track color
+        if (pulse.range) {
+            for (let k = pulse.range[0]; k <= pulse.range[1]; k++) setTrackPoint(k, [p[k*3], p[k*3+1], p[k*3+2]], [base.r, base.g, base.b]);
+            pulse.range = null;
+        }
+        if (active || fill > 0) {
+            // Points [first, end) to update: the pulse window, or the whole track while filling
+            let first = 0, end = n;
+            if (fill === 0) {
+                let hi = n;
+                while (first < hi) { const mid = (first + hi) >> 1; if (cum[mid] < dCur - PULSE_RADIUS_M) first = mid + 1; else hi = mid; }
+                end = first;
+                while (end < n && cum[end] <= dCur + PULSE_RADIUS_M) end++;
+            }
+            const c = new THREE.Color();
+            for (let k = first; k < end; k++) {
+                const t = active ? Math.max(0, 1 - Math.abs(cum[k] - dCur) / PULSE_RADIUS_M) : 0;
+                c.copy(base).lerp(peak, t + (1 - t) * fill);
+                setTrackPoint(k, [p[k*3], p[k*3+1] + PULSE_LIFT * t, p[k*3+2]], [c.r, c.g, c.b]);
+            }
+            if (end > first) pulse.range = [first, end - 1];
+        }
+        track.geometry.attributes.instanceStart.data.needsUpdate = true;
+        track.geometry.attributes.instanceColorStart.data.needsUpdate = true;
+    }
+
+    // Puts the track back in its color
+    function stopPulse() {
+        if (!pulse) return;
+        updatePulse(0, false);
+        track.material.vertexColors = false;
+        track.material.needsUpdate = true;
+        track.material.color.set(document.getElementById('clr-track').value);
+        pulse = null;
+    }
+
+    // ── Label markers ──
+    // A vertical line grows up from a track point, then the label fades in on top: the name and, below it at 60%
+    // size, the point's elevation
+    const LABEL_FONT_PX = 27;
+
+    // A live base point on the track: track point k, including the track's offset
+    const trackPoint = k => () => {
+        const p = track.userData.positions;
+        return new THREE.Vector3(p[k * 3], p[k * 3 + 1] + track.position.y, p[k * 3 + 2]);
+    };
+
+    function makeMarker(text, k, heightM) {
+        const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
+            new LineMaterial({ linewidth: 4, transparent: true, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
+        const div = document.createElement('div');
+        div.textContent = text;
+        const info = document.createElement('div');
+        info.style.fontSize = '60%';
+        info.textContent = `${Math.round(trackStats.ele[k])} m`;
+        div.appendChild(info);
+        div.style.cssText = `color:#fff;font-size:${LABEL_FONT_PX}px;padding:3px 10px;background:rgba(0,0,0,0.55);border-radius:7px;white-space:nowrap;text-align:center;`;
+        const label = new CSS2DObject(div);
+        label.center.set(0.5, 1);
+        line.visible = label.visible = false;
+        scene.add(line, label);
+        return { line, label, base: trackPoint(k), heightM };
+    }
+
+    // since: ms since the marker started to appear
+    function updateMarker(m, since) {
+        const growth = clamp01(since / LABEL_GROW_MS), fade = clamp01((since - LABEL_GROW_MS) / LABEL_FADE_MS);
+        const b = m.base(), h = m.heightM * S.scale;
+        m.line.position.copy(b);
+        m.line.scale.y = Math.max(growth, 1e-4) * h;
+        m.line.visible = growth > 0;
+        m.line.material.resolution.set(innerWidth, innerHeight);
+        m.line.material.color.set(document.getElementById('clr-highlight').value);
+        m.label.position.set(b.x, b.y + h, b.z);
+        m.label.visible = fade > 0;
+        m.label.element.style.opacity = fade;
+    }
+
+    function removeMarkers() {
+        for (const { marker: m } of anim.markers) {
+            scene.remove(m.line, m.label);
+            m.line.geometry.dispose();
+            m.line.material.dispose();
+            m.label.element.remove();
+        }
+    }
+
+    // ── Stats bar ──
+    // Distance, elevation and gain following the pulse: small labels over big numbers, padded to their final width
+    // (monospace), so the columns don't shift while counting
+    const $animStats = document.getElementById('anim-stats');
+    const BAR_LABELS = ['Distance', 'Elevation', 'Gain'];
+    let statsWidths = null;
+
+    function startAnimStats() {
+        $animStats.innerHTML = BAR_LABELS.map(label => `<div><div class="bar-label">${label}</div><div class="bar-value"></div></div>`).join('');
+        $animStats.style.opacity = 0;
+        $animStats.style.display = 'flex';
+        const { dist, gain, ele } = trackStats, last = dist.length - 1;
+        statsWidths = { km: (dist[last] / 1000).toFixed(1).length, ele: String(Math.round(ele.reduce((a, b) => Math.max(a, b), 0))).length, gain: String(Math.round(gain[last])).length };
+    }
+
+    function updateAnimStats(progress, opacity) {
+        // Find where the pulse is between track points k and k1, then interpolate the stats there
+        const pc = anim.cum, n = pc.length, d = progress * pc[n - 1];
+        let k = 0, hi = n - 1;
+        while (k < hi) { const mid = (k + hi + 1) >> 1; if (pc[mid] <= d) k = mid; else hi = mid - 1; }
+        const k1 = Math.min(k + 1, n - 1);
+        const f = pc[k1] > pc[k] ? (d - pc[k]) / (pc[k1] - pc[k]) : 0;
+        const at = a => a[k] + (a[k1] - a[k]) * f;
+        const value = (num, unit) => `${num}<span class="bar-unit"> ${unit}</span>`;
+        const values = [
+            value((at(trackStats.dist) / 1000).toFixed(1).padStart(statsWidths.km), 'km'),
+            value(String(Math.round(at(trackStats.ele))).padStart(statsWidths.ele), 'm'),
+            value(String(Math.round(at(trackStats.gain))).padStart(statsWidths.gain), 'm'),
+        ];
+        $animStats.querySelectorAll('.bar-value').forEach((el, i) => { if (el.innerHTML !== values[i]) el.innerHTML = values[i]; });
+        $animStats.style.opacity = opacity;
+    }
+
+    // ── Timeline ──
+
+    // Phase start times (ms from the animation's start), and when the pulse is held at each stop
+    function animPhases() {
+        const labelsStart = LEAD_MS + STATS_FADE_MS;
+        const hasStartLabels = anim.markers.some(m => m.where === 'start');
+        const pulseStart = labelsStart + (hasStartLabels ? LABEL_MS : 0);
+        let held = 0;
+        const holdStarts = anim.holds.map(h => { const at = h.frac * anim.duration + held; held += h.ms; return at; });
+        const pulseEnd = pulseStart + anim.duration + held;
+        const hasEndLabels = anim.markers.some(m => m.where === 'end');
+        const fillStart = pulseEnd + (hasEndLabels ? LABEL_MS : 0);
+        const total = fillStart + FILL_MS + TAIL_MS;
+        return { labelsStart, pulseStart, holdStarts, pulseEnd, fillStart, total };
+    }
+
+    function startAnimation() {
+        trackAnimating = true;
+        $btnAnimate.classList.add('playing');
+        $btnAnimate.innerHTML = '&#9646;&#9646;';
+        animStartView = { target: controls.target.clone(), position: camera.position.clone() };
+        // Keep the frame clean while animating; the A key still stops it
+        document.body.classList.add('recording');
+        controlsWereVisible = $rotBox.classList.contains('active');
+        $rotBox.classList.remove('active');
+        $frameGuide.classList.remove('active');
+
+        const cum = startPulse(), n = cum.length, total = cum[n - 1];
+        anim = { duration: +document.getElementById('sld-animate-dur').value * 1000, cum, markers: [], holds: [] };
+        // Labels at the start or the end, or in between: there the pulse holds while they appear (once per point)
+        for (const lb of labels) {
+            const k = placementIdx(lb.placement);
+            const where = k === 0 ? 'start' : k === n - 1 ? 'end' : 'between';
+            const frac = total > 0 ? cum[k] / total : 0;
+            anim.markers.push({ marker: makeMarker(lb.name, k, lb.heightM), where, frac });
+            if (where === 'between' && !anim.holds.some(h => h.frac === frac)) anim.holds.push({ frac, ms: LABEL_MS });
+        }
+        anim.holds.sort((a, b) => a.frac - b.frac);
+        anim.phases = animPhases();
+        startAnimStats();
+        controls.autoRotateSpeed = orbitSpeed();
+        controls.autoRotate = true;
+        animStart = performance.now();
+    }
+
+    function updateAnimation(t) {
+        const { labelsStart, pulseStart, holdStarts, pulseEnd, fillStart, total } = anim.phases;
+        if (t >= total) { stopAnimation(); return; }
+        // Pulse clock, held still during each hold while its labels appear
+        const pt = t - pulseStart;
+        let pe = null, passed = 0;
+        for (let i = 0; i < anim.holds.length; i++) {
+            if (pt < holdStarts[i]) break;
+            if (pt < holdStarts[i] + anim.holds[i].ms) { pe = anim.holds[i].frac * anim.duration; break; }
+            passed += anim.holds[i].ms;
+        }
+        const progress = clamp01((pe ?? pt - passed) / anim.duration);
+        for (const m of anim.markers) {
+            const shownAt = m.where === 'start' ? labelsStart : m.where === 'end' ? pulseEnd
+                : pulseStart + holdStarts[anim.holds.findIndex(h => h.frac === m.frac)];
+            updateMarker(m.marker, t - shownAt);
+        }
+        // Stays at the track's end once done, then the whole track fades to the highlight color
+        updatePulse(progress, t >= pulseStart, clamp01((t - fillStart) / FILL_MS));
+        updateAnimStats(progress, clamp01((t - LEAD_MS) / STATS_FADE_MS));
+    }
+
+    function stopAnimation() {
+        trackAnimating = false;
+        $btnAnimate.classList.remove('playing');
+        $btnAnimate.innerHTML = '&#9654;';
+        controls.autoRotate = false;
+        stopPulse();
+        removeMarkers();
+        anim = null;
+        $animStats.style.display = 'none';
+        if (animStartView) {
+            controls.enableDamping = false;
+            controls.update();  // flush leftover motion inertia, so it doesn't nudge the restored view
+            controls.target.copy(animStartView.target);
+            camera.position.copy(animStartView.position);
+            controls.enableDamping = true;
+            animStartView = null;
+        }
+        if (controlsWereVisible) $rotBox.classList.add('active');
+        showFrameGuide();
+        document.body.classList.remove('recording');
+    }
+
+    $btnAnimate.addEventListener('click', () => {
+        if (!scene) return;
+        if (trackAnimating) stopAnimation();
+        else startAnimation();
+    });
+
+    // ── Keyboard Shortcuts ──────────────────────────────────────
+
+    const KEY_ROT = 0.03;
+
+    // Let focused form controls keep keys they use natively (typing, type-ahead, arrow stepping)
+    function isKeyClaimedByFocus(e) {
+        const el = e.target;
+        if (el.isContentEditable || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') return true;
+        if (el.tagName !== 'INPUT') return false;
+        if (el.type === 'range') return e.key.startsWith('Arrow');
+        return !['checkbox', 'color', 'file', 'button'].includes(el.type);
+    }
+
+    document.addEventListener('keydown', e => {
+        if (isKeyClaimedByFocus(e)) return;
+        if (e.key === 'c' || e.key === 'C') $rotBox.classList.toggle('active');
+        if (e.key === 'a' || e.key === 'A') $btnAnimate.click();
+        if (e.key === 's' || e.key === 'S') document.getElementById('stats-box').classList.toggle('active');
+        if (!controls) return;
+        const sphere = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
+        if (e.key === 'ArrowLeft')  { sphere.theta -= KEY_ROT; e.preventDefault(); }
+        if (e.key === 'ArrowRight') { sphere.theta += KEY_ROT; e.preventDefault(); }
+        if (e.key === 'ArrowUp')    { sphere.phi = Math.max(0.1, sphere.phi - KEY_ROT); e.preventDefault(); }
+        if (e.key === 'ArrowDown')  { sphere.phi = Math.min(Math.PI * 0.85, sphere.phi + KEY_ROT); e.preventDefault(); }
+        camera.position.copy(new THREE.Vector3().setFromSpherical(sphere).add(controls.target));
+    });
+
+    // ── Events ──────────────────────────────────────────────────
+
+    $fileInput.addEventListener('change', e => { if (e.target.files.length) processFile(e.target.files[0]); });
+
+    $dropzone.addEventListener('dragover', e => { e.preventDefault(); $dropzone.classList.add('dragover'); });
+    $dropzone.addEventListener('dragleave', () => $dropzone.classList.remove('dragover'));
+    $dropzone.addEventListener('drop', e => {
+        e.preventDefault();
+        $dropzone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) processFile(e.dataTransfer.files[0]);
+    });
+    </script>
+</body>
+</html>
