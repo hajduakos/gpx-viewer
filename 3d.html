@@ -457,6 +457,7 @@
                 <option value="none">None (short out and back)</option>
                 <option value="end" selected>Track end (linear)</option>
                 <option value="farthest">Farthest point (long out and back)</option>
+                <option value="highest">Highest point (summit and back)</option>
             </select>
         </div>
         <div class="ctrl-row">
@@ -839,6 +840,7 @@
     let trackHeads = [];
     let trackFarthest = [];
     let trackFarthestIdx = [];
+    let trackHighestIdx = [];
     let trackCumStats = [];
     let origTarget = null;
     let animId = null;
@@ -1258,6 +1260,11 @@
             return far;
         });
         trackFarthest = tracks.map((pts, i) => toScene(pts[trackFarthestIdx[i]].lat, pts[trackFarthestIdx[i]].lon));
+        trackHighestIdx = tracks.map(pts => {
+            let top = 0;
+            for (let k = 1; k < pts.length; k++) if ((pts[k].ele ?? -Infinity) > (pts[top].ele ?? -Infinity)) top = k;
+            return top;
+        });
         // Cumulative distance and ascent at each track point, measured like computeTrackStats
         // Cumulative distance and ascent at each track point, measured like computeTrackStats, plus the elevation
         trackCumStats = tracks.map(pts => {
@@ -1405,18 +1412,24 @@
 
 
     // Track names look like "D07 Gokyo to Gokyo Ri [farthest]": an optional day prefix, then "A to B" or just "A",
-    // and an optional [farthest] tag. They prefill the start/end marker labels and the end marker mode.
+    // and an optional [farthest] or [highest] tag (the end label goes at that point: out and back to a far place, or
+    // up to a summit and back). They prefill the start/end marker labels and the end marker mode.
     let trackLabels = [];
     const $frameGuide = document.getElementById('frame-guide');
 
     function parseTrackName(raw) {
-        const tag = /\s*\[farthest\]\s*$/i;
-        const farthest = tag.test(raw);
+        const tag = /\s*\[(farthest|highest)\]\s*$/i;
+        const mode = (raw.match(tag) || [])[1]?.toLowerCase();
         const day = (raw.match(/^(D\d+)\s/) || [])[1] || '';
         const display = raw.replace(/^D\d+\s+/, '').replace(tag, '');
         const parts = display.split(' to ');
         if (parts.length < 2) return { display, day, start: display, end: '', endMode: 'none' };
-        return { display, day, start: parts[0], end: parts.slice(1).join(' to '), endMode: farthest ? 'farthest' : 'end' };
+        return { display, day, start: parts[0], end: parts.slice(1).join(' to '), endMode: mode || 'end' };
+    }
+
+    // The track point the end label goes at, for an end mode: the farthest or highest point, or the last one
+    function endPointIdx(i, mode) {
+        return mode === 'farthest' ? trackFarthestIdx[i] : mode === 'highest' ? trackHighestIdx[i] : trackCumStats[i].ele.length - 1;
     }
 
     function showViewer(tracks, trackNames) {
@@ -1839,7 +1852,7 @@
     // ── Track animation ─────────────────────────────────────────
 
     // Timeline: camera-only lead-in → stats box fades in → start marker → pulse (slider duration) → end marker
-    // → camera-only tail. With the end marker at the farthest point, the pulse instead holds there while the
+    // → camera-only tail. With the end marker at the farthest (or highest) point, the pulse instead holds there while the
     // marker appears. Once the pulse arrives, the whole track fades to the highlight color (FILL_MS), overlapping
     // the end marker or the tail. The camera keeps moving and the stats box stays up until the very end.
     const ANIM_LEAD_MS = 2000;
@@ -1854,8 +1867,8 @@
     let controlsWereVisible = false;
     let animStartView = null;  // The camera when the animation started, restored when it ends
     let animEndMarker = null;
-    // Stops of the daily pulse, in order along the track: {frac (of the track's length), ms, growMs, marker, farthest}.
-    // The farthest point (with that end mode) and extra places like Cho La Pass.
+    // Stops of the daily pulse, in order along the track: {frac (of the track's length), ms, growMs, marker, turnaround}.
+    // The farthest or highest point (with those end modes) and extra places like Cho La Pass.
     let animHolds = [];
     let animPeakMarkers = [];  // DAILY_PEAKS of the animated track: {marker, at, delayMs}
     let animOverview = 'none';  // Overview setting ('none', 'in', 'out'), read when the animation starts
@@ -2091,7 +2104,7 @@
         let held = 0;
         const holdStarts = animHolds.map(h => { const at = h.frac * duration + held; held += h.ms; return at; });
         const pulseEnd = pulseStart + duration + held;
-        const far = animHolds.findIndex(h => h.farthest);
+        const far = animHolds.findIndex(h => h.turnaround);
         const endMarkerStart = far >= 0 ? pulseStart + holdStarts[far] : pulseEnd;
         const total = pulseEnd + (animEndMode === 'end' ? MARKER_MS : 0) + ANIM_TAIL_MS;
         return { startMarkerStart, pulseStart, pulseEnd, endMarkerStart, holdStarts, total };
@@ -2173,7 +2186,7 @@
         const i = track.userData.trackIdx, lb = trackLabels[i];
         const places = lb.start ? [{ text: lb.start, k: 0 }] : [];
         if (lb.endMode !== 'none' && lb.end) {
-            places.push({ text: lb.end, k: lb.endMode === 'farthest' ? trackFarthestIdx[i] : track.userData.positions.length / 3 - 1 });
+            places.push({ text: lb.end, k: endPointIdx(i, lb.endMode) });
         }
         for (const extra of EXTRA_PLACES) {
             if (extra.track !== lb.display) continue;
@@ -2911,11 +2924,10 @@
         const totalDist = pulseCum[pulseCum.length - 1];
         const fracAt = k => totalDist > 0 ? pulseCum[k] / totalDist : 0;
         if (animEndMode !== 'none') {
-            const farIdx = trackFarthestIdx[animTrack.userData.trackIdx];
-            const endIdx = animEndMode === 'farthest' ? farIdx : animTrack.userData.positions.length / 3 - 1;
+            const endIdx = endPointIdx(animTrack.userData.trackIdx, animEndMode);
             animEndMarker = makeTrailMarker(document.getElementById('txt-end-label').value, trackPoint(animTrack, endIdx), animEle[endIdx]);
             animMarkers.push(animEndMarker);
-            if (animEndMode === 'farthest') animHolds.push({ frac: fracAt(farIdx), ms: MARKER_MS, farthest: true });
+            if (animEndMode !== 'end') animHolds.push({ frac: fracAt(endIdx), ms: MARKER_MS, turnaround: true });
         }
         // Extra places along the track (e.g. Cho La Pass): as in the flyover, the pulse stops while the label appears.
         // Only this track's own extras: a place can be an extra elsewhere and the start or end here (Phakding).

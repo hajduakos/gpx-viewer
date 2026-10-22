@@ -534,7 +534,7 @@
     }
 
     function parseTrackName(raw) {
-        const tag = /\s*\[farthest\]\s*$/i;
+        const tag = /\s*\[(farthest|highest)\]\s*$/i;
         const farthest = tag.test(raw);
         const day = (raw.match(/^(D\d+)\s/) || [])[1] || '';
         const display = raw.replace(/^D\d+\s+/, '').replace(tag, '');
