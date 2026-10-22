@@ -386,6 +386,14 @@
                 <span class="ctrl-label" id="animate-dur-val">4s</span>
             </div>
             <div class="ctrl-row">
+                <span class="ctrl-label">Lead in</span>
+                <input type="range" id="sld-lead-in" min="0" max="10" value="2" step="0.5" style="flex:1">
+                <span class="ctrl-label" id="lead-in-val">2s</span>
+                <span class="ctrl-label">Lead out</span>
+                <input type="range" id="sld-lead-out" min="0" max="10" value="4" step="0.5" style="flex:1">
+                <span class="ctrl-label" id="lead-out-val">4s</span>
+            </div>
+            <div class="ctrl-row">
                 <span class="ctrl-label">Camera</span>
                 <button id="btn-recenter" class="ctrl-btn">Re-center</button>
                 <select id="sel-camera-mode">
@@ -1239,9 +1247,11 @@
         });
     }
 
-    document.getElementById('sld-animate-dur').addEventListener('input', e => {
-        document.getElementById('animate-dur-val').textContent = e.target.value + 's';
-    });
+    for (const [slider, val] of [['sld-animate-dur', 'animate-dur-val'], ['sld-lead-in', 'lead-in-val'], ['sld-lead-out', 'lead-out-val']]) {
+        document.getElementById(slider).addEventListener('input', e => {
+            document.getElementById(val).textContent = e.target.value + 's';
+        });
+    }
 
     // ── Track settings ──
 
@@ -1349,11 +1359,10 @@
     $sldPrecip.addEventListener('input', updatePrecip);
 
     // ── Animation ───────────────────────────────────────────────
-    // Lead-in (camera only) → stats bar fades in → labels at the start → pulse along the track (Duration), holding at
-    // each label in between while it appears → labels at the end → the whole track fades to the highlight color →
-    // tail (camera only). The camera orbits throughout; afterwards everything goes back to how it was.
-    const LEAD_MS = 2000;          // before anything appears
-    const TAIL_MS = 4000;          // after the track is highlighted
+    // Lead in (camera only, its slider) → stats bar fades in → labels at the start → pulse along the track (Duration),
+    // holding at each label in between while it appears → labels at the end → the whole track fades to the highlight
+    // color → lead out (camera only, its slider). The camera orbits throughout; afterwards everything goes back to how
+    // it was.
     const STATS_FADE_MS = 500;
     const LABEL_GROW_MS = 500;     // a label's line grows up from the track,
     const LABEL_FADE_MS = 300;     // then its name fades in
@@ -1533,7 +1542,7 @@
 
     // Phase start times (ms from the animation's start), and when the pulse is held at each stop
     function animPhases() {
-        const labelsStart = LEAD_MS + STATS_FADE_MS;
+        const labelsStart = anim.leadInMs + STATS_FADE_MS;
         const hasStartLabels = anim.markers.some(m => m.where === 'start');
         const pulseStart = labelsStart + (hasStartLabels ? LABEL_MS : 0);
         let held = 0;
@@ -1541,7 +1550,7 @@
         const pulseEnd = pulseStart + anim.duration + held;
         const hasEndLabels = anim.markers.some(m => m.where === 'end');
         const fillStart = pulseEnd + (hasEndLabels ? LABEL_MS : 0);
-        const total = fillStart + FILL_MS + TAIL_MS;
+        const total = fillStart + FILL_MS + anim.leadOutMs;
         return { labelsStart, pulseStart, holdStarts, pulseEnd, fillStart, total };
     }
 
@@ -1557,7 +1566,8 @@
         $frameGuide.classList.remove('active');
 
         const cum = startPulse(), n = cum.length, total = cum[n - 1];
-        anim = { duration: +document.getElementById('sld-animate-dur').value * 1000, cum, markers: [], holds: [] };
+        const seconds = id => +document.getElementById(id).value * 1000;
+        anim = { duration: seconds('sld-animate-dur'), leadInMs: seconds('sld-lead-in'), leadOutMs: seconds('sld-lead-out'), cum, markers: [], holds: [] };
         // Labels at the start or the end, or in between: there the pulse holds while they appear (once per point)
         for (const lb of labels) {
             const k = placementIdx(lb.placement);
@@ -1593,7 +1603,7 @@
         }
         // Stays at the track's end once done, then the whole track fades to the highlight color
         updatePulse(progress, t >= pulseStart, clamp01((t - fillStart) / FILL_MS));
-        updateAnimStats(progress, clamp01((t - LEAD_MS) / STATS_FADE_MS));
+        updateAnimStats(progress, clamp01((t - anim.leadInMs) / STATS_FADE_MS));
     }
 
     function stopAnimation() {
