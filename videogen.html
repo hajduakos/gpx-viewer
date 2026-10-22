@@ -377,22 +377,24 @@
     <div id="frame-guide"></div>
 
     <div id="rotate-box">
-        <div class="ctrl-row">
-            <span class="ctrl-label">Camera</span>
-            <button id="btn-recenter" class="ctrl-btn">Re-center</button>
-            <select id="sel-camera-mode">
-                <option value="orbit-left">Orbit (left)</option>
-                <option value="orbit-right">Orbit (right)</option>
-            </select>
-            <span class="ctrl-label">Speed</span>
-            <input type="range" id="rot-speed" min="0.25" max="5" value="0.5" step="0.25">
-        </div>
-        <div class="ctrl-row">
-            <span class="ctrl-label">Animate</span>
-            <button id="btn-animate" title="Play the animation (A)" disabled>&#9654;</button>
-            <span class="ctrl-label">Duration</span>
-            <input type="range" id="sld-animate-dur" min="1" max="10" value="4" step="1" style="flex:1">
-            <span class="ctrl-label" id="animate-dur-val">4s</span>
+        <button class="section-title open">Animate</button>
+        <div class="section-body open">
+            <div class="ctrl-row">
+                <button id="btn-animate" title="Play the animation (A)" disabled>&#9654;</button>
+                <span class="ctrl-label">Duration</span>
+                <input type="range" id="sld-animate-dur" min="1" max="10" value="4" step="1" style="flex:1">
+                <span class="ctrl-label" id="animate-dur-val">4s</span>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Camera</span>
+                <button id="btn-recenter" class="ctrl-btn">Re-center</button>
+                <select id="sel-camera-mode">
+                    <option value="orbit-left">Orbit (left)</option>
+                    <option value="orbit-right">Orbit (right)</option>
+                </select>
+                <span class="ctrl-label">Speed</span>
+                <input type="range" id="rot-speed" min="0.25" max="5" value="0.5" step="0.25">
+            </div>
         </div>
         <hr class="divider">
         <button class="section-title open">Labels</button>
