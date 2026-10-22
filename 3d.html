@@ -1980,6 +1980,12 @@
     // A vertical line grows up from a point, then a label appears on top. base() gives the point, so markers on a
     // track follow its offset.
     const MARKER_HEIGHT_M = 1000;
+    // Line heights for particular place labels (by label text), e.g. for a smaller hike in gentler terrain
+    const PLACE_MARKER_HEIGHT_M = {
+        'Budhanilkantha': 300,
+        'Shivapuri': 100,
+    };
+    const markerHeight = text => PLACE_MARKER_HEIGHT_M[text] ?? MARKER_HEIGHT_M;
     let animMarkers = [];
 
     // A live base point on a track: track point k, including the track's offset
@@ -2571,7 +2577,8 @@
                 if (events.length && events[events.length - 1].text === text) continue;
                 const pos = positions.get(text);
                 const at = leg.offset + leg.st.cum[k], change = dayChangeAt(at);
-                events.push({ text, s: at, marker: makeTrailMarker(text, () => pos, leg.cum.ele[k], change && (change.prev ?? change.next)),
+                events.push({ text, s: at, marker: makeTrailMarker(text, () => pos, leg.cum.ele[k], change && (change.prev ?? change.next),
+                                                                     { heightM: markerHeight(text) }),
                               dayNext: change && change.prev != null ? change.next : null });
             }
         }
@@ -2917,7 +2924,8 @@
         startPulse();
         startAnimStats();
         const animEle = trackCumStats[animTrack.userData.trackIdx].ele;
-        animMarkers = [makeTrailMarker(document.getElementById('txt-start-label').value, trackPoint(animTrack, 0), animEle[0])];
+        const startText = document.getElementById('txt-start-label').value, endText = document.getElementById('txt-end-label').value;
+        animMarkers = [makeTrailMarker(startText, trackPoint(animTrack, 0), animEle[0], null, { heightM: markerHeight(startText) })];
         animEndMode = document.getElementById('sel-end-marker').value;
         animEndMarker = null;
         animHolds = [];
@@ -2925,7 +2933,7 @@
         const fracAt = k => totalDist > 0 ? pulseCum[k] / totalDist : 0;
         if (animEndMode !== 'none') {
             const endIdx = endPointIdx(animTrack.userData.trackIdx, animEndMode);
-            animEndMarker = makeTrailMarker(document.getElementById('txt-end-label').value, trackPoint(animTrack, endIdx), animEle[endIdx]);
+            animEndMarker = makeTrailMarker(endText, trackPoint(animTrack, endIdx), animEle[endIdx], null, { heightM: markerHeight(endText) });
             animMarkers.push(animEndMarker);
             if (animEndMode !== 'end') animHolds.push({ frac: fracAt(endIdx), ms: MARKER_MS, turnaround: true });
         }
@@ -2934,7 +2942,7 @@
         const display = trackLabels[animTrack.userData.trackIdx].display;
         for (const place of trackPlaces(animTrack)) {
             if (!EXTRA_PLACES.some(e => e.text === place.text && e.track === display)) continue;
-            const marker = makeTrailMarker(place.text, trackPoint(animTrack, place.k), animEle[place.k]);
+            const marker = makeTrailMarker(place.text, trackPoint(animTrack, place.k), animEle[place.k], null, { heightM: markerHeight(place.text) });
             animMarkers.push(marker);
             animHolds.push({ frac: fracAt(place.k), ms: FLY_PAUSE_MS, growMs: FLY_GROW_MS, marker });
         }
