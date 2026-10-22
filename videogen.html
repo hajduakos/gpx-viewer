@@ -167,17 +167,6 @@
         }
         #sel-camera-mode { flex: none !important; }
         #new-label-height { flex: none !important; width: 64px; }
-        #btn-advanced {
-            background: none;
-            border: none;
-            color: #777;
-            font-size: 0.8rem;
-            cursor: pointer;
-            padding: 0;
-            text-align: left;
-            transition: color 0.2s;
-        }
-        #btn-advanced:hover { color: #bbb; }
         .ctrl-btn {
             background: rgba(255,255,255,0.06);
             border: 1px solid rgba(255,255,255,0.15);
@@ -191,12 +180,6 @@
             flex-shrink: 0;
         }
         .ctrl-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
-        #advanced-settings {
-            display: none;
-            flex-direction: column;
-            gap: 6px;
-        }
-        #advanced-settings.open { display: flex; }
         .section-title {
             font-size: 0.75rem;
             color: #666;
@@ -204,6 +187,21 @@
             letter-spacing: 0.5px;
             margin-top: 4px;
         }
+        /* Collapsible sections: clicking the title shows or hides the rows below it */
+        button.section-title {
+            background: none;
+            border: none;
+            padding: 0;
+            text-align: left;
+            font-family: inherit;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        button.section-title:hover { color: #bbb; }
+        button.section-title::before { content: '\25B8\00A0'; }
+        button.section-title.open::before { content: '\25BE\00A0'; }
+        .section-body { display: none; flex-direction: column; gap: 6px; }
+        .section-body.open { display: flex; }
         .divider {
             border: none;
             border-top: 1px solid rgba(255,255,255,0.08);
@@ -414,9 +412,8 @@
             <button id="btn-add-label" class="ctrl-btn">Add label</button>
         </div>
         <hr class="divider">
-        <button id="btn-advanced">&#9662; Advanced settings</button>
-        <div id="advanced-settings">
-            <div class="section-title">Track</div>
+        <button class="section-title">Track</button>
+        <div class="section-body">
             <div class="ctrl-row">
                 <span class="ctrl-label">Offset</span>
                 <input type="range" id="sld-track-offset" min="0" max="0.2" value="0.01" step="0.01" style="flex:1">
@@ -431,8 +428,10 @@
                 <span class="ctrl-label">Highlight</span>
                 <input type="color" id="clr-highlight" value="#ffee00">
             </div>
-            <hr class="divider">
-            <div class="section-title">Scene</div>
+        </div>
+        <hr class="divider">
+        <button class="section-title">Scene</button>
+        <div class="section-body">
             <div class="ctrl-row">
                 <span class="ctrl-label">Sky</span>
                 <select id="sel-sky">
@@ -1227,11 +1226,13 @@
     $rotSpd.addEventListener('input', () => { if (controls) controls.autoRotateSpeed = orbitSpeed(); });
     document.getElementById('btn-recenter').addEventListener('click', () => { if (controls) resetView(); });
 
-    document.getElementById('btn-advanced').addEventListener('click', () => {
-        const panel = document.getElementById('advanced-settings');
-        panel.classList.toggle('open');
-        document.getElementById('btn-advanced').innerHTML = panel.classList.contains('open') ? '&#9652; Advanced settings' : '&#9662; Advanced settings';
-    });
+    // Section titles toggle the section below them
+    for (const title of document.querySelectorAll('button.section-title')) {
+        title.addEventListener('click', () => {
+            title.classList.toggle('open');
+            title.nextElementSibling.classList.toggle('open');
+        });
+    }
 
     document.getElementById('sld-animate-dur').addEventListener('input', e => {
         document.getElementById('animate-dur-val').textContent = e.target.value + 's';
