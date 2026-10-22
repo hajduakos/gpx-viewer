@@ -395,6 +395,9 @@
                 <span class="ctrl-label" id="lead-out-val">4s</span>
             </div>
             <div class="ctrl-row">
+                <label class="ctrl-label"><input type="checkbox" id="chk-hide-ui" checked> Hide cursor and settings while playing</label>
+            </div>
+            <div class="ctrl-row">
                 <span class="ctrl-label">Camera</span>
                 <button id="btn-recenter" class="ctrl-btn">Re-center</button>
                 <select id="sel-camera-mode">
@@ -1560,11 +1563,14 @@
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         animStartView = { target: controls.target.clone(), position: camera.position.clone() };
-        // Keep the frame clean while animating; the A key still stops it
-        document.body.classList.add('recording');
-        controlsWereVisible = $rotBox.classList.contains('active');
-        $rotBox.classList.remove('active');
+        // Keep the frame clean while animating (the A key still stops it): no frame guide, and unless switched off, no
+        // cursor or settings
         $frameGuide.classList.remove('active');
+        controlsWereVisible = $rotBox.classList.contains('active');
+        if (document.getElementById('chk-hide-ui').checked) {
+            document.body.classList.add('recording');
+            $rotBox.classList.remove('active');
+        }
 
         const cum = startPulse(), n = cum.length, total = cum[n - 1];
         const seconds = id => +document.getElementById(id).value * 1000;
