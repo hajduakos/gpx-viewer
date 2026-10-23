@@ -1307,6 +1307,7 @@
             showStatsBox(pts);
             renderLabelList();
             updatePosValue();
+            showIdleStats();
             $sldPulse.value = Math.round(Math.min(PULSE_RADIUS_M, trackStats.dist[trackStats.dist.length - 1] / 10) / 10) * 10;
             showPulseRadius();
             $btnAnimate.disabled = false;
@@ -1744,17 +1745,40 @@
 
     // ── Stats bar ──
     // Distance, elevation and gain following the pulse: small labels over big numbers, padded to their final width
-    // (monospace), so the columns don't shift while counting
+    // (monospace), so the columns don't shift while counting. While no animation plays it shows the whole track's
+    // numbers, so its place in the frame can be seen; playing hides it until it fades in.
     const $animStats = document.getElementById('anim-stats');
     const BAR_LABELS = ['Distance', 'Elevation', 'Gain'];
     let statsWidths = null;
 
-    function startAnimStats() {
+    function buildStatsBar() {
         $animStats.innerHTML = BAR_LABELS.map(label => `<div><div class="bar-label">${label}</div><div class="bar-value"></div></div>`).join('');
-        $animStats.style.opacity = 0;
         $animStats.style.display = 'flex';
         const { dist, gain, ele } = trackStats, last = dist.length - 1;
         statsWidths = { km: (dist[last] / 1000).toFixed(1).length, ele: String(Math.round(ele.reduce((a, b) => Math.max(a, b), 0))).length, gain: String(Math.round(gain[last])).length };
+    }
+
+    function setStatsValues(dist, ele, gain) {
+        const value = (num, unit) => `${num}<span class="bar-unit"> ${unit}</span>`;
+        const values = [
+            value((dist / 1000).toFixed(1).padStart(statsWidths.km), 'km'),
+            value(String(Math.round(ele)).padStart(statsWidths.ele), 'm'),
+            value(String(Math.round(gain)).padStart(statsWidths.gain), 'm'),
+        ];
+        $animStats.querySelectorAll('.bar-value').forEach((el, i) => { if (el.innerHTML !== values[i]) el.innerHTML = values[i]; });
+    }
+
+    // The bar at rest: the track's end values, fully shown
+    function showIdleStats() {
+        buildStatsBar();
+        const { dist, gain, ele } = trackStats, last = dist.length - 1;
+        setStatsValues(dist[last], ele[last], gain[last]);
+        $animStats.style.opacity = 1;
+    }
+
+    function startAnimStats() {
+        buildStatsBar();
+        $animStats.style.opacity = 0;
     }
 
     function updateAnimStats(progress, opacity) {
@@ -1765,13 +1789,7 @@
         const k1 = Math.min(k + 1, n - 1);
         const f = pc[k1] > pc[k] ? (d - pc[k]) / (pc[k1] - pc[k]) : 0;
         const at = a => a[k] + (a[k1] - a[k]) * f;
-        const value = (num, unit) => `${num}<span class="bar-unit"> ${unit}</span>`;
-        const values = [
-            value((at(trackStats.dist) / 1000).toFixed(1).padStart(statsWidths.km), 'km'),
-            value(String(Math.round(at(trackStats.ele))).padStart(statsWidths.ele), 'm'),
-            value(String(Math.round(at(trackStats.gain))).padStart(statsWidths.gain), 'm'),
-        ];
-        $animStats.querySelectorAll('.bar-value').forEach((el, i) => { if (el.innerHTML !== values[i]) el.innerHTML = values[i]; });
+        setStatsValues(at(trackStats.dist), at(trackStats.ele), at(trackStats.gain));
         $animStats.style.opacity = opacity;
     }
 
@@ -1857,7 +1875,7 @@
         anim.markers.forEach(({ marker }) => disposeMarker(marker));
         anim = null;
         showStaticLabels();
-        $animStats.style.display = 'none';
+        showIdleStats();
         if (animStartView) {
             controls.enableDamping = false;
             controls.update();  // flush leftover motion inertia, so it doesn't nudge the restored view
