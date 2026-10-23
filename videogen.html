@@ -301,13 +301,13 @@
         /* No mouse pointer in the picture while an animation (a recording) runs */
         body.recording, body.recording * { cursor: none !important; }
 
-        /* Stats bar during the animation: 50px above the bottom of the 16:9 frame, so it stays inside the video crop */
+        /* Stats bar: placed within the 16:9 frame from JS (by default centered, 50px above the bottom edge), so it
+           stays inside the video crop. --num-scale and --label-scale size the numbers and the labels/units. */
         #anim-stats {
+            --num-scale: 1;
+            --label-scale: 1;
             display: none;
             position: fixed;
-            bottom: calc((100vh - min(100vh, calc(100vw * 9 / 16))) / 2 + 50px);
-            left: 50%;
-            transform: translateX(-50%);
             z-index: 15;
             pointer-events: none;
             /* Sizes in em so the whole box shrinks with the text */
@@ -318,16 +318,17 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             white-space: pre;
             gap: 0.9em;
-            font-size: min(36px, calc(min(100vw, calc(100vh * 16 / 9)) / 28));
+            font-size: calc(min(36px, calc(min(100vw, calc(100vh * 16 / 9)) / 28)) * var(--num-scale));
         }
+        /* Labels and units keep their own size whatever the numbers' */
         .bar-label {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 0.4em;
+            font-size: calc(0.4em * var(--label-scale) / var(--num-scale));
             letter-spacing: 0.08em;
             text-transform: uppercase;
             color: rgba(255,255,255,0.75);
         }
-        .bar-unit { font-size: 0.55em; color: rgba(255,255,255,0.8); }
+        .bar-unit { font-size: calc(0.55em * var(--label-scale) / var(--num-scale)); color: rgba(255,255,255,0.8); }
     </style>
 </head>
 <body>
@@ -496,6 +497,34 @@
             </div>
             <div class="ctrl-row">
                 <label class="ctrl-label"><input type="checkbox" id="chk-frame" checked> Show 16:9 frame</label>
+            </div>
+        </div>
+        <hr class="divider">
+        <button class="section-title">Stats bar</button>
+        <div class="section-body">
+            <div class="ctrl-row">
+                <span class="ctrl-label">Horizontal</span>
+                <select id="sel-stats-h">
+                    <option value="left">Left</option>
+                    <option value="center" selected>Center</option>
+                    <option value="right">Right</option>
+                </select>
+                <span class="ctrl-label">Vertical</span>
+                <select id="sel-stats-v">
+                    <option value="top">Top</option>
+                    <option value="center">Center</option>
+                    <option value="bottom" selected>Bottom</option>
+                </select>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Numbers</span>
+                <input type="range" id="sld-stats-num" min="50" max="200" value="100" step="5" style="flex:1">
+                <span class="ctrl-label" id="stats-num-val">100%</span>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Labels</span>
+                <input type="range" id="sld-stats-label" min="50" max="200" value="100" step="5" style="flex:1">
+                <span class="ctrl-label" id="stats-label-val">100%</span>
             </div>
         </div>
     </div>
@@ -1750,6 +1779,29 @@
     const $animStats = document.getElementById('anim-stats');
     const BAR_LABELS = ['Distance', 'Elevation', 'Gain'];
     let statsWidths = null;
+
+    // Placement within the 16:9 frame, STATS_MARGIN_PX from its edges, and sizes, from the Stats bar settings
+    const STATS_MARGIN_PX = 50;
+    const FRAME_X = '(100vw - min(100vw, calc(100vh * 16 / 9))) / 2', FRAME_Y = '(100vh - min(100vh, calc(100vw * 9 / 16))) / 2';
+
+    function layoutStatsBar() {
+        const h = document.getElementById('sel-stats-h').value, v = document.getElementById('sel-stats-v').value;
+        const st = $animStats.style, edge = frame => `calc(${frame} + ${STATS_MARGIN_PX}px)`;
+        st.left = h === 'left' ? edge(FRAME_X) : h === 'center' ? '50%' : 'auto';
+        st.right = h === 'right' ? edge(FRAME_X) : 'auto';
+        st.top = v === 'top' ? edge(FRAME_Y) : v === 'center' ? '50%' : 'auto';
+        st.bottom = v === 'bottom' ? edge(FRAME_Y) : 'auto';
+        st.transform = `translate(${h === 'center' ? '-50%' : '0'}, ${v === 'center' ? '-50%' : '0'})`;
+        const num = +document.getElementById('sld-stats-num').value, label = +document.getElementById('sld-stats-label').value;
+        st.setProperty('--num-scale', num / 100);
+        st.setProperty('--label-scale', label / 100);
+        document.getElementById('stats-num-val').textContent = num + '%';
+        document.getElementById('stats-label-val').textContent = label + '%';
+    }
+    for (const id of ['sel-stats-h', 'sel-stats-v', 'sld-stats-num', 'sld-stats-label']) {
+        document.getElementById(id).addEventListener('input', layoutStatsBar);
+    }
+    layoutStatsBar();
 
     function buildStatsBar() {
         $animStats.innerHTML = BAR_LABELS.map(label => `<div><div class="bar-label">${label}</div><div class="bar-value"></div></div>`).join('');
