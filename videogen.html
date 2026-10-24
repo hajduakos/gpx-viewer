@@ -514,6 +514,17 @@
                 <input type="range" id="sld-stats-label" data-readout="stats-label-val" data-unit=" px" min="6" max="40" value="14" step="1" style="flex:1">
                 <span class="ctrl-label" id="stats-label-val">14 px</span>
             </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Show</span>
+                <label class="ctrl-label"><input type="checkbox" id="chk-stats-date"> Date</label>
+                <label class="ctrl-label"><input type="checkbox" id="chk-stats-dist" checked> Distance</label>
+                <label class="ctrl-label"><input type="checkbox" id="chk-stats-ele" checked> Elevation</label>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label" style="visibility:hidden">Show</span>
+                <label class="ctrl-label"><input type="checkbox" id="chk-stats-gain" checked> Gain</label>
+                <label class="ctrl-label"><input type="checkbox" id="chk-stats-time"> Time</label>
+            </div>
         </div>
     </div>
 
@@ -747,7 +758,8 @@
     let renderer, labelRenderer, scene, camera, controls, ambientLight, sunLight;
     let S = null;          // scene scale: { scale (units per meter), meanE, sw, sd }
     let track = null;      // the track's Line2; userData.positions holds its points in scene units
-    let trackStats = null; // per point: { dist, gain (climb so far), ele } (meters)
+    let trackStats = null; // per point: { dist, gain (climb so far), ele } (meters), time (ms since the start, or null
+                           // without timestamps); and date (the start's, YYYY-MM-DD in UTC as recorded, or null)
     let trackFarthestIdx = 0, trackHighestIdx = 0;
     let homeView = null;   // the view the camera starts with, for Re-center
 
@@ -1090,7 +1102,11 @@
             gain[k] = gain[k-1] + Math.max(up, 0);
             ele[k] = pts[k].ele ?? ele[k-1];
         }
-        trackStats = { dist, gain, ele };
+        // Elapsed time: wall-clock since the first timestamp (rests included); points without one keep the previous time
+        const t0 = pts[0].time, hasTime = !!t0 && pts.some(p => p.time);
+        const time = hasTime ? new Float64Array(pts.length) : null;
+        if (hasTime) for (let k = 1; k < pts.length; k++) time[k] = pts[k].time ? pts[k].time - t0 : time[k - 1];
+        trackStats = { dist, gain, ele, time, date: t0 ? t0.toISOString().slice(0, 10) : null };
 
         scene = new THREE.Scene();
         camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, Math.max(1000, 300 * (low ? low.L : 1)));
@@ -1734,12 +1750,20 @@
     }
 
     // ── Stats bar ──
-    // Distance, elevation and gain following the pulse: small labels over big numbers, padded to their final width
-    // (monospace), so the columns don't shift while counting. While no animation plays it shows the whole track's
+    // The columns ticked in its settings, following the pulse: small labels over big numbers, padded to their final
+    // width (monospace), so the columns don't shift while counting. Date stays put; Time is the elapsed wall-clock
+    // time (HH:mm), so it jumps ahead where the hike rested. While no animation plays the bar shows the whole track's
     // numbers, so its place in the frame can be seen; playing hides it until it fades in.
     const $statsBar = document.getElementById('stats-bar');
-    const BAR_LABELS = ['Distance', 'Elevation', 'Gain'];
-    let statsWidths = null;
+    const STATS_COLUMNS = [
+        { key: 'date', label: 'Date' },
+        { key: 'dist', label: 'Distance' },
+        { key: 'ele', label: 'Elevation' },
+        { key: 'gain', label: 'Gain' },
+        { key: 'time', label: 'Time' },
+    ];
+    let statsColumns = [], statsWidths = null;  // the columns shown, and the numbers' widths
+    const hhmm = ms => `${String(Math.floor(ms / 3600000)).padStart(2, '0')}:${String(Math.floor(ms % 3600000 / 60000)).padStart(2, '0')}`;
 
     // Placement within the 16:9 frame, STATS_MARGIN_PX from its edges, and sizes, from the Stats bar settings
     const STATS_MARGIN_PX = 50;
@@ -1762,28 +1786,52 @@
     layoutStatsBar();
 
     function buildStatsBar() {
-        $statsBar.innerHTML = BAR_LABELS.map(label => `<div><div class="bar-label">${label}</div><div class="bar-value"></div></div>`).join('');
-        $statsBar.style.display = 'flex';
-        const { dist, gain, ele } = trackStats, last = dist.length - 1;
-        statsWidths = { km: (dist[last] / 1000).toFixed(1).length, ele: String(Math.round(ele.reduce((a, b) => Math.max(a, b), 0))).length, gain: String(Math.round(gain[last])).length };
+        statsColumns = STATS_COLUMNS.filter(c => document.getElementById(`chk-stats-${c.key}`).checked);
+        $statsBar.innerHTML = statsColumns.map(c => `<div><div class="bar-label">${c.label}</div><div class="bar-value"></div></div>`).join('');
+        $statsBar.style.display = statsColumns.length ? 'flex' : 'none';
+        const { dist, gain, ele, time } = trackStats, last = dist.length - 1;
+        statsWidths = {
+            dist: (dist[last] / 1000).toFixed(1).length, ele: String(Math.round(ele.reduce((a, b) => Math.max(a, b), 0))).length,
+            gain: String(Math.round(gain[last])).length, time: time ? hhmm(time[last]).length : 1,
+        };
     }
 
-    function setStatsValues(dist, ele, gain) {
+    // v: the values at the pulse: { dist, ele, gain (m), time (ms, or null) }
+    function setStatsValues(v) {
         const value = (num, unit) => `${num}<span class="bar-unit"> ${unit}</span>`;
-        const values = [
-            value((dist / 1000).toFixed(1).padStart(statsWidths.km), 'km'),
-            value(String(Math.round(ele)).padStart(statsWidths.ele), 'm'),
-            value(String(Math.round(gain)).padStart(statsWidths.gain), 'm'),
-        ];
-        $statsBar.querySelectorAll('.bar-value').forEach((el, i) => { if (el.innerHTML !== values[i]) el.innerHTML = values[i]; });
+        const html = {
+            date: () => trackStats.date ?? '–',
+            dist: () => value((v.dist / 1000).toFixed(1).padStart(statsWidths.dist), 'km'),
+            ele: () => value(String(Math.round(v.ele)).padStart(statsWidths.ele), 'm'),
+            gain: () => value(String(Math.round(v.gain)).padStart(statsWidths.gain), 'm'),
+            time: () => v.time == null ? '–' : hhmm(v.time).padStart(statsWidths.time),
+        };
+        $statsBar.querySelectorAll('.bar-value').forEach((el, i) => {
+            const h = html[statsColumns[i].key]();
+            if (el.innerHTML !== h) el.innerHTML = h;
+        });
+    }
+
+    // The values at track point k, or between k and k1 (fraction f of the way)
+    function statsAt(k, k1 = k, f = 0) {
+        const at = a => a[k] + (a[k1] - a[k]) * f, { dist, ele, gain, time } = trackStats;
+        return { dist: at(dist), ele: at(ele), gain: at(gain), time: time ? at(time) : null };
     }
 
     // The bar at rest: the track's end values, fully shown
     function showIdleStats() {
         buildStatsBar();
-        const { dist, gain, ele } = trackStats, last = dist.length - 1;
-        setStatsValues(dist[last], ele[last], gain[last]);
+        setStatsValues(statsAt(trackStats.dist.length - 1));
         $statsBar.style.opacity = 1;
+    }
+
+    // Ticking a column rebuilds the bar (while playing, the next frame fills it in)
+    for (const c of STATS_COLUMNS) {
+        document.getElementById(`chk-stats-${c.key}`).addEventListener('change', () => {
+            if (!trackStats) return;
+            if (playing) buildStatsBar();
+            else showIdleStats();
+        });
     }
 
     function startStatsBar() {
@@ -1798,8 +1846,7 @@
         while (k < hi) { const mid = (k + hi + 1) >> 1; if (pc[mid] <= d) k = mid; else hi = mid - 1; }
         const k1 = Math.min(k + 1, n - 1);
         const f = pc[k1] > pc[k] ? (d - pc[k]) / (pc[k1] - pc[k]) : 0;
-        const at = a => a[k] + (a[k1] - a[k]) * f;
-        setStatsValues(at(trackStats.dist), at(trackStats.ele), at(trackStats.gain));
+        setStatsValues(statsAt(k, k1, f));
         $statsBar.style.opacity = opacity;
     }
 
