@@ -1161,8 +1161,9 @@
         }
         const lineGeom = new LineGeometry();
         lineGeom.setPositions(arr);
+        // (its own copy of the color: the material keeps the object it's given, and the pulse retints it)
         track = new Line2(lineGeom, new LineMaterial({
-            color: document.getElementById('clr-track').value, linewidth: +document.getElementById('sld-track-width').value,
+            color: trackColor.clone(), linewidth: +document.getElementById('sld-track-width').value,
             resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         track.userData.positions = arr;
         track.position.y = +document.getElementById('sld-track-offset').value;
@@ -1444,7 +1445,14 @@
 
     document.getElementById('sld-track-offset').addEventListener('input', e => { if (track) track.position.y = +e.target.value; });
     document.getElementById('sld-track-width').addEventListener('input', e => { if (track) track.material.linewidth = +e.target.value; });
-    document.getElementById('clr-track').addEventListener('input', e => { if (track && !playing) track.material.color.set(e.target.value); });
+    // The track and highlight colors as THREE.Colors, for the per-frame pulse and label updates
+    const $clrTrack = document.getElementById('clr-track'), $clrHighlight = document.getElementById('clr-highlight');
+    const trackColor = new THREE.Color($clrTrack.value), highlightColor = new THREE.Color($clrHighlight.value);
+    $clrTrack.addEventListener('input', () => {
+        trackColor.set($clrTrack.value);
+        if (track && !playing) track.material.color.copy(trackColor);
+    });
+    $clrHighlight.addEventListener('input', () => highlightColor.set($clrHighlight.value));
 
     // ── Scene settings ──
 
@@ -1590,7 +1598,7 @@
         }
         const g = track.geometry;
         if (!g.attributes.instanceColorStart) g.setColors(new Float32Array(n * 3));
-        const base = new THREE.Color(document.getElementById('clr-track').value);
+        const base = trackColor;
         const col = g.attributes.instanceColorStart.data;
         for (let i = 0; i < col.array.length; i += 3) col.array.set([base.r, base.g, base.b], i);
         col.needsUpdate = true;
@@ -1604,8 +1612,7 @@
     // progress 0..1 along the track; fill (0..1) blends the whole track toward the highlight color once it's done
     function updatePulse(progress, active, fill = 0) {
         const p = track.userData.positions, cum = pulse.cum, n = cum.length, dCur = progress * cum[n - 1];
-        const base = new THREE.Color(document.getElementById('clr-track').value);
-        const peak = new THREE.Color(document.getElementById('clr-highlight').value);
+        const base = trackColor, peak = highlightColor;
 
         // Put last frame's points back to their original height and the track color
         if (pulse.range) {
@@ -1640,7 +1647,7 @@
         updatePulse(0, false);
         track.material.vertexColors = false;
         track.material.needsUpdate = true;
-        track.material.color.set(document.getElementById('clr-track').value);
+        track.material.color.copy(trackColor);
         pulse = null;
     }
 
@@ -1680,7 +1687,8 @@
         m.line.scale.y = Math.max(growth, 1e-4) * h;
         m.line.visible = growth > 0;
         m.line.material.resolution.set(innerWidth, innerHeight);
-        m.line.material.color.set(m.color ?? document.getElementById('clr-highlight').value);
+        if (m.color) m.line.material.color.set(m.color);
+        else m.line.material.color.copy(highlightColor);
         m.label.position.set(b.x, b.y + h, b.z);
         m.label.visible = fade > 0;
         m.label.element.style.opacity = fade;
