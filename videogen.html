@@ -203,6 +203,7 @@
         button.section-title.open::before { content: '\25BE\00A0'; }
         .section-body { display: none; flex-direction: column; gap: 6px; }
         .section-body.open { display: flex; }
+        .sub-title { font-size: 0.7rem; color: #777; margin-top: 4px; }
         .divider {
             border: none;
             border-top: 1px solid rgba(255,255,255,0.08);
@@ -444,6 +445,17 @@
                 <span class="ctrl-label">Position</span>
                 <input type="range" id="new-label-pos" min="0" max="1000" value="500" step="1" style="flex:1" title="Along the track, from its start to its end">
                 <span class="ctrl-label" id="new-label-pos-val"></span>
+            </div>
+            <div class="sub-title">Label settings</div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Title size</span>
+                <input type="range" id="sld-label-title" min="10" max="60" value="27" step="1" style="flex:1">
+                <span class="ctrl-label" id="label-title-val">27 px</span>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Elevation size</span>
+                <input type="range" id="sld-label-ele" min="6" max="40" value="16" step="1" style="flex:1">
+                <span class="ctrl-label" id="label-ele-val">16 px</span>
             </div>
         </div>
         <hr class="divider">
@@ -1708,9 +1720,12 @@
     }
 
     // ── Label markers ──
-    // A vertical line grows up from a track point, then the label fades in on top: the name and, below it at 60%
-    // size, the point's elevation
-    const LABEL_FONT_PX = 27;
+    // A vertical line grows up from a track point, then the label fades in on top: the name and, below it in smaller
+    // type, the point's elevation. Their sizes come from the Label settings sliders, applied as they change.
+    const $sldLabelTitle = document.getElementById('sld-label-title'), $sldLabelEle = document.getElementById('sld-label-ele');
+    for (const [slider, val] of [[$sldLabelTitle, 'label-title-val'], [$sldLabelEle, 'label-ele-val']]) {
+        slider.addEventListener('input', () => document.getElementById(val).textContent = slider.value + ' px');
+    }
 
     // A live base point on the track: track point k, including the track's offset
     const trackPoint = k => () => {
@@ -1725,15 +1740,14 @@
         const div = document.createElement('div');
         div.textContent = text;
         const info = document.createElement('div');
-        info.style.fontSize = '60%';
         info.textContent = `${Math.round(trackStats.ele[k])} m`;
         div.appendChild(info);
-        div.style.cssText = `color:#fff;font-size:${LABEL_FONT_PX}px;padding:3px 10px;background:rgba(0,0,0,0.55);border-radius:7px;white-space:nowrap;text-align:center;`;
+        div.style.cssText = 'color:#fff;padding:3px 10px;background:rgba(0,0,0,0.55);border-radius:7px;white-space:nowrap;text-align:center;';
         const label = new CSS2DObject(div);
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
         scene.add(line, label);
-        return { line, label, base: trackPoint(k), heightM, color };
+        return { line, label, info, base: trackPoint(k), heightM, color };
     }
 
     // since: ms since the marker started to appear
@@ -1748,6 +1762,8 @@
         m.label.position.set(b.x, b.y + h, b.z);
         m.label.visible = fade > 0;
         m.label.element.style.opacity = fade;
+        m.label.element.style.fontSize = $sldLabelTitle.value + 'px';
+        m.info.style.fontSize = $sldLabelEle.value + 'px';
     }
 
     function disposeMarker(m) {
