@@ -247,7 +247,10 @@
             cursor: pointer;
             padding: 0 4px;
         }
-        .label-item button:hover { color: #ff6b6b; }
+        .label-item button:hover { color: #fff; }
+        .label-item button.nudge { font-size: 0.65rem; padding: 0 3px; }
+        .label-item button + button { margin-left: -7px; }  /* the buttons close together, despite the item's gap */
+        .label-item button.delete:hover { color: #ff6b6b; }
         #label-empty { font-size: 0.8rem; color: #666; }
 
         /* The 16:9 crop, outlined */
@@ -1339,6 +1342,7 @@
     // between when the pulse gets there (the pulse holds meanwhile).
     const PLACEMENTS = { start: 'Beginning', end: 'End', highest: 'Highest point', farthest: 'Farthest point' };
     let labels = [];  // { name, heightM, placement, frac (for a given position: of the track's distance) }
+    const LABEL_NUDGE_M = 50;  // the list's up/down arrows move a label's line by this much
     const $labelList = document.getElementById('label-list');
 
     // The track point a label goes at
@@ -1372,11 +1376,19 @@
             const info = document.createElement('span');
             info.className = 'label-info';
             info.textContent = `${lb.placement === 'position' ? 'At ' + kmAt(lb.frac) : PLACEMENTS[lb.placement]} · ${lb.heightM} m`;
-            const del = document.createElement('button');
-            del.title = 'Delete';
-            del.innerHTML = '&times;';
-            del.addEventListener('click', () => { labels.splice(i, 1); renderLabelList(); });
-            item.append(name, info, del);
+            // Raise or lower the label's line by LABEL_NUDGE_M (not below the ground), or delete it
+            const button = (cls, html, title, action) => {
+                const b = document.createElement('button');
+                b.className = cls;
+                b.innerHTML = html;
+                b.title = title;
+                b.addEventListener('click', () => { action(); renderLabelList(); });
+                return b;
+            };
+            const up = button('nudge', '&#9650;', `Raise by ${LABEL_NUDGE_M} m`, () => lb.heightM += LABEL_NUDGE_M);
+            const down = button('nudge', '&#9660;', `Lower by ${LABEL_NUDGE_M} m`, () => lb.heightM = Math.max(0, lb.heightM - LABEL_NUDGE_M));
+            const del = button('delete', '&times;', 'Delete', () => labels.splice(i, 1));
+            item.append(name, info, up, down, del);
             $labelList.appendChild(item);
         });
     }
