@@ -1150,13 +1150,13 @@
 
         // The track
         const arr = [];
-        let mean = new THREE.Vector3();
+        let sumY = 0;
         for (const p of pts) {
             const x = ((p.lon - bb.minLon) / (bb.maxLon - bb.minLon) - 0.5) * sw;
             const z = ((bb.maxLat - p.lat) / (bb.maxLat - bb.minLat) - 0.5) * sd;
             const y = (interpElev(p.lat, p.lon, bb, elev, gw, gh) - meanE) * scale;
             arr.push(x, y, z);
-            mean.add(new THREE.Vector3(0, y, 0));
+            sumY += y;
         }
         const lineGeom = new LineGeometry();
         lineGeom.setPositions(arr);
@@ -1170,7 +1170,7 @@
         // Start looking at the track from the south-east, framing it: the scene is the track's bounding square,
         // padded, so the track spans 100 / (1 + pad) units
         const trackSide = 100 / (1 + pad);
-        const target = new THREE.Vector3(0, mean.y / pts.length, 0);
+        const target = new THREE.Vector3(0, sumY / pts.length, 0);  // at the track's mean height
         homeView = { target, position: new THREE.Vector3().setFromSpherical(new THREE.Spherical(trackSide * 1.3, 0.95, Math.PI / 4)).add(target) };
         resetView();
 
