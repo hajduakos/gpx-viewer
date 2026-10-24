@@ -1448,9 +1448,12 @@
     // The track and highlight colors as THREE.Colors, for the per-frame pulse and label updates
     const $clrTrack = document.getElementById('clr-track'), $clrHighlight = document.getElementById('clr-highlight');
     const trackColor = new THREE.Color($clrTrack.value), highlightColor = new THREE.Color($clrHighlight.value);
+    // (applies right away, also mid-animation: then the pulse's vertex colors take it)
     $clrTrack.addEventListener('input', () => {
         trackColor.set($clrTrack.value);
-        if (track && !playing) track.material.color.copy(trackColor);
+        if (!track) return;
+        if (pulse) paintTrackColor();
+        else track.material.color.copy(trackColor);
     });
     $clrHighlight.addEventListener('input', () => highlightColor.set($clrHighlight.value));
 
@@ -1598,15 +1601,19 @@
         }
         const g = track.geometry;
         if (!g.attributes.instanceColorStart) g.setColors(new Float32Array(n * 3));
-        const base = trackColor;
-        const col = g.attributes.instanceColorStart.data;
-        for (let i = 0; i < col.array.length; i += 3) col.array.set([base.r, base.g, base.b], i);
-        col.needsUpdate = true;
+        paintTrackColor();
         track.material.vertexColors = true;
         track.material.needsUpdate = true;
         track.material.color.setRGB(1, 1, 1);  // vertex colors carry the color; keep the tint neutral
         pulse = { cum, range: null };
         return cum;
+    }
+
+    // Sets every track point's vertex color to the track color (the pulse recolors its window on top each frame)
+    function paintTrackColor() {
+        const col = track.geometry.attributes.instanceColorStart.data;
+        for (let i = 0; i < col.array.length; i += 3) col.array.set([trackColor.r, trackColor.g, trackColor.b], i);
+        col.needsUpdate = true;
     }
 
     // progress 0..1 along the track; fill (0..1) blends the whole track toward the highlight color once it's done
