@@ -370,7 +370,7 @@
         <button class="section-title open">Animate</button>
         <div class="section-body open">
             <div class="ctrl-row">
-                <button id="btn-animate" title="Play the animation (A)" disabled>&#9654;</button>
+                <button id="btn-animate" title="Play the animation (Esc stops it)" disabled>&#9654;</button>
                 <span class="ctrl-label">Duration</span>
                 <input type="range" id="sld-animate-dur" data-readout="animate-dur-val" data-unit="s" min="1" max="10" value="4" step="1" style="flex:1">
                 <span class="ctrl-label" id="animate-dur-val">4s</span>
@@ -1893,7 +1893,7 @@
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         animStartView = { target: controls.target.clone(), position: camera.position.clone() };
-        // Keep the frame clean while animating (the A key still stops it): no frame guide, and unless switched off, no
+        // Keep the frame clean while animating (Esc still stops it): no frame guide, and unless switched off, no
         // cursor or settings
         $frameGuide.classList.remove('active');
         panelWasVisible = $settingsPanel.classList.contains('active');
@@ -1990,7 +1990,6 @@
         if (e.key === 'Escape' && playing) { stopAnimation(); return; }
         if (isKeyClaimedByFocus(e)) return;
         if (e.key === 'c' || e.key === 'C') $settingsPanel.classList.toggle('active');
-        if (e.key === 'a' || e.key === 'A') $btnAnimate.click();
         if (!controls) return;
         const sphere = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
         if (e.key === 'ArrowLeft')  { sphere.theta -= KEY_ROT; e.preventDefault(); }
