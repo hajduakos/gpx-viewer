@@ -240,37 +240,6 @@
         .label-item button:hover { color: #ff6b6b; }
         #label-empty { font-size: 0.8rem; color: #666; }
 
-        #stats-box {
-            display: none;
-            position: fixed;
-            top: 16px;
-            left: 16px;
-            background: rgba(15,15,26,0.65);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 10px;
-            padding: 12px 16px;
-            z-index: 20;
-            flex-direction: column;
-            gap: 6px;
-            max-width: 520px;
-        }
-        #stats-box.active { display: flex; }
-        #stats-box .stat-row {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.8rem;
-            gap: 16px;
-        }
-        #stats-box .stat-label { color: #999; }
-        #stats-box .stat-value { color: #e0e0e0; text-align: right; }
-        #stats-box .stat-title {
-            font-size: 0.9rem;
-            color: #ccc;
-            font-weight: 500;
-            margin-bottom: 2px;
-        }
-
         /* Largest centered 16:9 rectangle that fits the window: the crop for the final video */
         #frame-guide {
             display: none;
@@ -378,8 +347,6 @@
 
     <div id="viewer"></div>
     <canvas id="precip"></canvas>
-
-    <div id="stats-box"></div>
 
     <div id="anim-stats"></div>
 
@@ -602,25 +569,6 @@
     const smoothstep = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
     const clamp01 = x => Math.min(Math.max(x, 0), 1);
 
-    // ── GPX ─────────────────────────────────────────────────────
-
-    function computeTrackStats(points) {
-        let dist = 0, elevGain = 0, elapsedSec = 0;
-        let date = null;
-        if (points[0]?.time) date = points[0].time;
-        for (let i = 1; i < points.length; i++) {
-            dist += haversine(points[i - 1].lat, points[i - 1].lon, points[i].lat, points[i].lon);
-            if (points[i].ele != null && points[i - 1].ele != null) {
-                const diff = points[i].ele - points[i - 1].ele;
-                if (diff > 0) elevGain += diff;
-            }
-        }
-        if (points[0]?.time && points[points.length - 1]?.time) {
-            elapsedSec = (points[points.length - 1].time - points[0].time) / 1000;
-        }
-        return { dist, elevGain, elapsedSec, date };
-    }
-
     // ── Bounding Box ────────────────────────────────────────────
 
     // A square around the points, padded by pad (a fraction of its side) on every side
@@ -790,8 +738,7 @@
     let renderer, labelRenderer, scene, camera, controls, ambientLight, sunLight;
     let S = null;          // scene scale: { scale (units per meter), meanE, sw, sd }
     let track = null;      // the track's Line2; userData.positions holds its points in scene units
-    let trackName = '';
-    let trackStats = null; // per point: { dist, gain, ele } (meters), measured like computeTrackStats
+    let trackStats = null; // per point: { dist, gain (climb so far), ele } (meters)
     let trackFarthestIdx = 0, trackHighestIdx = 0;
     let homeView = null;   // the view the camera starts with, for Re-center
 
@@ -1263,17 +1210,6 @@
         controls.update();
     }
 
-    // The track's name, date, distance, gain and time (S toggles it)
-    function showStatsBox(pts) {
-        const t = computeTrackStats(pts);
-        document.getElementById('stats-box').innerHTML = `
-            <div class="stat-title">${trackName}</div>
-            <div class="stat-row"><span class="stat-label">Date</span><span class="stat-value">${formatDate(t.date)}</span></div>
-            <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-value">${(t.dist / 1000).toFixed(2)} km</span></div>
-            <div class="stat-row"><span class="stat-label">Elevation gain</span><span class="stat-value">${Math.round(t.elevGain)} m</span></div>
-            <div class="stat-row"><span class="stat-label">Time</span><span class="stat-value">${formatDuration(t.elapsedSec)}</span></div>`;
-    }
-
     // ── Main Flow ───────────────────────────────────────────────
 
     async function processFile(file) {
@@ -1298,10 +1234,9 @@
             };
 
             step('parse', 'Parsing GPX file...');
-            const { points, name } = parseGPXPoints(await file.text());
+            const { points } = parseGPXPoints(await file.text());
             if (points.length < 2) throw new Error('No track points found in the GPX file');
             const pts = smoothPoints(points, SMOOTH_WINDOW);
-            trackName = name || file.name.replace(/\.gpx$/i, '');
             step('parse', 'Parsing GPX file...', 1, `${pts.length} points`);
 
             const bb = bbox(pts, padding);
@@ -1344,7 +1279,6 @@
             $viewer.classList.add('active');
             $rotBox.classList.add('active');
             showFrameGuide();
-            showStatsBox(pts);
             renderLabelList();
             updatePosValue();
             showIdleStats();
@@ -1981,7 +1915,6 @@
         if (isKeyClaimedByFocus(e)) return;
         if (e.key === 'c' || e.key === 'C') $rotBox.classList.toggle('active');
         if (e.key === 'a' || e.key === 'A') $btnAnimate.click();
-        if (e.key === 's' || e.key === 'S') document.getElementById('stats-box').classList.toggle('active');
         if (!controls) return;
         const sphere = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
         if (e.key === 'ArrowLeft')  { sphere.theta -= KEY_ROT; e.preventDefault(); }
