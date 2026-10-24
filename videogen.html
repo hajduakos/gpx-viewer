@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GPX Video Generator</title>
     <style>
+        /* The video's crop: the largest centered 16:9 rectangle that fits the window (its size, and its offset from
+           the window's edges) */
+        :root {
+            --frame-w: min(100vw, calc(100vh * 16 / 9));
+            --frame-h: min(100vh, calc(100vw * 9 / 16));
+            --frame-x: calc((100vw - var(--frame-w)) / 2);
+            --frame-y: calc((100vh - var(--frame-h)) / 2);
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -242,14 +250,14 @@
         .label-item button:hover { color: #ff6b6b; }
         #label-empty { font-size: 0.8rem; color: #666; }
 
-        /* Largest centered 16:9 rectangle that fits the window: the crop for the final video */
+        /* The 16:9 crop, outlined */
         #frame-guide {
             display: none;
             position: fixed;
             left: 50%;
             top: 50%;
-            width: min(100vw, calc(100vh * 16 / 9));
-            height: min(100vh, calc(100vw * 9 / 16));
+            width: var(--frame-w);
+            height: var(--frame-h);
             transform: translate(-50%, -50%);
             outline: 2px dashed rgba(255,255,255,0.7);
             outline-offset: -2px;
@@ -1735,15 +1743,14 @@
 
     // Placement within the 16:9 frame, STATS_MARGIN_PX from its edges, and sizes, from the Stats bar settings
     const STATS_MARGIN_PX = 50;
-    const FRAME_X = '(100vw - min(100vw, calc(100vh * 16 / 9))) / 2', FRAME_Y = '(100vh - min(100vh, calc(100vw * 9 / 16))) / 2';
 
     function layoutStatsBar() {
         const h = document.getElementById('sel-stats-h').value, v = document.getElementById('sel-stats-v').value;
-        const st = $statsBar.style, edge = frame => `calc(${frame} + ${STATS_MARGIN_PX}px)`;
-        st.left = h === 'left' ? edge(FRAME_X) : h === 'center' ? '50%' : 'auto';
-        st.right = h === 'right' ? edge(FRAME_X) : 'auto';
-        st.top = v === 'top' ? edge(FRAME_Y) : v === 'center' ? '50%' : 'auto';
-        st.bottom = v === 'bottom' ? edge(FRAME_Y) : 'auto';
+        const st = $statsBar.style, edge = offset => `calc(var(${offset}) + ${STATS_MARGIN_PX}px)`;
+        st.left = h === 'left' ? edge('--frame-x') : h === 'center' ? '50%' : 'auto';
+        st.right = h === 'right' ? edge('--frame-x') : 'auto';
+        st.top = v === 'top' ? edge('--frame-y') : v === 'center' ? '50%' : 'auto';
+        st.bottom = v === 'bottom' ? edge('--frame-y') : 'auto';
         st.transform = `translate(${h === 'center' ? '-50%' : '0'}, ${v === 'center' ? '-50%' : '0'})`;
         const num = +document.getElementById('sld-stats-num').value, label = +document.getElementById('sld-stats-label').value;
         st.fontSize = num + 'px';
