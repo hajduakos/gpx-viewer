@@ -58,7 +58,9 @@
         .settings td:nth-child(3n + 1) { padding-right: 8px; }
         .settings td:nth-child(3n + 1):not(:first-child) { padding-left: 32px; }
         .settings input[type=range] { width: 100px; vertical-align: middle; }
-        .settings .val { min-width: 32px; padding-left: 8px; text-align: right; color: #bbb; }
+        /* Value cells: min-width doesn't apply to table cells, width does (as a minimum), so the columns don't shift
+           as values change while dragging */
+        .settings .val { width: 40px; padding-left: 8px; text-align: right; color: #bbb; }
 
         #progress {
             display: none;
