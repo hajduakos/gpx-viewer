@@ -303,9 +303,9 @@
         body.recording, body.recording * { cursor: none !important; }
 
         /* Stats bar: placed within the 16:9 frame from JS (by default centered, 50px above the bottom edge), so it
-           stays inside the video crop. --num-px and --label-px size the numbers and the labels (the units in between). */
+           stays inside the video crop. Its font size is the numbers'; --label-px sizes the labels and units, which are
+           rebuilt with the bar, so they pick it up from here. */
         #anim-stats {
-            --num-px: 36px;
             --label-px: 14px;
             display: none;
             position: fixed;
@@ -319,7 +319,7 @@
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             white-space: pre;
             gap: 0.9em;
-            font-size: var(--num-px);
+            font-size: 36px;
         }
         .bar-label {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -1808,7 +1808,7 @@
         st.bottom = v === 'bottom' ? edge(FRAME_Y) : 'auto';
         st.transform = `translate(${h === 'center' ? '-50%' : '0'}, ${v === 'center' ? '-50%' : '0'})`;
         const num = +document.getElementById('sld-stats-num').value, label = +document.getElementById('sld-stats-label').value;
-        st.setProperty('--num-px', num + 'px');
+        st.fontSize = num + 'px';
         st.setProperty('--label-px', label + 'px');
         document.getElementById('stats-num-val').textContent = num + ' px';
         document.getElementById('stats-label-val').textContent = label + ' px';
