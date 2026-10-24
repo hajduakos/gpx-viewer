@@ -282,10 +282,11 @@
         body.recording, body.recording * { cursor: none !important; }
 
         /* Stats bar: placed within the 16:9 frame from JS (by default centered, 50px above the bottom edge), so it
-           stays inside the video crop. Its font size is the numbers'; --label-px sizes the labels and units, which are
-           rebuilt with the bar, so they pick it up from here. */
+           stays inside the video crop. Its font size is the numbers'; --label-px sizes the labels and units and
+           --title-px the title, which are rebuilt with the bar, so they pick them up from here. */
         #stats-bar {
             --label-px: 14px;
+            --title-px: 36px;
             display: none;
             position: fixed;
             z-index: 15;
@@ -301,8 +302,8 @@
             gap: 0.15em;
             font-size: 36px;
         }
-        /* The optional title on top, in the numbers' size but a regular font; the columns below it */
-        .bar-title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        /* The optional title on top, in its own size and a regular font; the columns below it */
+        .bar-title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: var(--title-px); }
         .bar-row { display: flex; gap: 0.9em; }
         .bar-label {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -517,6 +518,11 @@
                 <span class="ctrl-label">Labels</span>
                 <input type="range" id="sld-stats-label" data-readout="stats-label-val" data-unit=" px" min="6" max="40" value="14" step="1" style="flex:1">
                 <span class="ctrl-label" id="stats-label-val">14 px</span>
+            </div>
+            <div class="ctrl-row">
+                <span class="ctrl-label">Title</span>
+                <input type="range" id="sld-stats-title" data-readout="stats-title-val" data-unit=" px" min="12" max="100" value="36" step="1" style="flex:1">
+                <span class="ctrl-label" id="stats-title-val">36 px</span>
             </div>
             <div class="ctrl-row">
                 <label class="ctrl-label"><input type="checkbox" id="chk-stats-title"> Title</label>
@@ -1789,8 +1795,9 @@
         const num = +document.getElementById('sld-stats-num').value, label = +document.getElementById('sld-stats-label').value;
         st.fontSize = num + 'px';
         st.setProperty('--label-px', label + 'px');
+        st.setProperty('--title-px', document.getElementById('sld-stats-title').value + 'px');
     }
-    for (const id of ['sel-stats-h', 'sel-stats-v', 'sld-stats-num', 'sld-stats-label']) {
+    for (const id of ['sel-stats-h', 'sel-stats-v', 'sld-stats-num', 'sld-stats-label', 'sld-stats-title']) {
         document.getElementById(id).addEventListener('input', layoutStatsBar);
     }
     layoutStatsBar();
