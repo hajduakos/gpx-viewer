@@ -111,7 +111,7 @@
         #viewer.active { display: block; }
         #viewer canvas { display: block; }
 
-        #rotate-box {
+        #settings-panel {
             display: none;
             position: fixed;
             top: 16px;
@@ -130,7 +130,7 @@
             overflow-y: auto;
             overflow-x: hidden;
         }
-        #rotate-box.active { display: flex; }
+        #settings-panel.active { display: flex; }
         .ctrl-row {
             display: flex;
             align-items: center;
@@ -155,8 +155,8 @@
             transition: all 0.2s; flex-shrink: 0;
         }
         #rot-speed { width: 80px; flex: 1; }
-        #rotate-box input[type=range] { min-width: 0; }  /* sliders shrink to fit their row */
-        #rotate-box select, #rotate-box input[type=text], #rotate-box input[type=number] {
+        #settings-panel input[type=range] { min-width: 0; }  /* sliders shrink to fit their row */
+        #settings-panel select, #settings-panel input[type=text], #settings-panel input[type=number] {
             background: rgba(255,255,255,0.08);
             border: 1px solid rgba(255,255,255,0.15);
             border-radius: 4px;
@@ -274,7 +274,7 @@
         /* Stats bar: placed within the 16:9 frame from JS (by default centered, 50px above the bottom edge), so it
            stays inside the video crop. Its font size is the numbers'; --label-px sizes the labels and units, which are
            rebuilt with the bar, so they pick it up from here. */
-        #anim-stats {
+        #stats-bar {
             --label-px: 14px;
             display: none;
             position: fixed;
@@ -348,11 +348,11 @@
     <div id="viewer"></div>
     <canvas id="precip"></canvas>
 
-    <div id="anim-stats"></div>
+    <div id="stats-bar"></div>
 
     <div id="frame-guide"></div>
 
-    <div id="rotate-box">
+    <div id="settings-panel">
         <button class="section-title open">Animate</button>
         <div class="section-body open">
             <div class="ctrl-row">
@@ -1181,7 +1181,7 @@
 
         function animate(now) {
             requestAnimationFrame(animate);
-            if (trackAnimating) updateAnimation(now - animStart);
+            if (playing) updateAnimation(now - animStart);
             else {
                 for (const m of staticMarkers) updateMarker(m, Infinity);  // fully shown, on the track as it is
                 if (preview) {
@@ -1277,7 +1277,7 @@
 
             $progress.classList.remove('active');
             $viewer.classList.add('active');
-            $rotBox.classList.add('active');
+            $settingsPanel.classList.add('active');
             showFrameGuide();
             renderLabelList();
             updatePosValue();
@@ -1370,7 +1370,7 @@
 
     function updatePreview() {
         hidePreview();
-        if (!track || trackAnimating) return;
+        if (!track || playing) return;
         const lb = newLabel(), k = placementIdx(lb.placement, lb.frac);
         const marker = makeMarker(lb.name, k, lb.heightM, PREVIEW_COLOR);
         const dot = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0], 3)),
@@ -1414,14 +1414,14 @@
 
     // ── Camera ──────────────────────────────────────────────────
 
-    const $rotBox  = document.getElementById('rotate-box');
+    const $settingsPanel  = document.getElementById('settings-panel');
     const $rotSpd  = document.getElementById('rot-speed');
     const $selCameraMode = document.getElementById('sel-camera-mode');
     const $frameGuide = document.getElementById('frame-guide');
 
     // The 16:9 frame guide (the video's crop), unless switched off; always hidden while animating
     const $chkFrame = document.getElementById('chk-frame');
-    const showFrameGuide = () => $frameGuide.classList.toggle('active', $chkFrame.checked && !trackAnimating);
+    const showFrameGuide = () => $frameGuide.classList.toggle('active', $chkFrame.checked && !playing);
     $chkFrame.addEventListener('change', showFrameGuide);
 
     // A positive OrbitControls autoRotateSpeed swings the camera to its left around the target
@@ -1449,7 +1449,7 @@
 
     document.getElementById('sld-track-offset').addEventListener('input', e => { if (track) track.position.y = +e.target.value; });
     document.getElementById('sld-track-width').addEventListener('input', e => { if (track) track.material.linewidth = +e.target.value; });
-    document.getElementById('clr-track').addEventListener('input', e => { if (track && !trackAnimating) track.material.color.set(e.target.value); });
+    document.getElementById('clr-track').addEventListener('input', e => { if (track && !playing) track.material.color.set(e.target.value); });
 
     // ── Scene settings ──
 
@@ -1569,10 +1569,10 @@
     const PULSE_LIFT = 0.005;      // and lifts the track by up to this, so it stays on top where the track overlaps itself
 
     const $btnAnimate = document.getElementById('btn-animate');
-    let trackAnimating = false;
+    let playing = false;
     let animStart = 0;
     let animStartView = null;      // the camera when the animation started, restored when it ends
-    let controlsWereVisible = false;
+    let panelWasVisible = false;
     let anim = null;               // { duration, cum, markers: [{ marker, show (ms) }], holds: [{ frac, ms }], phases }
 
     // ── Pulse ──
@@ -1712,7 +1712,7 @@
 
     function showStaticLabels() {
         hideStaticLabels();
-        if (!track || trackAnimating) return;
+        if (!track || playing) return;
         staticMarkers = labels.map(lb => makeMarker(lb.name, placementIdx(lb.placement, lb.frac), lb.heightM));
     }
 
@@ -1725,7 +1725,7 @@
     // Distance, elevation and gain following the pulse: small labels over big numbers, padded to their final width
     // (monospace), so the columns don't shift while counting. While no animation plays it shows the whole track's
     // numbers, so its place in the frame can be seen; playing hides it until it fades in.
-    const $animStats = document.getElementById('anim-stats');
+    const $statsBar = document.getElementById('stats-bar');
     const BAR_LABELS = ['Distance', 'Elevation', 'Gain'];
     let statsWidths = null;
 
@@ -1735,7 +1735,7 @@
 
     function layoutStatsBar() {
         const h = document.getElementById('sel-stats-h').value, v = document.getElementById('sel-stats-v').value;
-        const st = $animStats.style, edge = frame => `calc(${frame} + ${STATS_MARGIN_PX}px)`;
+        const st = $statsBar.style, edge = frame => `calc(${frame} + ${STATS_MARGIN_PX}px)`;
         st.left = h === 'left' ? edge(FRAME_X) : h === 'center' ? '50%' : 'auto';
         st.right = h === 'right' ? edge(FRAME_X) : 'auto';
         st.top = v === 'top' ? edge(FRAME_Y) : v === 'center' ? '50%' : 'auto';
@@ -1753,8 +1753,8 @@
     layoutStatsBar();
 
     function buildStatsBar() {
-        $animStats.innerHTML = BAR_LABELS.map(label => `<div><div class="bar-label">${label}</div><div class="bar-value"></div></div>`).join('');
-        $animStats.style.display = 'flex';
+        $statsBar.innerHTML = BAR_LABELS.map(label => `<div><div class="bar-label">${label}</div><div class="bar-value"></div></div>`).join('');
+        $statsBar.style.display = 'flex';
         const { dist, gain, ele } = trackStats, last = dist.length - 1;
         statsWidths = { km: (dist[last] / 1000).toFixed(1).length, ele: String(Math.round(ele.reduce((a, b) => Math.max(a, b), 0))).length, gain: String(Math.round(gain[last])).length };
     }
@@ -1766,7 +1766,7 @@
             value(String(Math.round(ele)).padStart(statsWidths.ele), 'm'),
             value(String(Math.round(gain)).padStart(statsWidths.gain), 'm'),
         ];
-        $animStats.querySelectorAll('.bar-value').forEach((el, i) => { if (el.innerHTML !== values[i]) el.innerHTML = values[i]; });
+        $statsBar.querySelectorAll('.bar-value').forEach((el, i) => { if (el.innerHTML !== values[i]) el.innerHTML = values[i]; });
     }
 
     // The bar at rest: the track's end values, fully shown
@@ -1774,15 +1774,15 @@
         buildStatsBar();
         const { dist, gain, ele } = trackStats, last = dist.length - 1;
         setStatsValues(dist[last], ele[last], gain[last]);
-        $animStats.style.opacity = 1;
+        $statsBar.style.opacity = 1;
     }
 
-    function startAnimStats() {
+    function startStatsBar() {
         buildStatsBar();
-        $animStats.style.opacity = 0;
+        $statsBar.style.opacity = 0;
     }
 
-    function updateAnimStats(progress, opacity) {
+    function updateStatsBar(progress, opacity) {
         // Find where the pulse is between track points k and k1, then interpolate the stats there
         const pc = anim.cum, n = pc.length, d = progress * pc[n - 1];
         let k = 0, hi = n - 1;
@@ -1791,7 +1791,7 @@
         const f = pc[k1] > pc[k] ? (d - pc[k]) / (pc[k1] - pc[k]) : 0;
         const at = a => a[k] + (a[k1] - a[k]) * f;
         setStatsValues(at(trackStats.dist), at(trackStats.ele), at(trackStats.gain));
-        $animStats.style.opacity = opacity;
+        $statsBar.style.opacity = opacity;
     }
 
     // ── Timeline ──
@@ -1813,17 +1813,17 @@
     function startAnimation() {
         hideStaticLabels();
         hidePreview();
-        trackAnimating = true;
+        playing = true;
         $btnAnimate.classList.add('playing');
         $btnAnimate.innerHTML = '&#9646;&#9646;';
         animStartView = { target: controls.target.clone(), position: camera.position.clone() };
         // Keep the frame clean while animating (the A key still stops it): no frame guide, and unless switched off, no
         // cursor or settings
         $frameGuide.classList.remove('active');
-        controlsWereVisible = $rotBox.classList.contains('active');
+        panelWasVisible = $settingsPanel.classList.contains('active');
         if (document.getElementById('chk-hide-ui').checked) {
             document.body.classList.add('recording');
-            $rotBox.classList.remove('active');
+            $settingsPanel.classList.remove('active');
         }
 
         const cum = startPulse(), n = cum.length, total = cum[n - 1];
@@ -1839,7 +1839,7 @@
         }
         anim.holds.sort((a, b) => a.frac - b.frac);
         anim.phases = animPhases();
-        startAnimStats();
+        startStatsBar();
         controls.autoRotateSpeed = orbitSpeed();
         controls.autoRotate = true;
         animStart = performance.now();
@@ -1864,11 +1864,11 @@
         }
         // Stays at the track's end once done, then the whole track fades to the highlight color
         updatePulse(progress, t >= pulseStart, clamp01((t - fillStart) / FILL_MS));
-        updateAnimStats(progress, clamp01((t - anim.leadInMs) / STATS_FADE_MS));
+        updateStatsBar(progress, clamp01((t - anim.leadInMs) / STATS_FADE_MS));
     }
 
     function stopAnimation() {
-        trackAnimating = false;
+        playing = false;
         $btnAnimate.classList.remove('playing');
         $btnAnimate.innerHTML = '&#9654;';
         controls.autoRotate = false;
@@ -1885,14 +1885,14 @@
             controls.enableDamping = true;
             animStartView = null;
         }
-        if (controlsWereVisible) $rotBox.classList.add('active');
+        if (panelWasVisible) $settingsPanel.classList.add('active');
         showFrameGuide();
         document.body.classList.remove('recording');
     }
 
     $btnAnimate.addEventListener('click', () => {
         if (!scene) return;
-        if (trackAnimating) stopAnimation();
+        if (playing) stopAnimation();
         else startAnimation();
     });
 
@@ -1911,9 +1911,9 @@
 
     document.addEventListener('keydown', e => {
         // Esc stops the animation, back to how things were before it (camera, controls, labels)
-        if (e.key === 'Escape' && trackAnimating) { stopAnimation(); return; }
+        if (e.key === 'Escape' && playing) { stopAnimation(); return; }
         if (isKeyClaimedByFocus(e)) return;
-        if (e.key === 'c' || e.key === 'C') $rotBox.classList.toggle('active');
+        if (e.key === 'c' || e.key === 'C') $settingsPanel.classList.toggle('active');
         if (e.key === 'a' || e.key === 'A') $btnAnimate.click();
         if (!controls) return;
         const sphere = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
