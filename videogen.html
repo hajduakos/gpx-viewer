@@ -297,9 +297,13 @@
             color: #fff;
             font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
             white-space: pre;
-            gap: 0.9em;
+            flex-direction: column;
+            gap: 0.15em;
             font-size: 36px;
         }
+        /* The optional title on top, in the numbers' size but a regular font; the columns below it */
+        .bar-title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        .bar-row { display: flex; gap: 0.9em; }
         .bar-label {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             font-size: var(--label-px);
@@ -513,6 +517,10 @@
                 <span class="ctrl-label">Labels</span>
                 <input type="range" id="sld-stats-label" data-readout="stats-label-val" data-unit=" px" min="6" max="40" value="14" step="1" style="flex:1">
                 <span class="ctrl-label" id="stats-label-val">14 px</span>
+            </div>
+            <div class="ctrl-row">
+                <label class="ctrl-label"><input type="checkbox" id="chk-stats-title"> Title</label>
+                <input type="text" id="txt-stats-title" placeholder="Title (from the GPX file)">
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Show</span>
@@ -1260,7 +1268,9 @@
             };
 
             step('parse', 'Parsing GPX file...');
-            const { points } = parseGPXPoints(await file.text());
+            const { points, name } = parseGPXPoints(await file.text());
+            // The stats bar's title, editable: the track's name, or the file's without one
+            document.getElementById('txt-stats-title').value = name && name !== 'Unnamed' ? name : file.name.replace(/\.gpx$/i, '');
             if (points.length < 2) throw new Error('No track points found in the GPX file');
             const pts = smoothPoints(points, SMOOTH_WINDOW);
             step('parse', 'Parsing GPX file...', 1, `${pts.length} points`);
@@ -1785,10 +1795,15 @@
     }
     layoutStatsBar();
 
+    const $chkStatsTitle = document.getElementById('chk-stats-title'), $txtStatsTitle = document.getElementById('txt-stats-title');
+
     function buildStatsBar() {
         statsColumns = STATS_COLUMNS.filter(c => document.getElementById(`chk-stats-${c.key}`).checked);
-        $statsBar.innerHTML = statsColumns.map(c => `<div><div class="bar-label">${c.label}</div><div class="bar-value"></div></div>`).join('');
-        $statsBar.style.display = statsColumns.length ? 'flex' : 'none';
+        const showTitle = $chkStatsTitle.checked;
+        $statsBar.innerHTML = (showTitle ? '<div class="bar-title"></div>' : '')
+            + (statsColumns.length ? '<div class="bar-row">' + statsColumns.map(c => `<div><div class="bar-label">${c.label}</div><div class="bar-value"></div></div>`).join('') + '</div>' : '');
+        if (showTitle) $statsBar.querySelector('.bar-title').textContent = $txtStatsTitle.value;
+        $statsBar.style.display = showTitle || statsColumns.length ? 'flex' : 'none';
         const { dist, gain, ele, time } = trackStats, last = dist.length - 1;
         statsWidths = {
             dist: (dist[last] / 1000).toFixed(1).length, ele: String(Math.round(ele.reduce((a, b) => Math.max(a, b), 0))).length,
@@ -1825,14 +1840,19 @@
         $statsBar.style.opacity = 1;
     }
 
-    // Ticking a column rebuilds the bar (while playing, the next frame fills it in)
-    for (const c of STATS_COLUMNS) {
-        document.getElementById(`chk-stats-${c.key}`).addEventListener('change', () => {
+    // Ticking a column or the title rebuilds the bar (while playing, the next frame fills it in); the title follows
+    // its text box as it's typed
+    for (const id of [...STATS_COLUMNS.map(c => `chk-stats-${c.key}`), 'chk-stats-title']) {
+        document.getElementById(id).addEventListener('change', () => {
             if (!trackStats) return;
             if (playing) buildStatsBar();
             else showIdleStats();
         });
     }
+    $txtStatsTitle.addEventListener('input', () => {
+        const title = $statsBar.querySelector('.bar-title');
+        if (title) title.textContent = $txtStatsTitle.value;
+    });
 
     function startStatsBar() {
         buildStatsBar();
