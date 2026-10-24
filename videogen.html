@@ -313,28 +313,28 @@
         <table class="settings">
             <tr>
                 <td>Grid resolution</td>
-                <td><input type="range" id="set-grid" min="50" max="1000" value="1000" step="10"></td>
+                <td><input type="range" id="set-grid" data-readout="set-grid-v" min="50" max="1000" value="1000" step="10"></td>
                 <td class="val" id="set-grid-v">1000</td>
                 <td>Texture tiles</td>
-                <td><input type="range" id="set-tiles" min="1" max="4" value="1" step="1"></td>
+                <td><input type="range" id="set-tiles" data-readout="set-tiles-v" data-format="square" min="1" max="4" value="1" step="1"></td>
                 <td class="val" id="set-tiles-v">1×1</td>
                 <td>Resolution per tile</td>
-                <td><input type="range" id="set-tex" min="1024" max="8192" value="2048" step="1024"></td>
+                <td><input type="range" id="set-tex" data-readout="set-tex-v" min="1024" max="8192" value="2048" step="1024"></td>
                 <td class="val" id="set-tex-v">2048</td>
                 <td>Padding</td>
-                <td><input type="range" id="set-pad" min="1" max="10" value="5" step="0.1" title="Terrain size, as a multiple of the track's extent (1× = no padding)"></td>
+                <td><input type="range" id="set-pad" data-readout="set-pad-v" data-unit="×" data-decimals="1" min="1" max="10" value="5" step="0.1" title="Terrain size, as a multiple of the track's extent (1× = no padding)"></td>
                 <td class="val" id="set-pad-v">5.0×</td>
             </tr>
             <tr>
                 <td>Low-res grid</td>
-                <td><input type="range" id="set-lowgrid" min="20" max="1000" value="1000" step="10"></td>
+                <td><input type="range" id="set-lowgrid" data-readout="set-lowgrid-v" min="20" max="1000" value="1000" step="10"></td>
                 <td class="val" id="set-lowgrid-v">1000</td>
                 <td></td><td></td><td></td>
                 <td>Low-res texture</td>
-                <td><input type="range" id="set-lowtex" min="512" max="8192" value="1024" step="512"></td>
+                <td><input type="range" id="set-lowtex" data-readout="set-lowtex-v" min="512" max="8192" value="1024" step="512"></td>
                 <td class="val" id="set-lowtex-v">1024</td>
                 <td>Low-res padding</td>
-                <td><input type="range" id="set-lowpad" min="1" max="50" value="10" step="1" title="A coarse terrain around the padded one, this many times its size (1× = none)"></td>
+                <td><input type="range" id="set-lowpad" data-readout="set-lowpad-v" data-unit="×" min="1" max="50" value="10" step="1" title="A coarse terrain around the padded one, this many times its size (1× = none)"></td>
                 <td class="val" id="set-lowpad-v">10×</td>
             </tr>
         </table>
@@ -360,20 +360,20 @@
             <div class="ctrl-row">
                 <button id="btn-animate" title="Play the animation (A)" disabled>&#9654;</button>
                 <span class="ctrl-label">Duration</span>
-                <input type="range" id="sld-animate-dur" min="1" max="10" value="4" step="1" style="flex:1">
+                <input type="range" id="sld-animate-dur" data-readout="animate-dur-val" data-unit="s" min="1" max="10" value="4" step="1" style="flex:1">
                 <span class="ctrl-label" id="animate-dur-val">4s</span>
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Lead in</span>
-                <input type="range" id="sld-lead-in" min="0" max="10" value="2" step="0.5" style="flex:1">
+                <input type="range" id="sld-lead-in" data-readout="lead-in-val" data-unit="s" min="0" max="10" value="2" step="0.5" style="flex:1">
                 <span class="ctrl-label" id="lead-in-val">2s</span>
                 <span class="ctrl-label">Lead out</span>
-                <input type="range" id="sld-lead-out" min="0" max="10" value="4" step="0.5" style="flex:1">
+                <input type="range" id="sld-lead-out" data-readout="lead-out-val" data-unit="s" min="0" max="10" value="4" step="0.5" style="flex:1">
                 <span class="ctrl-label" id="lead-out-val">4s</span>
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Pulse radius</span>
-                <input type="range" id="sld-pulse" min="10" max="2000" value="1000" step="10" style="flex:1" title="How far the pulse reaches before and after its center">
+                <input type="range" id="sld-pulse" data-readout="pulse-val" data-unit=" m" min="10" max="2000" value="1000" step="10" style="flex:1" title="How far the pulse reaches before and after its center">
                 <span class="ctrl-label" id="pulse-val">1000 m</span>
             </div>
             <div class="ctrl-row">
@@ -417,12 +417,12 @@
             <div class="sub-title">Label settings</div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Title size</span>
-                <input type="range" id="sld-label-title" min="10" max="60" value="27" step="1" style="flex:1">
+                <input type="range" id="sld-label-title" data-readout="label-title-val" data-unit=" px" min="10" max="60" value="27" step="1" style="flex:1">
                 <span class="ctrl-label" id="label-title-val">27 px</span>
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Elevation size</span>
-                <input type="range" id="sld-label-ele" min="6" max="40" value="16" step="1" style="flex:1">
+                <input type="range" id="sld-label-ele" data-readout="label-ele-val" data-unit=" px" min="6" max="40" value="16" step="1" style="flex:1">
                 <span class="ctrl-label" id="label-ele-val">16 px</span>
             </div>
         </div>
@@ -468,7 +468,7 @@
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Intensity</span>
-                <input type="range" id="sld-precip" min="0" max="100" value="50" step="1" style="flex:1">
+                <input type="range" id="sld-precip" data-readout="precip-val" data-unit="%" min="0" max="100" value="50" step="1" style="flex:1">
                 <span class="ctrl-label" id="precip-val">50%</span>
             </div>
             <div class="ctrl-row">
@@ -498,12 +498,12 @@
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Numbers</span>
-                <input type="range" id="sld-stats-num" min="12" max="80" value="36" step="1" style="flex:1">
+                <input type="range" id="sld-stats-num" data-readout="stats-num-val" data-unit=" px" min="12" max="80" value="36" step="1" style="flex:1">
                 <span class="ctrl-label" id="stats-num-val">36 px</span>
             </div>
             <div class="ctrl-row">
                 <span class="ctrl-label">Labels</span>
-                <input type="range" id="sld-stats-label" min="6" max="40" value="14" step="1" style="flex:1">
+                <input type="range" id="sld-stats-label" data-readout="stats-label-val" data-unit=" px" min="6" max="40" value="14" step="1" style="flex:1">
                 <span class="ctrl-label" id="stats-label-val">14 px</span>
             </div>
         </div>
@@ -543,23 +543,22 @@
     const $fileInput = document.getElementById('file-input');
     const $dropzone  = document.getElementById('dropzone');
     const $setGrid   = document.getElementById('set-grid');
-    const $setGridV  = document.getElementById('set-grid-v');
     const $setTex    = document.getElementById('set-tex');
-    const $setTexV   = document.getElementById('set-tex-v');
     const $setTiles  = document.getElementById('set-tiles');
-    const $setTilesV = document.getElementById('set-tiles-v');
     const $setPad    = document.getElementById('set-pad');
-    const $setPadV   = document.getElementById('set-pad-v');
-    $setGrid.oninput = () => $setGridV.textContent = $setGrid.value;
-    $setTex.oninput  = () => $setTexV.textContent = $setTex.value;
-    $setTiles.oninput = () => $setTilesV.textContent = `${$setTiles.value}×${$setTiles.value}`;
-    $setPad.oninput  = () => $setPadV.textContent = (+$setPad.value).toFixed(1) + '×';
     const $setLowPad = document.getElementById('set-lowpad');
-    const $setLowPadV = document.getElementById('set-lowpad-v');
-    $setLowPad.oninput = () => $setLowPadV.textContent = $setLowPad.value + '×';
     const $setLowGrid = document.getElementById('set-lowgrid'), $setLowTex = document.getElementById('set-lowtex');
-    $setLowGrid.oninput = () => document.getElementById('set-lowgrid-v').textContent = $setLowGrid.value;
-    $setLowTex.oninput = () => document.getElementById('set-lowtex-v').textContent = $setLowTex.value;
+
+    // Slider readouts: a slider with data-readout shows its value in that element, with data-unit after it,
+    // data-decimals digits, or as N×N with data-format="square"
+    function showReadout(slider) {
+        const v = +slider.value, { readout, unit = '', decimals, format } = slider.dataset;
+        document.getElementById(readout).textContent = format === 'square' ? `${v}×${v}` : (decimals ? v.toFixed(+decimals) : v) + unit;
+    }
+    for (const slider of document.querySelectorAll('input[data-readout]')) {
+        slider.addEventListener('input', () => showReadout(slider));
+        showReadout(slider);
+    }
 
     function prog(step, pct, detail = '') {
         $pStep.textContent = step;
@@ -1285,7 +1284,7 @@
             updatePosValue();
             showIdleStats();
             $sldPulse.value = Math.round(Math.min(PULSE_RADIUS_M, trackStats.dist[trackStats.dist.length - 1] / 10) / 10) * 10;
-            showPulseRadius();
+            showReadout($sldPulse);
             $btnAnimate.disabled = false;
         } catch (err) {
             prog('Error', 0, err.message);
@@ -1441,12 +1440,6 @@
         });
     }
 
-    for (const [slider, val] of [['sld-animate-dur', 'animate-dur-val'], ['sld-lead-in', 'lead-in-val'], ['sld-lead-out', 'lead-out-val']]) {
-        document.getElementById(slider).addEventListener('input', e => {
-            document.getElementById(val).textContent = e.target.value + 's';
-        });
-    }
-
     // ── Track settings ──
 
     document.getElementById('sld-track-offset').addEventListener('input', e => { if (track) track.position.y = +e.target.value; });
@@ -1494,7 +1487,6 @@
 
     function updatePrecip() {
         const kind = $selPrecip.value, intensity = +$sldPrecip.value;
-        document.getElementById('precip-val').textContent = intensity + '%';
         if (kind === 'none' || intensity <= 0) {
             $precip.style.display = 'none';
             precipParticles = [];
@@ -1566,8 +1558,6 @@
     // PULSE_RADIUS_M and a tenth of the track
     const PULSE_RADIUS_M = 1000;
     const $sldPulse = document.getElementById('sld-pulse');
-    const showPulseRadius = () => document.getElementById('pulse-val').textContent = $sldPulse.value + ' m';
-    $sldPulse.addEventListener('input', showPulseRadius);
     const PULSE_LIFT = 0.005;      // and lifts the track by up to this, so it stays on top where the track overlaps itself
 
     const $btnAnimate = document.getElementById('btn-animate');
@@ -1658,9 +1648,6 @@
     // A vertical line grows up from a track point, then the label fades in on top: the name and, below it in smaller
     // type, the point's elevation. Their sizes come from the Label settings sliders, applied as they change.
     const $sldLabelTitle = document.getElementById('sld-label-title'), $sldLabelEle = document.getElementById('sld-label-ele');
-    for (const [slider, val] of [[$sldLabelTitle, 'label-title-val'], [$sldLabelEle, 'label-ele-val']]) {
-        slider.addEventListener('input', () => document.getElementById(val).textContent = slider.value + ' px');
-    }
 
     // A live base point on the track: track point k, including the track's offset
     const trackPoint = k => () => {
@@ -1746,8 +1733,6 @@
         const num = +document.getElementById('sld-stats-num').value, label = +document.getElementById('sld-stats-label').value;
         st.fontSize = num + 'px';
         st.setProperty('--label-px', label + 'px');
-        document.getElementById('stats-num-val').textContent = num + ' px';
-        document.getElementById('stats-label-val').textContent = label + ' px';
     }
     for (const id of ['sel-stats-h', 'sel-stats-v', 'sld-stats-num', 'sld-stats-label']) {
         document.getElementById(id).addEventListener('input', layoutStatsBar);
