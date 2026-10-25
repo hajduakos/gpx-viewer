@@ -2839,11 +2839,13 @@
         });
         turns.forEach((tn, j) => { tn.before = stretches[j]; tn.after = stretches[j + 1]; });
         const followed = s => stretches[turns.filter(tn => s > tn.s0).length](s);
-        // In the slow finish, an even turn (no averaging) from the heading there to the final one, reached exactly
-        let heading = followed;
+        // In the slow finish the heading holds here; updateFlyover turns the camera at a constant speed in time (not
+        // with the pulse, which waits at stops) from it to the final heading, reached exactly at the end
+        let heading = followed, slow = null;
         if (slowFrom != null) {
             const h0 = followed(slowFrom)[0], h1 = h0 + ((((FLY_SLOW_FINISH.heading - h0) % 360) + 540) % 360 - 180);
-            heading = s => s <= slowFrom ? followed(s) : [h0 + (h1 - h0) * smoothstep(slowFrom, total, s)];
+            heading = s => s <= slowFrom ? followed(s) : [h0];
+            slow = { s0: slowFrom, h0, h1 };
         }
 
         const flightMs = +document.getElementById('sld-flyover-dur').value * 1000;
@@ -2880,8 +2882,14 @@
         for (const leg of legs) for (const e of leg.cum.ele) maxEle = Math.max(maxEle, e);
         const widths = statsBarWidths(distBefore, maxEle, gainBefore);
 
-        fly = { legs, total, events, target, heading, turns, timeAt, step: STEP, widths, flightMs, overview: overviewView(), end: null };
+        fly = { legs, total, events, target, heading, turns, slow, timeAt, step: STEP, widths, flightMs, overview: overviewView(), end: null };
         planStops(stops);
+        if (slow) {
+            // The slow finish's turn starts when the pulse gets there, from the heading the camera has at that moment
+            // (it looks a little behind, so it's still turning toward h0), so there's no jump
+            slow.t0 = flightTimeAt(slow.s0);
+            slow.hStart = heading(turnDistance(slow.t0, FLY_HEADING_TIME_MS))[0];
+        }
         fly.start = flightView(0);
         // Peaks, timed around the pulse passing their track's middle
         fly.peaks = [];
@@ -3045,10 +3053,12 @@
                 const w = smoothstep(0, 1, (tf - from) / (to - from));
                 h = tn.before(Math.min(sTurn, tn.s0))[0] * (1 - w) + tn.after(Math.max(sTurn, tn.s0))[0] * w;
             }
+            // In the slow finish, turning at a constant speed to the final heading
+            if (fly.slow && tf >= fly.slow.t0) h = fly.slow.hStart + (fly.slow.h1 - fly.slow.hStart) * clamp01((tf - fly.slow.t0) / (fly.flightMs - fly.slow.t0));
             const view = flightView(turnDistance(tf), sTurn, h);
             setCameraBetween(view, view, 0);
         } else {
-            if (!fly.end) fly.end = flightView(fly.total);
+            if (!fly.end) fly.end = flightView(fly.total, fly.total, fly.slow ? fly.slow.h1 : undefined);
             const hold = clamp01((t - zoomEnd) / FLY_HOLD_MS);
             setCameraBetween(fly.end, fly.overview, smoothstep(0, 1, (t - flightEnd) / FLY_ZOOM_OUT_MS), 1 + ZOOM_HOLD_DRIFT * hold * hold);
         }
