@@ -2524,8 +2524,7 @@
                                           // the bend before it
         'Soraypampa to Collpapampa': 270, // Salkantay: arrive at Collpapampa facing west, down the valley,
         'Lucmabamba to Aguas Calientes': 135,  // at Aguas Calientes facing south-east,
-        'Bus to Machu Picchu': 225,       // at Machu Picchu facing south-west, so the turn from south-east to north-west
-                                          // (Machu Picchu Mountain) goes round through the south
+        'Bus to Machu Picchu': 270,       // at Machu Picchu facing west (from south-east, round through the south)
         'Aguas Calientes to Machu Picchu Mountain': 45,  // and back there at the end facing north-east
     };
     // Tracks whose end gets no heading of its own: the camera turns straight through toward the next one (from the
@@ -2536,8 +2535,8 @@
     // evenly over the day
     const FLY_HEADING_POINTS = [
         { track: 'Namche to Dole', at: 0.2, heading: 10 },  // soon after leaving Namche, turn up the valley toward Dole
-        { track: 'Aguas Calientes to Machu Picchu Mountain', place: 'Machu Picchu Mountain', heading: 315 },  // Salkantay: up
-                                                            // Machu Picchu Mountain facing north-west
+        { track: 'Aguas Calientes to Machu Picchu Mountain', place: 'Machu Picchu Mountain', heading: 0 },  // Salkantay: up
+                                                            // Machu Picchu Mountain facing north
     ];
     const FLY_LOOP_DRIFT = 0.08;        // On a loop day (e.g. the rest day at Namche) the camera creeps this fraction of
                                         // the way toward the next day's end
