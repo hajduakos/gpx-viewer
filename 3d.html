@@ -1880,7 +1880,7 @@
     let animStartView = null;  // The camera when the animation started, restored when it ends
     let animEndMarker = null;
     // Stops of the daily pulse, in order along the track: {frac (of the track's length), ms, growMs, marker, turnaround}.
-    // The farthest or highest point (with those end modes) and extra places like Cho La Pass.
+    // The farthest or highest point (with those end modes) and extra places like Salkantay Pass.
     let animHolds = [];
     let animPeakMarkers = [];  // DAILY_PEAKS of the animated track: {marker, at, delayMs}
     let animTransfer = null;   // the animated track's transfer (TRANSFERS) and its dashed line: {tr, line, from, to}
@@ -1994,10 +1994,7 @@
     // track follow its offset.
     const MARKER_HEIGHT_M = 1000;
     // Line heights for particular place labels (by label text), e.g. for a smaller hike in gentler terrain
-    const PLACE_MARKER_HEIGHT_M = {
-        'Budhanilkantha': 300,
-        'Shivapuri': 100,
-    };
+    const PLACE_MARKER_HEIGHT_M = {};
     const markerHeight = text => PLACE_MARKER_HEIGHT_M[text] ?? MARKER_HEIGHT_M;
     let animMarkers = [];
 
@@ -2222,7 +2219,7 @@
     const ZOOM_TOTALS_FADE_MS = 1000;
     const $trekStats = document.getElementById('trek-stats');
     // Overview labels sit above their point unless listed here (for places close to each other)
-    const ZOOM_LABEL_SIDES = { 'EBC': 'right', 'Kala Patthar': 'left' };
+    const ZOOM_LABEL_SIDES = {};
     let zoomIn = null;   // {play, overview} camera views while zooming in
     let zoomOut = null;  // {from, to} camera views while zooming out
     let zoomLabels = [];
@@ -2234,13 +2231,9 @@
         return tracks.sort((a, b) => a.userData.trackIdx - b.userData.trackIdx);
     }
 
-    // EBC-specific places not in the track names: a label at the track point nearest to lat/lon, at the track's start or
-    // end (at), or at its highest point
+    // Salkantay-specific places not in the track names: a label at the track point nearest to lat/lon, at the track's
+    // start or end (at), or at its highest point
     const EXTRA_PLACES = [
-        { track: 'Thagnak to Dzongla', text: 'Cho La Pass' },
-        { track: 'Gorakshep to Somare', text: 'Pheriche', lat: 27.893376, lon: 86.820400 },
-        { track: 'Somare to Namche', text: 'Tengboche Monastery', lat: 27.83608, lon: 86.76381 },  // from a photo's EXIF
-        { track: 'Namche to Lukla', text: 'Phakding', lat: 27.7435, lon: 86.7131 },  // passed again on the way down
         { track: 'Soraypampa to Collpapampa', text: 'Salkantay Pass' },  // the trek's high point
         { track: 'Soraypampa to Collpapampa', text: 'Wayracmachay', lat: -13.323583, lon: -72.607250 },
         { track: 'Lucmabamba to Aguas Calientes', text: 'Passo Llactapata' },  // day 4's high point
@@ -2507,35 +2500,22 @@
     const FLY_BRAKE_M = 400;            // braking to the stop and accelerating away over this distance
     const FLY_PULSE_RADIUS_M = 500;     // Half the daily animation's pulse
     const FLY_TURN_SMOOTH_M = 5000;     // The camera heading is averaged over this distance each way, spreading turns out
-    const FLY_POLAR = THREE.MathUtils.degToRad(57);  // Camera angle from vertical (steeper than EBC's 62°, for the deep valleys)
-    const FLY_HEIGHT_M = 3600;          // Camera height above the trail point (EBC: 3000)
+    const FLY_POLAR = THREE.MathUtils.degToRad(57);  // Camera angle from vertical (fairly steep, for the deep valleys)
+    const FLY_HEIGHT_M = 3600;          // Camera height above the trail point
     const FLY_DISTANCE_M = FLY_HEIGHT_M / Math.cos(FLY_POLAR);
     const FLY_AIM_UP_M = FLY_DISTANCE_M / 6;  // The camera aims this far above the trail, for more sky in the picture
-    // EBC-specific: compass direction (degrees) the camera faces when these tracks end; elsewhere it faces along
+    // Salkantay-specific: compass direction (degrees) the camera faces when these tracks end; elsewhere it faces along
     // its path
     const FLY_HEADINGS = {
-        'Namche': 60,                     // face about north-east during the rest day, so Thamserku is in view, and
-                                          // leave Namche at about 50° (the averaging softens the 60), so the valley
-                                          // toward Dole stays in view
-        'Gokyo to Gokyo Ri': 90,          // turn east while Gokyo Ri is hiked
-        'Thagnak to Dzongla': 110,        // arrive at Dzongla turned a little toward Ama Dablam
-        'Gorakshep to EBC': 90,           // at Gorakshep, turn east for EBC,
-        'Gorakshep to Kala Patthar': 180, // then south for Kala Patthar, ready for the way down
-        'Namche to Lukla': 125,           // arrive at Lukla facing about south-east (the averaging softens it), to see
-                                          // the bend before it
-        'Soraypampa to Collpapampa': 270, // Salkantay: arrive at Collpapampa facing west, down the valley,
+        'Soraypampa to Collpapampa': 270, // arrive at Collpapampa facing west, down the valley,
         'Lucmabamba to Aguas Calientes': 135,  // toward Aguas Calientes facing south-east (then FLY_SLOW_FINISH)
     };
-    // Tracks whose end gets no heading of its own: the camera turns straight through toward the next one (from the
-    // approach to Namche it turns steadily toward the rest day's heading; leaving Machhermo it already starts turning
-    // east for Gokyo Ri; leaving Lobuche, east for EBC)
-    const FLY_TURN_THROUGH = ['Phakding to Namche', 'Machhermo to Gokyo', 'Lobuche to Gorakshep'];
+    // Tracks whose end gets no heading of its own: the camera turns straight through toward the next one
+    const FLY_TURN_THROUGH = [];
     // Headings partway along a track (fraction at of its length, or at one of its places), e.g. to turn sooner than
     // evenly over the day
-    const FLY_HEADING_POINTS = [
-        { track: 'Namche to Dole', at: 0.2, heading: 10 },  // soon after leaving Namche, turn up the valley toward Dole
-    ];
-    const FLY_LOOP_DRIFT = 0.08;        // On a loop day (e.g. the rest day at Namche) the camera creeps this fraction of
+    const FLY_HEADING_POINTS = [];
+    const FLY_LOOP_DRIFT = 0.08;        // On a loop day (a single place, e.g. a rest day) the camera creeps this fraction of
                                         // the way toward the next day's end
     // Out-and-back tracks the camera treats as a loop day too: it doesn't fly out to their far end but creeps on slowly
     // past their start while the pulse goes there and back (Salkantay-specific: the side trip from Soraypampa to
@@ -2559,87 +2539,24 @@
     const FLY_PEAK_LINE_M = 200;     // Height of a peak's line
     const PEAK_GROW_MS = 500;        // A peak's line grows up from the summit,
     const PEAK_LABEL_FADE_MS = 500;  // then its label fades in
-    // EBC-specific peaks: a label with the altitude above the peak, on a short black line (official altitudes; the
-    // terrain model is too coarse for the summits). Peak coordinates are moved onto the local high point of a
-    // 1000-point elevation grid, so the lines rise from the summits as they appear in the terrain. lineM overrides the line's height, e.g. to keep labels apart.
-    // Landmarks without an altitude (ele: null) show just the name.
+    // Salkantay-specific peaks: a label with the altitude above the peak, on a short black line (official altitudes;
+    // the terrain model is too coarse for the summits). Peak coordinates are moved onto the local high point of a
+    // 2000-point elevation grid, so the lines rise from the summits as they appear in the terrain. lineM overrides the
+    // line's height, e.g. to keep labels apart. Landmarks without an altitude (ele: null) show just the name.
     const PEAKS = {
-        'Cho Oyu': { lat: 28.09720, lon: 86.65997, ele: 8188 },
-        'Everest': { lat: 27.98881, lon: 86.92438, ele: 8849 },
-        'Lhotse': { lat: 27.96265, lon: 86.93278, ele: 8516, lineM: FLY_PEAK_LINE_M + 200 },
-        'Ama Dablam': { lat: 27.86174, lon: 86.86003, ele: 6812 },
-        'Makalu': { lat: 27.89164, lon: 87.08807, ele: 8485 },
-        'Nuptse': { lat: 27.96763, lon: 86.88661, ele: 7861 },
-        'Pumori': { lat: 28.01622, lon: 86.82645, ele: 7161 },
-        'Cholatse': { lat: 27.92029, lon: 86.76489, ele: 6440 },
-        'Tobuche': { lat: 27.89787, lon: 86.77888, ele: 6495 },
-        'Lobuche East': { lat: 27.95767, lon: 86.79287, ele: 6119 },
-        'Thamserku': { lat: 27.79073, lon: 86.78728, ele: 6623 },
-        'Kangtega': { lat: 27.79696, lon: 86.80826, ele: 6782 },
-        'Phari Lapcha': { lat: 27.92901, lon: 86.68095, ele: 6017 },
-        'Khumbu Icefall': { lat: 28.0000, lon: 86.8650, ele: null, lineM: 1000 },  // above Base Camp
-        'Ngozumpa Glacier': { lat: 27.950325, lon: 86.704600, ele: null },  // on the Gokyo to Thagnak track, ~300 m east
-                                                                           // of where it meets the glacier
-        'Khumbu Glacier': { lat: 27.942126, lon: 86.814967, ele: null },
+        'Salkantay': { lat: -13.33258, lon: -72.54387, ele: 6271 },
     };
     // In the flyover, a peak shows for 2 * FLY_PEAK_SHOW_MS: centered on the pulse passing the middle of each of its
     // tracks, or starting when the pulse reaches fraction at of them, or when a place's label appears (the visit-th
-    // time it does, default the first); delayMs shifts it later (or earlier, if negative)
+    // time it does, default the first), or ending as a place's label starts appearing (before); delayMs shifts it later
+    // (or earlier, if negative)
     const FLY_PEAKS = [
-        { peak: 'Thamserku', tracks: ['Namche'] },  // around the middle of the rest day
-        { peak: 'Ama Dablam', tracks: ['Namche'], at: 1, delayMs: FLY_PAUSE_MS / 2 },  // as the day switches to day 4,
-                                                                                    // halfway through the rest day's end stop
-        { peak: 'Lobuche East', tracks: ['Dzongla to Lobuche'] },
-        { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'], delayMs: 1000 },
-        { peak: 'Phari Lapcha', tracks: ['Machhermo to Gokyo'], at: 0.05 },  // just after leaving Machhermo
-        { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
-        { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri', 'Lobuche to Gorakshep'] },
-        { peak: 'Nuptse', tracks: ['Lobuche to Gorakshep'] },
-        { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'] },
-        { peak: 'Ama Dablam', place: 'Cho La Pass', delayMs: 500 },
-        { peak: 'Cholatse', tracks: ['Thagnak to Dzongla'], at: 0.85 },  // just before Dzongla
-        { peak: 'Tobuche', tracks: ['Thagnak to Dzongla'], at: 0.85 },
-        { peak: 'Pumori', place: 'Gorakshep', delayMs: 500 },
-        { peak: 'Khumbu Icefall', place: 'EBC' },
-        // The glaciers are timed by where the pulse is (not by a delay from a label), so they show near the camera at
-        // any flyover speed
-        { peak: 'Ngozumpa Glacier', tracks: ['Gokyo to Thagnak'], at: 0.25 },  // as the pulse crosses it, after Gokyo
-        { peak: 'Khumbu Glacier', tracks: ['Dzongla to Lobuche'], at: 0.4 },  // on the way to Lobuche, before its label
-        { peak: 'Cholatse', tracks: ['Gorakshep to Somare'], at: 0.08 },  // after leaving Gorakshep, just before Ama Dablam
-        { peak: 'Tobuche', tracks: ['Gorakshep to Somare'], at: 0.08 },
-        { peak: 'Ama Dablam', tracks: ['Gorakshep to Somare'], at: 0.15 },  // just after leaving Gorakshep for good
-        { peak: 'Thamserku', tracks: ['Gorakshep to Somare'], at: 0.8 },  // just before arriving at Somare
-        { peak: 'Kangtega', tracks: ['Gorakshep to Somare'], at: 0.8 },
+        { peak: 'Salkantay', before: 'Salkantay Pass' },  // on the way up, gone as the pass's label comes
     ];
     // In a daily animation, a peak appears delayMs after a label does and stays, like the start/end labels. at: the start
-    // label (default), 'end', an extra place's label (e.g. 'Cho La Pass'), or a fraction of the day's distance (when
-    // the pulse gets there). lineM overrides the line height for that entry, pos ({lat, lon}) its position.
-    const DAILY_PEAKS = [
-        { peak: 'Thamserku', tracks: ['Phakding to Namche'], at: 0.5 },
-        { peak: 'Cho Oyu', tracks: ['Dole to Machhermo'] },
-        { peak: 'Phari Lapcha', tracks: ['Machhermo to Gokyo'], at: 0.5 },
-        { peak: 'Everest', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
-        { peak: 'Lhotse', tracks: ['Gokyo to Gokyo Ri'], at: 'end', lineM: FLY_PEAK_LINE_M + 500 },
-        { peak: 'Makalu', tracks: ['Gokyo to Gokyo Ri'], at: 'end' },
-        { peak: 'Ama Dablam', tracks: ['Thagnak to Dzongla'], at: 'Cho La Pass' },
-        { peak: 'Cholatse', tracks: ['Thagnak to Dzongla'], at: 0.85, lineM: FLY_PEAK_LINE_M + 200 },  // just before Dzongla
-        { peak: 'Tobuche', tracks: ['Thagnak to Dzongla'], at: 0.85, lineM: FLY_PEAK_LINE_M + 200 },
-        { peak: 'Lobuche East', tracks: ['Dzongla to Lobuche'], at: 0.5 },
-        { peak: 'Everest', tracks: ['Gorakshep to EBC'], at: 'end' },
-        { peak: 'Lhotse', tracks: ['Gorakshep to EBC'], at: 'end', lineM: FLY_PEAK_LINE_M + 500 },
-        { peak: 'Nuptse', tracks: ['Gorakshep to EBC'], at: 'end', lineM: FLY_PEAK_LINE_M - 50 },
-        { peak: 'Khumbu Icefall', tracks: ['Gorakshep to EBC'], at: 'end' },
-        { peak: 'Pumori', tracks: ['Gorakshep to EBC'], at: 'end' },
-        { peak: 'Cholatse', tracks: ['Gorakshep to Somare'], at: 0.08 },  // shortly after leaving Gorakshep, as in the flyover
-        { peak: 'Tobuche', tracks: ['Gorakshep to Somare'], at: 0.08 },
-        { peak: 'Ama Dablam', tracks: ['Gorakshep to Somare'], at: 0.15 },
-        // Level with the track's halfway point, where it shows up, a bit east of it over the glacier
-        { peak: 'Khumbu Glacier', tracks: ['Lobuche to Gorakshep'], at: 0.5, pos: { lat: 27.967366, lon: 86.825700 } },
-        { peak: 'Kangtega', tracks: ['Somare to Namche'] },  // right after the Somare (start) label
-        { peak: 'Thamserku', tracks: ['Somare to Namche'] },
-        { peak: 'Ngozumpa Glacier', tracks: ['Gokyo to Thagnak'], at: 0.25 },  // as the pulse reaches it, crossing the glacier
-        { peak: 'Cho Oyu', tracks: ['Gokyo to Thagnak'], at: 0.5 },
-    ];
+    // label (default), 'end', an extra place's label, or a fraction of the day's distance (when the pulse gets there).
+    // lineM overrides the line height for that entry, pos ({lat, lon}) its position.
+    const DAILY_PEAKS = [];
     const FLY_PEAK_SHOW_MS = 2000;  // shown from this long before to this long after the pulse passes the track's middle
     const FLY_PEAK_FADE_MS = 300;
     const $flyStats = document.getElementById('fly-stats');
@@ -2900,7 +2817,7 @@
             animMarkers.push(marker);
             fly.peaks.push({ marker, from, to: from + 2 * FLY_PEAK_SHOW_MS });
         };
-        for (const { peak, tracks = [], at, place, visit = 1, delayMs = 0 } of FLY_PEAKS) {
+        for (const { peak, tracks = [], at, place, before, visit = 1, delayMs = 0 } of FLY_PEAKS) {
             for (const track of tracks) {
                 const leg = legs.find(l => trackLabels[l.track.userData.trackIdx].display === track);
                 if (!leg) continue;
@@ -2908,6 +2825,8 @@
             }
             const event = place && events.filter(e => e.text === place && e.growStart != null)[visit - 1];
             if (event) addPeak(peak, event.growStart + FLY_GROW_MS + delayMs);  // once the place's line has grown and its label is up
+            const next = before && events.find(e => e.text === before && e.growStart != null);
+            if (next) addPeak(peak, next.growStart - 2 * FLY_PEAK_SHOW_MS + delayMs);  // gone as that place's label starts
         }
         fly.valueEls = makeStatsBar($flyStats);
         controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
@@ -3188,7 +3107,7 @@
             animMarkers.push(animEndMarker);
             if (animEndMode !== 'end') animHolds.push({ frac: fracAt(endIdx), ms: MARKER_MS, turnaround: true });
         }
-        // Extra places along the track (e.g. Cho La Pass): as in the flyover, the pulse stops while the label appears.
+        // Extra places along the track (e.g. Salkantay Pass): as in the flyover, the pulse stops while the label appears.
         // Only this track's own extras: a place can be an extra elsewhere and the start or end here (Phakding).
         for (const place of trackPlaces(animTrack)) {
             if (!EXTRA_PLACES.some(e => e.text === place.text && e.track === display)) continue;
