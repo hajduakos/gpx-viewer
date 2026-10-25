@@ -1995,7 +1995,17 @@
     const MARKER_HEIGHT_M = 1000;
     // Line heights for particular place labels (by label text), e.g. for a smaller hike in gentler terrain
     const PLACE_MARKER_HEIGHT_M = {
+        'Soraypampa': 1500,
+        'Salkantay Pass': 800,
+        'Wayracmachay': 500,
+        'Collpapampa': 700,
+        'Winaypoqo': 800,
+        'Playa Sahuayaco': 700,
+        'Lucmabamba': 700,
         'Passo Llactapata': 500,
+        'Aobamba': 700,
+        'Hidroelectrica': 800,
+        'Aguas Calientes': 800,
     };
     const markerHeight = text => PLACE_MARKER_HEIGHT_M[text] ?? MARKER_HEIGHT_M;
     let animMarkers = [];
