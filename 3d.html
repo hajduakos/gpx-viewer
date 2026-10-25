@@ -2523,9 +2523,7 @@
         'Namche to Lukla': 125,           // arrive at Lukla facing about south-east (the averaging softens it), to see
                                           // the bend before it
         'Soraypampa to Collpapampa': 270, // Salkantay: arrive at Collpapampa facing west, down the valley,
-        'Lucmabamba to Aguas Calientes': 135,  // at Aguas Calientes facing south-east,
-        'Bus to Machu Picchu': 270,       // at Machu Picchu facing west (from south-east, round through the south)
-        'Aguas Calientes to Machu Picchu Mountain': 45,  // and back there at the end facing north-east
+        'Lucmabamba to Aguas Calientes': 135,  // toward Aguas Calientes facing south-east (then FLY_SLOW_FINISH)
     };
     // Tracks whose end gets no heading of its own: the camera turns straight through toward the next one (from the
     // approach to Namche it turns steadily toward the rest day's heading; leaving Machhermo it already starts turning
@@ -2535,8 +2533,6 @@
     // evenly over the day
     const FLY_HEADING_POINTS = [
         { track: 'Namche to Dole', at: 0.2, heading: 10 },  // soon after leaving Namche, turn up the valley toward Dole
-        { track: 'Aguas Calientes to Machu Picchu Mountain', place: 'Machu Picchu Mountain', heading: 292.5 },  // Salkantay:
-                                                            // up Machu Picchu Mountain facing west-north-west
     ];
     const FLY_LOOP_DRIFT = 0.08;        // On a loop day (e.g. the rest day at Namche) the camera creeps this fraction of
                                         // the way toward the next day's end
@@ -2547,6 +2543,11 @@
     // Stops where the camera turns sharply: it arrives facing the track's FLY_HEADINGS heading and turns to face `leave`
     // over the stop (which can be extraMs longer than the others), starting leadMs before it and finishing trailMs
     // after it (Salkantay: down the valley into Collpapampa facing west, then north for the next day)
+    // A slow finish, like a loop day at the end of the route: the camera follows the route as usual to the end of this
+    // track (or `drift` short of it), then creeps on to the route's very end over all the rest (no keys in between),
+    // turning evenly to face `heading` there, exactly (not smoothed out) (Salkantay: to Aguas Calientes, then barely
+    // moving while the bus goes up to Machu Picchu and the hike comes back down, facing south at the end)
+    const FLY_SLOW_FINISH = { track: 'Lucmabamba to Aguas Calientes', drift: 0, heading: 180 };
     const FLY_TURN_STOPS = [
         { track: 'Soraypampa to Collpapampa', leave: 0, extraMs: 0, leadMs: 2500, trailMs: 2500 },
     ];
@@ -2775,6 +2776,18 @@
             keyTurnThrough[k] = keyHeadings[k] === null;
             gentle[k - 1] = gentle[k] = true;
         });
+        // The slow finish (FLY_SLOW_FINISH): the keys between its track's end and the route's end go, its track's end key
+        // moves `drift` back toward the previous key, and the creep from there to the end is even (gentle)
+        let slowFrom = null;  // route distance where the slow finish starts
+        const slowLeg = FLY_SLOW_FINISH && legs.find(l => trackLabels[l.track.userData.trackIdx].display === FLY_SLOW_FINISH.track);
+        const ks = slowLeg ? keyS.findIndex(x => Math.abs(x - (slowLeg.offset + slowLeg.len)) < 1) : -1;
+        if (ks > 0 && ks < keyS.length - 1) {
+            for (const arr of [keyS, keyPts, keyHeadings, keyTurnThrough, keyLoop]) arr.splice(ks + 1, arr.length - ks - 2);
+            keyPts[ks] = keyPts[ks - 1].clone().lerp(keyPts[ks], 1 - FLY_SLOW_FINISH.drift);
+            keyTurnThrough[ks] = false;
+            gentle[ks] = gentle[ks + 1] = true;
+            slowFrom = keyS[ks];
+        }
         const target = smoothSpline(keyS, keyPts.map(v => [v.x, v.y, v.z]), gentle);
         // Keys without a set heading face along the camera's path (north is -z, east is +x)
         const headingS = [], headings = [];
@@ -2818,14 +2831,20 @@
             turns.push({ i, s0: headingS[i], leave, extraMs: ts.extraMs ?? 0, leadMs: ts.leadMs ?? 0, trailMs: ts.trailMs ?? 0 });
         }
         turns.sort((a, b) => a.s0 - b.s0);
-        const bounds = [0, ...turns.map(tn => tn.s0), total];
+        const bounds = [0, ...turns.map(tn => tn.s0), slowFrom ?? total];
         const stretches = bounds.slice(0, -1).map((lo, j) => {
             const hs = headings.slice();
             if (j > 0) hs[turns[j - 1].i] = turns[j - 1].leave;
             return averagedHeading(s => linear(hs, Math.min(Math.max(s, lo), bounds[j + 1])), total);
         });
         turns.forEach((tn, j) => { tn.before = stretches[j]; tn.after = stretches[j + 1]; });
-        const heading = s => stretches[turns.filter(tn => s > tn.s0).length](s);
+        const followed = s => stretches[turns.filter(tn => s > tn.s0).length](s);
+        // In the slow finish, an even turn (no averaging) from the heading there to the final one, reached exactly
+        let heading = followed;
+        if (slowFrom != null) {
+            const h0 = followed(slowFrom)[0], h1 = h0 + ((((FLY_SLOW_FINISH.heading - h0) % 360) + 540) % 360 - 180);
+            heading = s => s <= slowFrom ? followed(s) : [h0 + (h1 - h0) * smoothstep(slowFrom, total, s)];
+        }
 
         const flightMs = +document.getElementById('sld-flyover-dur').value * 1000;
         // Stops: every place (its label animates meanwhile) and every day's end, merged where they coincide (e.g. a
