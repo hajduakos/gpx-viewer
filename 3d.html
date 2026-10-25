@@ -2545,12 +2545,14 @@
     // line's height, e.g. to keep labels apart. Landmarks without an altitude (ele: null) show just the name.
     const PEAKS = {
         'Salkantay': { lat: -13.33258, lon: -72.54387, ele: 6271 },
+        'Humantay': { lat: -13.36061, lon: -72.59374, ele: 5917 },
     };
     // In the flyover, a peak shows for 2 * FLY_PEAK_SHOW_MS: centered on the pulse passing the middle of each of its
     // tracks, or starting when the pulse reaches fraction at of them, or when a place's label appears (the visit-th
     // time it does, default the first), or ending as a place's label starts appearing (before); delayMs shifts it later
     // (or earlier, if negative)
     const FLY_PEAKS = [
+        { peak: 'Humantay', tracks: ['Soraypampa to Humantay lake'], at: 0.58 },  // as the pulse leaves the lake (at 0.55)
         { peak: 'Salkantay', before: 'Salkantay Pass' },  // on the way up, gone as the pass's label comes
     ];
     // In a daily animation, a peak appears delayMs after a label does and stays, like the start/end labels. at: the start
