@@ -2506,8 +2506,8 @@
     const FLY_BRAKE_M = 400;            // braking to the stop and accelerating away over this distance
     const FLY_PULSE_RADIUS_M = 500;     // Half the daily animation's pulse
     const FLY_TURN_SMOOTH_M = 5000;     // The camera heading is averaged over this distance each way, spreading turns out
-    const FLY_POLAR = THREE.MathUtils.degToRad(62);  // Camera angle from vertical
-    const FLY_HEIGHT_M = 3000;          // Camera height above the trail point
+    const FLY_POLAR = THREE.MathUtils.degToRad(57);  // Camera angle from vertical (steeper than EBC's 62°, for the deep valleys)
+    const FLY_HEIGHT_M = 3600;          // Camera height above the trail point (EBC: 3000)
     const FLY_DISTANCE_M = FLY_HEIGHT_M / Math.cos(FLY_POLAR);
     const FLY_AIM_UP_M = FLY_DISTANCE_M / 6;  // The camera aims this far above the trail, for more sky in the picture
     // EBC-specific: compass direction (degrees) the camera faces when these tracks end; elsewhere it faces along
