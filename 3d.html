@@ -2220,8 +2220,24 @@
     const ZOOM_LABEL_FADE_MS = 1000;
     const ZOOM_TOTALS_FADE_MS = 1000;
     const $trekStats = document.getElementById('trek-stats');
-    // Overview labels sit above their point unless listed here (for places close to each other)
-    const ZOOM_LABEL_SIDES = {};
+    // Overview labels sit above their point unless listed here: top, bottom, left, right, or a corner like top-right
+    const ZOOM_LABEL_SIDES = {
+        'Challacancha': 'bottom',
+        'Soraypampa': 'right',
+        'Humantay lake': 'left',
+        'Salkantay Pass': 'top-right',
+        'Wayracmachay': 'top-right',
+        'Collpapampa': 'left',
+        'Winaypoqo': 'right',
+        'Playa Sahuayaco': 'left',
+        'Lucmabamba': 'left',
+        'Passo Llactapata': 'top-left',
+        'Aobamba': 'bottom',
+        'Hidroelectrica': 'bottom-right',
+        'Machu Picchu Mountain': 'right',
+        'Machu Picchu': 'right',
+        'Aguas Calientes': 'top-right',
+    };
     let zoomIn = null;   // {play, overview} camera views while zooming in
     let zoomOut = null;  // {from, to} camera views while zooming out
     let zoomLabels = [];
@@ -2356,11 +2372,14 @@
             div.textContent = text;
             div.style.cssText = `color:#fff;font-size:${fontSize}px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;opacity:0;`;
             const label = new CSS2DObject(div);
-            const side = ZOOM_LABEL_SIDES[text];
-            // center is the label's anchor point: (0.5, 1) puts it above the point (north in the top-down view)
-            if (side === 'right') { label.center.set(0, 0.5); div.style.marginLeft = '4px'; }
-            else if (side === 'left') { label.center.set(1, 0.5); div.style.marginLeft = '-4px'; }
-            else label.center.set(0.5, 1);
+            const side = ZOOM_LABEL_SIDES[text] ?? 'top';
+            // center is the label's anchor point: (0.5, 1) puts it above the point (north in the top-down view), (0, 0.5)
+            // to its right; a 4px gap keeps it off the point
+            const h = side.includes('right') ? 'right' : side.includes('left') ? 'left' : null;
+            const v = side.includes('top') ? 'top' : side.includes('bottom') ? 'bottom' : null;
+            label.center.set(h === 'right' ? 0 : h === 'left' ? 1 : 0.5, v === 'top' ? 1 : v === 'bottom' ? 0 : 0.5);
+            if (h) div.style.marginLeft = h === 'right' ? '4px' : '-4px';
+            if (v) div.style.marginTop = v === 'top' ? '-4px' : '4px';
             label.position.copy(pos);
             scene.add(label);
             zoomLabels.push(label);
