@@ -2578,6 +2578,8 @@
         'Salkantay': { lat: -13.33258, lon: -72.54387, ele: 6271 },
         'Humantay': { lat: -13.36061, lon: -72.59374, ele: 5917 },
         'Machu Picchu': { lat: -13.16222, lon: -72.54534, ele: 2430 },  // the citadel
+        'Machu Picchu Mountain': { lat: -13.17444, lon: -72.54167, ele: 3082 },
+        'Huayna Picchu': { lat: -13.15431, lon: -72.54534, ele: 2720 },
     };
     // In the flyover, a peak shows for 2 * FLY_PEAK_SHOW_MS: centered on the pulse passing the middle of each of its
     // tracks, or starting when the pulse reaches fraction at of them, or when a place's label appears (the visit-th
@@ -2586,6 +2588,9 @@
     const FLY_PEAKS = [
         { peak: 'Humantay', tracks: ['Soraypampa to Humantay lake'], at: 0.58 },  // as the pulse leaves the lake (at 0.55)
         { peak: 'Machu Picchu', place: 'Passo Llactapata', delayMs: 500 },  // first seen from there
+        // Slightly after leaving Hidroelectrica (at 0.565 of the day)
+        { peak: 'Machu Picchu Mountain', tracks: ['Lucmabamba to Aguas Calientes'], at: 0.6 },
+        { peak: 'Huayna Picchu', tracks: ['Lucmabamba to Aguas Calientes'], at: 0.6 },
         { peak: 'Salkantay', before: 'Salkantay Pass' },  // on the way up, gone as the pass's label comes
     ];
     // In a daily animation, a peak appears delayMs after a label does and stays, like the start/end labels. at: the start
