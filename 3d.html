@@ -2522,15 +2522,20 @@
         'Gorakshep to Kala Patthar': 180, // then south for Kala Patthar, ready for the way down
         'Namche to Lukla': 125,           // arrive at Lukla facing about south-east (the averaging softens it), to see
                                           // the bend before it
-        'Soraypampa to Collpapampa': 270, // Salkantay: arrive at Collpapampa facing west, down the valley
+        'Soraypampa to Collpapampa': 270, // Salkantay: arrive at Collpapampa facing west, down the valley,
+        'Lucmabamba to Aguas Calientes': 135,  // at Aguas Calientes facing south-east,
+        'Aguas Calientes to Machu Picchu Mountain': 45,  // and back there at the end facing north-east
     };
     // Tracks whose end gets no heading of its own: the camera turns straight through toward the next one (from the
     // approach to Namche it turns steadily toward the rest day's heading; leaving Machhermo it already starts turning
     // east for Gokyo Ri; leaving Lobuche, east for EBC)
     const FLY_TURN_THROUGH = ['Phakding to Namche', 'Machhermo to Gokyo', 'Lobuche to Gorakshep'];
-    // Headings partway along a track (fraction at of its length), e.g. to turn sooner than evenly over the day
+    // Headings partway along a track (fraction at of its length, or at one of its places), e.g. to turn sooner than
+    // evenly over the day
     const FLY_HEADING_POINTS = [
         { track: 'Namche to Dole', at: 0.2, heading: 10 },  // soon after leaving Namche, turn up the valley toward Dole
+        { track: 'Aguas Calientes to Machu Picchu Mountain', place: 'Machu Picchu Mountain', heading: 315 },  // Salkantay: up
+                                                            // Machu Picchu Mountain facing north-west
     ];
     const FLY_LOOP_DRIFT = 0.08;        // On a loop day (e.g. the rest day at Namche) the camera creeps this fraction of
                                         // the way toward the next day's end
@@ -2781,7 +2786,9 @@
         for (const point of FLY_HEADING_POINTS) {
             const leg = legs.find(l => trackLabels[l.track.userData.trackIdx].display === point.track);
             if (!leg) continue;
-            const at = leg.offset + point.at * leg.len;
+            const place = point.place && trackPlaces(leg.track).find(p => p.text === point.place);
+            if (point.place && !place) continue;
+            const at = leg.offset + (place ? leg.st.cum[place.k] : point.at * leg.len);
             const i = headingS.findIndex(x => x > at);
             headingS.splice(i < 0 ? headingS.length : i, 0, at);
             headings.splice(i < 0 ? headings.length : i, 0, point.heading);
