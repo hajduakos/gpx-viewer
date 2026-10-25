@@ -2540,12 +2540,6 @@
     // Stops where the camera turns on the spot: it arrives facing the track's FLY_HEADINGS heading and, during a stop
     // extraMs longer than the others, turns to face `leave` before the pulse sets off again (Salkantay: down the valley
     // into Collpapampa facing west, then north for the next day)
-    // From the first time this place's label appears, the camera stops following the route and orbits to its left around
-    // the rest of it, which is all close by (Salkantay: Aguas Calientes, the bus up and Machu Picchu), blending in over
-    // FLY_ORBIT_BLEND_MS
-    const FLY_ORBIT_FROM = 'Aguas Calientes';
-    const FLY_ORBIT_DEG_PER_S = 10;
-    const FLY_ORBIT_BLEND_MS = 3000;
     const FLY_TURN_STOPS = [
         { track: 'Soraypampa to Collpapampa', leave: 0, extraMs: 3000 },
     ];
@@ -2861,27 +2855,6 @@
         fly = { legs, total, events, target, heading, turns, timeAt, step: STEP, widths, flightMs, overview: overviewView(), end: null };
         planStops(stops);
         fly.start = flightView(0);
-        // The closing orbit: around the middle of the route after FLY_ORBIT_FROM, at the height the camera aims at,
-        // starting from the view the flight has there
-        const orbitEvent = events.find(e => e.text === FLY_ORBIT_FROM && e.growStart != null);
-        if (orbitEvent) {
-            const center = new THREE.Vector3();
-            let n = 0;
-            for (const leg of legs) {
-                const p = leg.track.userData.positions, cum = leg.st.cum;
-                for (let k = 0; k < cum.length; k += 10) {
-                    if (leg.offset + cum[k] < orbitEvent.s) continue;
-                    center.add(new THREE.Vector3(p[k * 3], p[k * 3 + 1] + leg.track.position.y, p[k * 3 + 2]));
-                    n++;
-                }
-            }
-            if (n) {
-                const start = orbitEvent.growStart;
-                const from = flightView(turnDistance(start), turnDistance(start, FLY_HEADING_TIME_MS));
-                center.divideScalar(n).add(new THREE.Vector3(0, FLY_AIM_UP_M * S.scale, 0));
-                fly.orbit = { start, center, radius: from.sph.radius, phi: from.sph.phi, theta: from.sph.theta };
-            }
-        }
         // Peaks, timed around the pulse passing their track's middle
         fly.peaks = [];
         const addPeak = (peak, from) => {
@@ -2994,12 +2967,6 @@
     }
 
     // The camera's view at route distance s, facing the heading at route distance sTurn
-    // The closing orbit's view after tf ms of flight (orbiting left: theta decreasing, like OrbitControls' auto-rotate)
-    function orbitView(tf) {
-        const o = fly.orbit;
-        return { target: o.center, sph: new THREE.Spherical(o.radius, o.phi, o.theta - THREE.MathUtils.degToRad(FLY_ORBIT_DEG_PER_S) * (tf - o.start) / 1000) };
-    }
-
     // (h: the heading to face instead, if given)
     function flightView(s, sTurn = s, h = fly.heading(sTurn)[0]) {
         const [x, y, z] = fly.target(s);
@@ -3050,13 +3017,9 @@
                 h = tn.before(Math.min(sTurn, tn.s0))[0] * (1 - w) + tn.after(Math.max(sTurn, tn.s0))[0] * w;
             }
             const view = flightView(turnDistance(tf), sTurn, h);
-            if (fly.orbit && tf >= fly.orbit.start) {  // blending into the closing orbit
-                setCameraBetween(view, orbitView(tf), smoothstep(0, 1, (tf - fly.orbit.start) / FLY_ORBIT_BLEND_MS));
-            } else {
-                setCameraBetween(view, view, 0);
-            }
+            setCameraBetween(view, view, 0);
         } else {
-            if (!fly.end) fly.end = fly.orbit ? orbitView(fly.flightMs) : flightView(fly.total);
+            if (!fly.end) fly.end = flightView(fly.total);
             const hold = clamp01((t - zoomEnd) / FLY_HOLD_MS);
             setCameraBetween(fly.end, fly.overview, smoothstep(0, 1, (t - flightEnd) / FLY_ZOOM_OUT_MS), 1 + ZOOM_HOLD_DRIFT * hold * hold);
         }
