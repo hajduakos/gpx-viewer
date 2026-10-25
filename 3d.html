@@ -2545,11 +2545,11 @@
     // past their start while the pulse goes there and back (Salkantay-specific: the side trip from Soraypampa to
     // Humantay lake)
     const FLY_LOOP_TRACKS = ['Soraypampa to Humantay lake'];
-    // Stops where the camera turns on the spot: it arrives facing the track's FLY_HEADINGS heading and, during a stop
-    // extraMs longer than the others, turns to face `leave` before the pulse sets off again (Salkantay: down the valley
-    // into Collpapampa facing west, then north for the next day)
+    // Stops where the camera turns sharply: it arrives facing the track's FLY_HEADINGS heading and turns to face `leave`
+    // over the stop (which can be extraMs longer than the others), starting leadMs before it and finishing trailMs
+    // after it (Salkantay: down the valley into Collpapampa facing west, then north for the next day)
     const FLY_TURN_STOPS = [
-        { track: 'Soraypampa to Collpapampa', leave: 0, extraMs: 3000 },
+        { track: 'Soraypampa to Collpapampa', leave: 0, extraMs: 0, leadMs: 2500, trailMs: 2500 },
     ];
     const FLY_TURN_TIME_MS = 1500;      // The camera follows the flight averaged over this time each way, so it keeps
                                         // moving while the pulse stops at places
@@ -2816,7 +2816,7 @@
             const i = leg ? headingS.findIndex(x => Math.abs(x - (leg.offset + leg.len)) < 1) : -1;
             if (i < 0) continue;  // (it needs a heading key there: the track's FLY_HEADINGS entry)
             const leave = headings[i] + ((((ts.leave - headings[i]) % 360) + 540) % 360 - 180);  // the short way round
-            turns.push({ i, s0: headingS[i], leave, extraMs: ts.extraMs });
+            turns.push({ i, s0: headingS[i], leave, extraMs: ts.extraMs ?? 0, leadMs: ts.leadMs ?? 0, trailMs: ts.trailMs ?? 0 });
         }
         turns.sort((a, b) => a.s0 - b.s0);
         const bounds = [0, ...turns.map(tn => tn.s0), total];
@@ -3019,11 +3019,12 @@
         } else if (t < flightEnd) {
             const tf = t - descentEnd, sTurn = turnDistance(tf, FLY_HEADING_TIME_MS);
             let h = fly.heading(sTurn)[0];
-            // At a turn stop, from the arriving stretch's heading to the leaving one's over the stop
+            // Around a turn stop, from the arriving stretch's heading to the leaving one's (on the move before and after
+            // the stop, the arriving heading held at the stop's, then the leaving one from it)
             for (const tn of fly.turns) {
-                const st = tn.stop;
-                if (tf < st.start || tf >= st.start + st.ms) continue;
-                const w = smoothstep(0, 1, (tf - st.start) / st.ms);
+                const st = tn.stop, from = st.start - tn.leadMs, to = st.start + st.ms + tn.trailMs;
+                if (tf < from || tf >= to) continue;
+                const w = smoothstep(0, 1, (tf - from) / (to - from));
                 h = tn.before(Math.min(sTurn, tn.s0))[0] * (1 - w) + tn.after(Math.max(sTurn, tn.s0))[0] * w;
             }
             const view = flightView(turnDistance(tf), sTurn, h);
