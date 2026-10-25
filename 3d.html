@@ -1994,7 +1994,9 @@
     // track follow its offset.
     const MARKER_HEIGHT_M = 1000;
     // Line heights for particular place labels (by label text), e.g. for a smaller hike in gentler terrain
-    const PLACE_MARKER_HEIGHT_M = {};
+    const PLACE_MARKER_HEIGHT_M = {
+        'Passo Llactapata': 500,
+    };
     const markerHeight = text => PLACE_MARKER_HEIGHT_M[text] ?? MARKER_HEIGHT_M;
     let animMarkers = [];
 
