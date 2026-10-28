@@ -473,6 +473,7 @@
                     <option value="clouds" selected>Clouds</option>
                     <option value="overcast">Overcast</option>
                     <option value="sunset">Sunset</option>
+                    <option value="dusk">Dusk</option>
                     <option value="night">Night</option>
                 </select>
                 <button id="btn-sky-random" class="ctrl-btn" title="Generate the sky again (new clouds or stars)">Randomize</button>
@@ -913,8 +914,8 @@
 
     // ── Sky ──
     // Clear: plain deep blue. Clouds: deep blue with procedural clouds. Overcast: full gray cover. Sunset: orange
-    // horizon fading to blue overhead. Night: black with stars. The textured modes are equirectangular backgrounds,
-    // built once per scene on first use.
+    // horizon fading to blue overhead. Dusk: just after sunset, a pink glow low down under a light blue sky. Night: black
+    // with stars. The textured modes are equirectangular backgrounds, built once per scene on first use.
     const SKY_COLOR = '#2f6eb5';
     const OVERCAST_COLOR = '#a3a9b0';
     const NIGHT_COLOR = '#000000';
@@ -926,30 +927,37 @@
         [90, '#1d3a73'], [55, '#3f63a8'], [30, '#8d86b3'], [14, '#e6a57e'],
         [4, SUNSET_HORIZON], [-6, '#ff8a3d'], [-30, '#c4552f'], [-90, '#5a2a22'],
     ];
+    const DUSK_HORIZON = '#f2b4c8';
+    const DUSK_STOPS = [  // the same way, from the light blue overhead down through lavender to the pink glow
+        [90, '#8db3e2'], [60, '#a6c4ea'], [40, '#c3cbe8'], [24, '#e2c4dc'],
+        [10, DUSK_HORIZON], [-6, '#eaa9c0'], [-30, '#b98ba8'], [-90, '#5e5070'],
+    ];
     let skyTextures = {};
 
-    const skyColor = () => ({ night: NIGHT_COLOR, sunset: SUNSET_HORIZON, overcast: OVERCAST_COLOR })[document.getElementById('sel-sky').value] || SKY_COLOR;
+    const skyColor = () => ({ night: NIGHT_COLOR, sunset: SUNSET_HORIZON, dusk: DUSK_HORIZON, overcast: OVERCAST_COLOR })[document.getElementById('sel-sky').value] || SKY_COLOR;
 
     // Cloud paints turn deck noise (0..1) into [gray level, opacity]
     const CLOUD_PAINT = n => [230 + 25 * smoothstep(0.55, 0.8, n), smoothstep(0.48, 0.68, n)];  // white puffs, brighter cores
     const OVERCAST_PAINT = n => [150 + 85 * smoothstep(0.3, 0.75, n), 1];  // full cover, mottled dark and light gray
 
     // Terrain lighting per sky; the track is unlit and stays bright. Night is a dim bluish moonlight, sunset a warm
-    // light from a low sun.
+    // light from a low sun, dusk a soft, slightly cool light with a faint pink glow from the sun just gone.
     const LIGHTING = {
         day:    { ambient: [0xffffff, 0.65], sun: [0xffffff, 0.8],  sunPos: [50, 80, 30] },
         overcast: { ambient: [0xe8ecf0, 0.85], sun: [0xffffff, 0.3], sunPos: [50, 80, 30] },  // flat, diffuse
         sunset: { ambient: [0xffd8b8, 0.45], sun: [0xffa860, 0.95], sunPos: [80, 22, 30] },
+        dusk:   { ambient: [0xe2e6f2, 0.6],  sun: [0xffc4d4, 0.35], sunPos: [80, 10, 30] },
         night:  { ambient: [0xb0c0ff, 0.3],  sun: [0xc8d4ff, 0.35], sunPos: [50, 80, 30] },
     };
 
-    function makeSunsetSky(w, h) {
+    // A sky of color bands: stops are [elevation in degrees, color], relative to the lowered horizon
+    function makeGradientSky(w, h, stops) {
         const cv = document.createElement('canvas');
         cv.width = w; cv.height = h;
         const ctx = cv.getContext('2d');
         // Rows of an equirectangular image are linear in elevation: +90° at the top, -90° at the bottom
         const g = ctx.createLinearGradient(0, 0, 0, h);
-        for (const [deg, color] of SUNSET_STOPS) {
+        for (const [deg, color] of stops) {
             g.addColorStop(Math.min(Math.max(0.5 - (deg - SUNSET_HORIZON_DROP) / 180, 0), 1), color);
         }
         ctx.fillStyle = g;
@@ -1075,7 +1083,8 @@
             // Stars need a sharper texture than soft clouds or a gradient to stay crisp on screen
             const make = {
                 night: () => makeStarSky(4096, 2048),
-                sunset: () => makeSunsetSky(1024, 512),
+                sunset: () => makeGradientSky(1024, 512, SUNSET_STOPS),
+                dusk: () => makeGradientSky(1024, 512, DUSK_STOPS),
                 clouds: () => makeCloudSky(SKY_COLOR, CLOUD_PAINT),
                 overcast: () => makeCloudSky(OVERCAST_COLOR, OVERCAST_PAINT),
             };
