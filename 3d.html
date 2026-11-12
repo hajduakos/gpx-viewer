@@ -2418,6 +2418,7 @@
     const FLY_ZOOM_OUT_MS = 4000;
     const FLY_HOLD_MS = 6000;
     const FLY_STATS_FADE_MS = 1000;     // The stats box fades in at the end of the descent
+    const FLY_COLUMNS_OUT_MS = 1000;    // When zooming out, the time and elevation columns fade out, then close up
     const FLY_MARKER_OUT_MS = 1000;     // When zooming out, the last place's marker fades out,
     const FLY_LABELS_IN_MS = 2000;      // and all place labels fade in at the end of the zoom out
     const FLY_GROW_MS = 800;            // At each place and day's end the pulse (and the counters) stop while the
@@ -2731,6 +2732,7 @@
             if (event) addPeak(peak, event.growStart + FLY_GROW_MS + delayMs);  // once the place's line has grown and its label is up
         }
         fly.valueEls = makeStatsBar($flyStats, { time: true });
+        fly.outColumns = [...$flyStats.children].filter(col => ['Time', 'Elevation'].includes(col.firstElementChild.textContent));
         controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
     }
 
@@ -2850,6 +2852,24 @@
         $flyStats.style.opacity = opacity;
     }
 
+    // The time and elevation columns, which mean nothing for the whole trek: over the first half of
+    // FLY_COLUMNS_OUT_MS they fade out, over the second half they narrow to nothing, taking a gap with them, so the
+    // other columns close up
+    function fadeOutFlyColumns(since) {
+        const half = FLY_COLUMNS_OUT_MS / 2;
+        const fade = smoothstep(0, half, since), shrink = smoothstep(half, FLY_COLUMNS_OUT_MS, since);
+        if (!fly.outWidths) {  // measured as they start to go
+            fly.outWidths = fly.outColumns.map(col => col.offsetWidth);
+            fly.outGap = parseFloat(getComputedStyle($flyStats).columnGap) || 0;
+        }
+        fly.outColumns.forEach((col, i) => {
+            Object.assign(col.style, {
+                opacity: 1 - fade, overflow: 'hidden', whiteSpace: 'nowrap', flexShrink: 0,
+                width: `${fly.outWidths[i] * (1 - shrink)}px`, marginRight: `${-fly.outGap * shrink}px`,
+            });
+        });
+    }
+
     function updateFlyover(t) {
         const clamp01 = x => Math.min(Math.max(x, 0), 1);
         const descentEnd = FLY_OVERVIEW_MS + FLY_DESCENT_MS, flightEnd = descentEnd + fly.flightMs;
@@ -2911,6 +2931,7 @@
         }
         for (const leg of fly.legs) updatePulseOn(leg.st, s - leg.offset, t >= descentEnd, 0, FLY_PULSE_RADIUS_M);
         updateFlyStats(s, clamp01((t - (descentEnd - FLY_STATS_FADE_MS)) / FLY_STATS_FADE_MS));
+        if (t > flightEnd) fadeOutFlyColumns(t - flightEnd);
         if (document.getElementById('sel-sky').value === 'night-to-day') applyNightToDay(s / fly.total);
     }
 
