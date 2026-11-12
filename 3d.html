@@ -2195,6 +2195,7 @@
         { track: 'Namche to Dole', text: 'Mong La', lat: 27.83942, lon: 86.73653, purpose: 'Lunch' },
         { track: 'Dole to Machhermo', text: 'Luza', lat: 27.89251, lon: 86.71866, purpose: 'Tea' },
         { track: 'Thagnak to Dzongla', text: 'Cho La Pass' },
+        { track: 'Gorakshep to Somare', text: 'Lobuche', lat: 27.94868, lon: 86.81015, purpose: 'Tea' },  // passed again on the way down
         { track: 'Gorakshep to Somare', text: 'Pheriche', lat: 27.893376, lon: 86.820400, purpose: 'Lunch' },
         { track: 'Somare to Namche', text: 'Tengboche Monastery', lat: 27.83608, lon: 86.76381, purpose: 'Cake' },  // from a photo's EXIF
         { track: 'Somare to Namche', text: 'Kyangjuma', lat: 27.82326, lon: 86.73101, purpose: 'Lunch' },  // passed again on the way down
@@ -2202,7 +2203,6 @@
         { track: 'Namche to Lukla', text: 'Cheplung', lat: 27.70229, lon: 86.71719, purpose: 'Coffee' },  // the same café as on D01
     ];
 
-    // A track's places, in order along it: [{text, k, purpose}], k being the track point the label belongs to. They
     // Purposes for stops at a track's start or end (from its name), per track like EXTRA_PLACES. Gorakshep shows three
     // times in the flyover: arriving from Lobuche, the night before Kala Patthar, and after it.
     const START_END_PURPOSES = [
@@ -2212,6 +2212,7 @@
     const startEndPurpose = (display, text) =>
         START_END_PURPOSES.find(p => p.track === display && p.text === text)?.purpose ?? null;
 
+    // A track's places, in order along it: [{text, k, purpose}], k being the track point the label belongs to. They
     // come from its name, plus EXTRA_PLACES.
     function trackPlaces(track) {
         const i = track.userData.trackIdx, lb = trackLabels[i];
