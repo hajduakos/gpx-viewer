@@ -1982,6 +1982,7 @@
     // track follow its offset.
     const MARKER_HEIGHT_M = 1000;
     const MARKER_LINE_OPACITY = 0.7;
+    const MARKER_LEFT_FADE_MS = 500;  // Once the pulse leaves a trail marker, its line fades to the track color
     // Line heights for particular place labels (by label text), e.g. for a smaller hike in gentler terrain
     const PLACE_MARKER_HEIGHT_M = {
         'Budhanilkantha': 300,
@@ -2029,7 +2030,10 @@
         m.info.style.display = parts.length ? '' : 'none';
     }
 
-    function updateTrailMarker(m, growth, opacity = 1, labelOpacity = opacity) {
+    // left: how far the line has faded from the highlight color to the track color (0 to 1), for a marker the pulse
+    // has left
+    const leftColor = new THREE.Color();
+    function updateTrailMarker(m, growth, opacity = 1, labelOpacity = opacity, left = 0) {
         const b = m.base(), h = m.heightM * S.scale;
         m.line.position.copy(b);
         m.line.scale.y = Math.max(growth, 1e-4) * h;
@@ -2037,6 +2041,7 @@
         m.line.material.opacity = opacity * MARKER_LINE_OPACITY;
         m.line.material.resolution.set(innerWidth, innerHeight);
         m.line.material.color.set(m.color ?? document.getElementById('clr-highlight').value);
+        if (left > 0 && m.color == null) m.line.material.color.lerp(leftColor.set(document.getElementById('clr-track').value), left);
         m.label.position.set(b.x, b.y + h, b.z);
         m.label.visible = growth >= 1 && labelOpacity > 0 && m.text !== '';
         m.label.element.style.opacity = labelOpacity;
@@ -2138,10 +2143,16 @@
     function updateTrackAnimation(t, duration) {
         const clamp01 = x => Math.min(Math.max(x, 0), 1);
         const { startMarkerStart, pulseStart, pulseEnd, endMarkerStart, holdStarts } = animPhases(duration);
-        updateTrailMarker(animMarkers[0], clamp01((t - startMarkerStart) / MARKER_MS));
-        if (animEndMarker) updateTrailMarker(animEndMarker, clamp01((t - endMarkerStart) / MARKER_MS));
+        // Lines fade to the track color once the pulse leaves them: the start as the pulse starts, a place after its
+        // hold, the end only if the pulse turns around there
+        const left = leaveAt => clamp01((t - leaveAt) / MARKER_LEFT_FADE_MS);
+        const far = animHolds.findIndex(h => h.turnaround);
+        updateTrailMarker(animMarkers[0], clamp01((t - startMarkerStart) / MARKER_MS), 1, 1, left(pulseStart));
+        if (animEndMarker) updateTrailMarker(animEndMarker, clamp01((t - endMarkerStart) / MARKER_MS), 1, 1,
+            far >= 0 ? left(pulseStart + holdStarts[far] + animHolds[far].ms) : 0);
         animHolds.forEach((h, i) => {
-            if (h.marker) updateTrailMarker(h.marker, clamp01((t - pulseStart - holdStarts[i]) / h.growMs));
+            if (h.marker) updateTrailMarker(h.marker, clamp01((t - pulseStart - holdStarts[i]) / h.growMs), 1, 1,
+                left(pulseStart + holdStarts[i] + h.ms));
         });
         // Peaks fade in after their label is up: the start label (as the pulse starts), the end label, or an extra
         // place's label at its stop
@@ -2929,8 +2940,10 @@
         }
         const markerFade = 1 - clamp01((t - flightEnd) / FLY_MARKER_OUT_MS);
         fly.events.forEach((e, i) => {
-            const next = fly.events[i + 1];
-            updateTrailMarker(e.marker, growth(e), (next ? 1 - growth(next) : 1) * markerFade);
+            const next = fly.events[i + 1], opacity = (next ? 1 - growth(next) : 1) * markerFade;
+            // Once the pulse leaves (the trail head as the flight starts), the line fades to the track color
+            const leaveAt = e.s <= 0 ? 0 : e.growStart + fly.pauseMs;
+            updateTrailMarker(e.marker, growth(e), opacity, opacity, clamp01((t - descentEnd - leaveAt) / MARKER_LEFT_FADE_MS));
         });
         if (t >= zoomEnd - FLY_LABELS_IN_MS) {
             if (!zoomLabels.length) makeZoomLabels();
