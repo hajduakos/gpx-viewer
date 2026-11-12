@@ -2203,12 +2203,21 @@
     ];
 
     // A track's places, in order along it: [{text, k, purpose}], k being the track point the label belongs to. They
+    // Purposes for stops at a track's start or end (from its name), per track like EXTRA_PLACES. Gorakshep shows three
+    // times in the flyover: arriving from Lobuche, the night before Kala Patthar, and after it.
+    const START_END_PURPOSES = [
+        { track: 'Lobuche to Gorakshep', text: 'Gorakshep', purpose: 'Lunch' },
+        { track: 'Gorakshep to Somare', text: 'Gorakshep', purpose: 'Breakfast' },
+    ];
+    const startEndPurpose = (display, text) =>
+        START_END_PURPOSES.find(p => p.track === display && p.text === text)?.purpose ?? null;
+
     // come from its name, plus EXTRA_PLACES.
     function trackPlaces(track) {
         const i = track.userData.trackIdx, lb = trackLabels[i];
-        const places = lb.start ? [{ text: lb.start, k: 0 }] : [];
+        const places = lb.start ? [{ text: lb.start, k: 0, purpose: startEndPurpose(lb.display, lb.start) }] : [];
         if (lb.endMode !== 'none' && lb.end) {
-            places.push({ text: lb.end, k: endPointIdx(i, lb.endMode) });
+            places.push({ text: lb.end, k: endPointIdx(i, lb.endMode), purpose: startEndPurpose(lb.display, lb.end) });
         }
         for (const extra of EXTRA_PLACES) {
             if (extra.track !== lb.display) continue;
@@ -2941,7 +2950,9 @@
         startAnimStats();
         const animEle = trackCumStats[animTrack.userData.trackIdx].ele;
         const startText = document.getElementById('txt-start-label').value, endText = document.getElementById('txt-end-label').value;
-        animMarkers = [makeTrailMarker(startText, trackPoint(animTrack, 0), animEle[0], null, { heightM: markerHeight(startText) })];
+        const display = trackLabels[animTrack.userData.trackIdx].display;
+        animMarkers = [makeTrailMarker(startText, trackPoint(animTrack, 0), animEle[0], null,
+            { heightM: markerHeight(startText), purpose: startEndPurpose(display, startText) })];
         animEndMode = document.getElementById('sel-end-marker').value;
         animEndMarker = null;
         animHolds = [];
@@ -2949,13 +2960,13 @@
         const fracAt = k => totalDist > 0 ? pulseCum[k] / totalDist : 0;
         if (animEndMode !== 'none') {
             const endIdx = endPointIdx(animTrack.userData.trackIdx, animEndMode);
-            animEndMarker = makeTrailMarker(endText, trackPoint(animTrack, endIdx), animEle[endIdx], null, { heightM: markerHeight(endText) });
+            animEndMarker = makeTrailMarker(endText, trackPoint(animTrack, endIdx), animEle[endIdx], null,
+                { heightM: markerHeight(endText), purpose: startEndPurpose(display, endText) });
             animMarkers.push(animEndMarker);
             if (animEndMode !== 'end') animHolds.push({ frac: fracAt(endIdx), ms: MARKER_MS, turnaround: true });
         }
         // Extra places along the track (e.g. Cho La Pass): as in the flyover, the pulse stops while the label appears.
         // Only this track's own extras: a place can be an extra elsewhere and the start or end here (Phakding).
-        const display = trackLabels[animTrack.userData.trackIdx].display;
         for (const place of trackPlaces(animTrack)) {
             if (!EXTRA_PLACES.some(e => e.text === place.text && e.track === display)) continue;
             const marker = makeTrailMarker(place.text, trackPoint(animTrack, place.k), animEle[place.k], null,
