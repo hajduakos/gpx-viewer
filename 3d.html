@@ -1265,10 +1265,11 @@
             for (let k = 1; k < pts.length; k++) if ((pts[k].ele ?? -Infinity) > (pts[top].ele ?? -Infinity)) top = k;
             return top;
         });
-        // Cumulative distance and ascent at each track point, measured like computeTrackStats
-        // Cumulative distance and ascent at each track point, measured like computeTrackStats, plus the elevation
+        // Cumulative distance and ascent at each track point, measured like computeTrackStats, plus the elevation and
+        // the time (ms since the epoch, NaN without one)
         trackCumStats = tracks.map(pts => {
             const dist = new Float64Array(pts.length), gain = new Float64Array(pts.length), ele = new Float64Array(pts.length);
+            const time = Float64Array.from(pts, p => p.time ? p.time.getTime() : NaN);
             ele[0] = pts[0].ele ?? 0;
             for (let k = 1; k < pts.length; k++) {
                 dist[k] = dist[k-1] + haversine(pts[k-1].lat, pts[k-1].lon, pts[k].lat, pts[k].lon);
@@ -1276,7 +1277,7 @@
                 gain[k] = gain[k-1] + Math.max(up, 0);
                 ele[k] = pts[k].ele ?? ele[k-1];
             }
-            return { dist, gain, ele };
+            return { dist, gain, ele, time };
         });
 
         scene = new THREE.Scene();
@@ -2052,12 +2053,15 @@
 
     // ── Stats bars ──
     // Day, distance, elevation and gain columns: small labels over big numbers, used by the daily animation and the
-    // flyover. Numbers are padded to their final width (monospace), so the columns don't shift while counting.
+    // flyover, which also has the local time after the day. Numbers are padded to their final width (monospace), so
+    // the columns don't shift while counting.
     const BAR_LABELS = ['Day', 'Distance', 'Elevation', 'Gain'];
+    const LOCAL_UTC_OFFSET_MIN = 345;  // EBC-specific: Nepal time, UTC+5:45
 
-    // Fills the bar element with the columns; returns the value elements
-    function makeStatsBar(el) {
-        el.innerHTML = BAR_LABELS.map(label => `<div><div class="bar-label">${label}</div><div class="bar-value"></div></div>`).join('');
+    // Fills the bar element with the columns, with a time column if asked; returns the value elements
+    function makeStatsBar(el, { time = false } = {}) {
+        const labels = time ? [BAR_LABELS[0], 'Time', ...BAR_LABELS.slice(1)] : BAR_LABELS;
+        el.innerHTML = labels.map(label => `<div><div class="bar-label">${label}</div><div class="bar-value"></div></div>`).join('');
         el.style.opacity = 0;
         el.style.display = 'flex';
         return [...el.querySelectorAll('.bar-value')];
@@ -2068,7 +2072,8 @@
         return { km: (maxDist / 1000).toFixed(1).length, ele: String(Math.round(maxEle)).length, gain: String(Math.round(maxGain)).length };
     }
 
-    function setStatsBar(valueEls, widths, day, dist, ele, gain) {
+    // time (ms since the epoch, NaN if unknown) fills the time column, if the bar has one
+    function setStatsBar(valueEls, widths, day, dist, ele, gain, time = NaN) {
         const value = (num, unit) => num + (unit ? `<span class="bar-unit"> ${unit}</span>` : '');
         const values = [
             value(day.replace(/^D/, '') || '–'),
@@ -2076,7 +2081,15 @@
             value(String(Math.round(ele)).padStart(widths.ele), 'm'),
             value(String(Math.round(gain)).padStart(widths.gain), 'm'),
         ];
+        if (valueEls.length > values.length) values.splice(1, 0, value(localTime(time)));
         values.forEach((html, i) => { if (valueEls[i].innerHTML !== html) valueEls[i].innerHTML = html; });
+    }
+
+    // HH:MM in local time, or dashes
+    function localTime(ms) {
+        if (Number.isNaN(ms)) return '--:--';
+        const d = new Date(ms + LOCAL_UTC_OFFSET_MIN * 60000), pad = n => String(n).padStart(2, '0');
+        return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
     }
 
     // ── Daily stats bar ──
@@ -2717,7 +2730,7 @@
             const event = place && events.filter(e => e.text === place && e.growStart != null)[visit - 1];
             if (event) addPeak(peak, event.growStart + FLY_GROW_MS + delayMs);  // once the place's line has grown and its label is up
         }
-        fly.valueEls = makeStatsBar($flyStats);
+        fly.valueEls = makeStatsBar($flyStats, { time: true });
         controls.enableDamping = false;  // damping inertia would drift the camera off the path we set each frame
     }
 
@@ -2833,7 +2846,7 @@
         const k1 = Math.min(k + 1, n - 1), f = pc[k1] > pc[k] ? Math.min((d - pc[k]) / (pc[k1] - pc[k]), 1) : 0;
         const at = a => a[k] + (a[k1] - a[k]) * f;
         setStatsBar(fly.valueEls, widths, trackLabels[leg.track.userData.trackIdx].day,
-            leg.distBefore + at(leg.cum.dist), at(leg.cum.ele), leg.gainBefore + at(leg.cum.gain));
+            leg.distBefore + at(leg.cum.dist), at(leg.cum.ele), leg.gainBefore + at(leg.cum.gain), at(leg.cum.time));
         $flyStats.style.opacity = opacity;
     }
 
