@@ -2778,13 +2778,17 @@
         return tau < R / 2 ? Math.sqrt(2 * R * tau) : tau > tauMax - R / 2 ? movingMs - Math.sqrt(2 * R * (tauMax - tau)) : tau + R / 2;
     }
 
-    // Lays out the stops in flight time: the flight is FLY_PAUSE_MS longer per stop than its moving time
+    // Lays out the stops in flight time: the flight is FLY_PAUSE_MS longer per stop than its moving time. Each stop
+    // also gets the time a day changing there switches, in the label and the stats bar together: halfway through the
+    // time its label is up (after growing, for a label appearing there).
     function planStops(stops) {
         const pauseMs = Math.min(FLY_PAUSE_MS, fly.flightMs / 2 / Math.max(stops.length, 1));  // keep time to move
         Object.assign(fly, { stops, pauseMs, movingMs: fly.flightMs - pauseMs * stops.length });
         for (const st of stops) {
             st.start = flightTimeAt(st.s);  // flight time the stop begins
-            if (st.event) st.event.growStart = st.start;
+        const labelHalf = FLY_GROW_MS + Math.max(pauseMs - FLY_GROW_MS, 0) / 2;
+            st.switchAt = st.start + (st.event ? labelHalf : pauseMs / 2);
+            if (st.event) Object.assign(st.event, { growStart: st.start, switchAt: st.switchAt });
         }
     }
 
@@ -2837,12 +2841,16 @@
         return { target: aim, sph: new THREE.Spherical().setFromVector3(camPos.sub(aim)) };
     }
 
-    function updateFlyStats(s, opacity) {
+    // tf: flight time (ms)
+    function updateFlyStats(s, tf, opacity) {
         const { legs, widths } = fly;
-        // At a day boundary it's still the day just finished: the next day counts once the pulse moves into it
+        // At a stop where tracks meet, it's still the track just finished until the stop's switch time, when the bar
+        // moves on to the next track (its day and time) together with the label
         let li = 0;
         while (li < legs.length - 1 && s > legs[li + 1].offset) li++;
-        const leg = legs[li], pc = leg.st.cum, n = pc.length, d = s - leg.offset;
+        const next = legs[li + 1], st = next && fly.stops.find(st => Math.abs(st.s - next.offset) < 50);
+        if (st && s >= st.s - 1 && tf >= st.switchAt) li++;
+        const leg = legs[li], pc = leg.st.cum, n = pc.length, d = Math.max(s - leg.offset, 0);
         let k = 0, hi = n - 1;
         while (k < hi) { const mid = (k + hi + 1) >> 1; if (pc[mid] <= d) k = mid; else hi = mid - 1; }
         const k1 = Math.min(k + 1, n - 1), f = pc[k1] > pc[k] ? Math.min((d - pc[k]) / (pc[k1] - pc[k]), 1) : 0;
@@ -2897,18 +2905,16 @@
         const growth = e => e.s <= 0
             ? clamp01((t - (descentEnd - MARKER_MS)) / MARKER_MS)
             : clamp01((t - descentEnd - e.growStart) / FLY_GROW_MS);
-        // Day changes at stops: halfway through, the label switches from the day just finished to the next one
-        const half = fly.pauseMs / 2;
+        // Day changes at stops: at the stop's switch time, the label switches from the day just finished to the next one
         for (const st of fly.stops) {
-            if (st.dayUpdate && !st.dayUpdate.done && t - descentEnd >= st.start + half) {
+            if (st.dayUpdate && !st.dayUpdate.done && t - descentEnd >= st.switchAt) {
                 setMarkerDay(st.dayUpdate.marker, st.dayUpdate.day);
                 st.dayUpdate.done = true;
             }
         }
-        // A label that just appeared switches halfway through the time it's up during the stop
-        const labelHalf = FLY_GROW_MS + Math.max(fly.pauseMs - FLY_GROW_MS, 0) / 2;
+        // as does a label that just appeared there
         for (const e of fly.events) {
-            if (e.dayNext && !e.daySwitched && t - descentEnd >= e.growStart + labelHalf) {
+            if (e.dayNext && !e.daySwitched && t - descentEnd >= e.switchAt) {
                 setMarkerDay(e.marker, e.dayNext);
                 e.daySwitched = true;
             }
@@ -2930,7 +2936,7 @@
             setZoomLabelOpacity(clamp01((t - (zoomEnd - FLY_LABELS_IN_MS)) / FLY_LABELS_IN_MS));
         }
         for (const leg of fly.legs) updatePulseOn(leg.st, s - leg.offset, t >= descentEnd, 0, FLY_PULSE_RADIUS_M);
-        updateFlyStats(s, clamp01((t - (descentEnd - FLY_STATS_FADE_MS)) / FLY_STATS_FADE_MS));
+        updateFlyStats(s, t - descentEnd, clamp01((t - (descentEnd - FLY_STATS_FADE_MS)) / FLY_STATS_FADE_MS));
         if (t > flightEnd) fadeOutFlyColumns(t - flightEnd);
         if (document.getElementById('sel-sky').value === 'night-to-day') applyNightToDay(s / fly.total);
     }
