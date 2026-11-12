@@ -1981,6 +1981,7 @@
     // A vertical line grows up from a point, then a label appears on top. base() gives the point, so markers on a
     // track follow its offset.
     const MARKER_HEIGHT_M = 1000;
+    const MARKER_LINE_OPACITY = 0.7;
     // Line heights for particular place labels (by label text), e.g. for a smaller hike in gentler terrain
     const PLACE_MARKER_HEIGHT_M = {
         'Budhanilkantha': 300,
@@ -1999,10 +2000,8 @@
     };
 
     // The label shows the text and, below it at 60% size, the day (if given), the stop's purpose (if given, e.g.
-    // Lunch) and the elevation (meters, if given). The line has the highlight color, MARKER_HEIGHT_M and full opacity
-    // unless given.
-    function makeTrailMarker(text, base, elevation = null, day = null,
-                             { color = null, heightM = MARKER_HEIGHT_M, purpose = null, lineOpacity = 1 } = {}) {
+    // Lunch) and the elevation (meters, if given). The line has the highlight color and MARKER_HEIGHT_M unless given.
+    function makeTrailMarker(text, base, elevation = null, day = null, { color = null, heightM = MARKER_HEIGHT_M, purpose = null } = {}) {
         const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
             new LineMaterial({ linewidth: 4, transparent: true, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
@@ -2016,7 +2015,7 @@
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
         scene.add(line, label);
-        const m = { line, label, base, text, info, elevation, color, heightM, purpose, lineOpacity };
+        const m = { line, label, base, text, info, elevation, color, heightM, purpose };
         setMarkerDay(m, day);
         return m;
     }
@@ -2035,7 +2034,7 @@
         m.line.position.copy(b);
         m.line.scale.y = Math.max(growth, 1e-4) * h;
         m.line.visible = growth > 0 && opacity > 0;
-        m.line.material.opacity = opacity * m.lineOpacity;
+        m.line.material.opacity = opacity * MARKER_LINE_OPACITY;
         m.line.material.resolution.set(innerWidth, innerHeight);
         m.line.material.color.set(m.color ?? document.getElementById('clr-highlight').value);
         m.label.position.set(b.x, b.y + h, b.z);
@@ -2554,7 +2553,7 @@
         const { lat, lon } = at, { ele } = PEAKS[name], { bb } = D;
         if (lat < bb.minLat || lat > bb.maxLat || lon < bb.minLon || lon > bb.maxLon) return null;
         const base = terrainPoint(lat, lon);
-        return makeTrailMarker(name, () => base, ele, null, { color: '#000000', heightM: lineM, lineOpacity: 0.5 });
+        return makeTrailMarker(name, () => base, ele, null, { color: '#000000', heightM: lineM });
     }
 
     // Scene position of a lat/lon on the terrain surface
