@@ -2170,7 +2170,18 @@
     const ZOOM_TOTALS_FADE_MS = 1000;
     const $trekStats = document.getElementById('trek-stats');
     // Overview labels sit above their point unless listed here (for places close to each other)
-    const ZOOM_LABEL_SIDES = { 'EBC': 'right', 'Kala Patthar': 'left' };
+    const ZOOM_LABEL_SIDES = {
+        'Lukla': 'right', 'Cheplung': 'left', 'Chhuthawa': 'left', 'Phakding': 'left', 'Benkar': 'right', 'Monjo': 'right',
+        'Namche': 'bottom-left', 'Syangboche': 'top-left', 'Kyangjuma': 'left', 'Mong La': 'left', 'Dole': 'right',
+        'Luza': 'right', 'Machhermo': 'left', 'Gokyo': 'top-right', 'Gokyo Ri': 'top-left', 'Thagnak': 'bottom',
+        'Cho La Pass': 'top', 'Dzongla': 'top-right', 'Lobuche': 'right', 'Gorakshep': 'left', 'EBC': 'right',
+        'Kala Patthar': 'left', 'Pheriche': 'right', 'Somare': 'right', 'Tengboche Monastery': 'right',
+    };
+    // A side's label anchor (CSS2DObject center): (0.5, 1) puts the label above the point (north in the top-down view)
+    const ZOOM_LABEL_ANCHORS = {
+        'top': [0.5, 1], 'bottom': [0.5, 0], 'left': [1, 0.5], 'right': [0, 0.5],
+        'top-left': [1, 1], 'top-right': [0, 1], 'bottom-left': [1, 0], 'bottom-right': [0, 0],
+    };
     let zoomIn = null;   // {play, overview} camera views while zooming in
     let zoomOut = null;  // {from, to} camera views while zooming out
     let zoomLabels = [];
@@ -2259,11 +2270,9 @@
             div.textContent = text;
             div.style.cssText = `color:#fff;font-size:${fontSize}px;padding:2px 6px;background:rgba(0,0,0,0.55);border-radius:4px;white-space:nowrap;opacity:0;`;
             const label = new CSS2DObject(div);
-            const side = ZOOM_LABEL_SIDES[text];
-            // center is the label's anchor point: (0.5, 1) puts it above the point (north in the top-down view)
-            if (side === 'right') { label.center.set(0, 0.5); div.style.marginLeft = '4px'; }
-            else if (side === 'left') { label.center.set(1, 0.5); div.style.marginLeft = '-4px'; }
-            else label.center.set(0.5, 1);
+            const [cx, cy] = ZOOM_LABEL_ANCHORS[ZOOM_LABEL_SIDES[text] ?? 'top'];
+            label.center.set(cx, cy);
+            if (cy === 0.5) div.style.marginLeft = cx === 0 ? '4px' : '-4px';  // a small gap beside the point
             label.position.copy(pos);
             scene.add(label);
             zoomLabels.push(label);
