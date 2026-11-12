@@ -1994,9 +1994,9 @@
         return new THREE.Vector3(p[k * 3], p[k * 3 + 1] + track.position.y, p[k * 3 + 2]);
     };
 
-    // The label shows the text and, below it at 60% size, the day (if given) and the elevation (meters, if given).
-    // The line has the highlight color and MARKER_HEIGHT_M unless given.
-    function makeTrailMarker(text, base, elevation = null, day = null, { color = null, heightM = MARKER_HEIGHT_M } = {}) {
+    // The label shows the text and, below it at 60% size, the day (if given), the stop's purpose (if given, e.g.
+    // Lunch) and the elevation (meters, if given). The line has the highlight color and MARKER_HEIGHT_M unless given.
+    function makeTrailMarker(text, base, elevation = null, day = null, { color = null, heightM = MARKER_HEIGHT_M, purpose = null } = {}) {
         const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
             new LineMaterial({ linewidth: 4, transparent: true, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
@@ -2010,7 +2010,7 @@
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
         scene.add(line, label);
-        const m = { line, label, base, text, info, elevation, color, heightM };
+        const m = { line, label, base, text, info, elevation, color, heightM, purpose };
         setMarkerDay(m, day);
         return m;
     }
@@ -2018,6 +2018,7 @@
     function setMarkerDay(m, day) {
         const parts = [];
         if (day != null) parts.push(`Day ${day}`);
+        if (m.purpose) parts.push(m.purpose);
         if (m.elevation != null) parts.push(`${Math.round(m.elevation)} m`);
         m.info.textContent = parts.join(' · ');
         m.info.style.display = parts.length ? '' : 'none';
@@ -2179,16 +2180,19 @@
     }
 
     // EBC-specific places not in the track names: a label at the track point nearest to lat/lon, or at the track's
-    // highest point
+    // highest point. A stop's purpose (e.g. Lunch) shows under the label; it's per track, as a place passed on the way
+    // there and back can have a different one each time.
     const EXTRA_PLACES = [
+        { track: 'Lukla to Phakding', text: 'Cheplung', lat: 27.70229, lon: 86.71719, purpose: 'Coffee' },  // where we stopped
+        { track: 'Lukla to Phakding', text: 'Chhuthawa', lat: 27.72462, lon: 86.71467, purpose: 'Lunch' },
         { track: 'Thagnak to Dzongla', text: 'Cho La Pass' },
         { track: 'Gorakshep to Somare', text: 'Pheriche', lat: 27.893376, lon: 86.820400 },
         { track: 'Somare to Namche', text: 'Tengboche Monastery', lat: 27.83608, lon: 86.76381 },  // from a photo's EXIF
         { track: 'Namche to Lukla', text: 'Phakding', lat: 27.7435, lon: 86.7131 },  // passed again on the way down
     ];
 
-    // A track's places, in order along it: [{text, k}], k being the track point the label belongs to. They come from
-    // its name, plus EXTRA_PLACES.
+    // A track's places, in order along it: [{text, k, purpose}], k being the track point the label belongs to. They
+    // come from its name, plus EXTRA_PLACES.
     function trackPlaces(track) {
         const i = track.userData.trackIdx, lb = trackLabels[i];
         const places = lb.start ? [{ text: lb.start, k: 0 }] : [];
@@ -2206,7 +2210,7 @@
                 const ele = trackCumStats[i].ele;
                 for (let k = 1; k < ele.length; k++) if (ele[k] > ele[best]) best = k;
             }
-            places.push({ text: extra.text, k: best });
+            places.push({ text: extra.text, k: best, purpose: extra.purpose });
         }
         return places.sort((a, b) => a.k - b.k);
     }
@@ -2574,12 +2578,12 @@
         // Labels where a day changes show the day just finished, switching to the next one halfway through the stop.
         const positions = placePositions(), events = [];
         for (const leg of legs) {
-            for (const { text, k } of trackPlaces(leg.track)) {
+            for (const { text, k, purpose } of trackPlaces(leg.track)) {
                 if (events.length && events[events.length - 1].text === text) continue;
                 const pos = positions.get(text);
                 const at = leg.offset + leg.st.cum[k], change = dayChangeAt(at);
                 events.push({ text, s: at, marker: makeTrailMarker(text, () => pos, leg.cum.ele[k], change && (change.prev ?? change.next),
-                                                                     { heightM: markerHeight(text) }),
+                                                                     { heightM: markerHeight(text), purpose }),
                               dayNext: change && change.prev != null ? change.next : null });
             }
         }
@@ -2943,7 +2947,8 @@
         const display = trackLabels[animTrack.userData.trackIdx].display;
         for (const place of trackPlaces(animTrack)) {
             if (!EXTRA_PLACES.some(e => e.text === place.text && e.track === display)) continue;
-            const marker = makeTrailMarker(place.text, trackPoint(animTrack, place.k), animEle[place.k], null, { heightM: markerHeight(place.text) });
+            const marker = makeTrailMarker(place.text, trackPoint(animTrack, place.k), animEle[place.k], null,
+                { heightM: markerHeight(place.text), purpose: place.purpose });
             animMarkers.push(marker);
             animHolds.push({ frac: fracAt(place.k), ms: FLY_PAUSE_MS, growMs: FLY_GROW_MS, marker });
         }
