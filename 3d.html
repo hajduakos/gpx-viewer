@@ -1999,8 +1999,10 @@
     };
 
     // The label shows the text and, below it at 60% size, the day (if given), the stop's purpose (if given, e.g.
-    // Lunch) and the elevation (meters, if given). The line has the highlight color and MARKER_HEIGHT_M unless given.
-    function makeTrailMarker(text, base, elevation = null, day = null, { color = null, heightM = MARKER_HEIGHT_M, purpose = null } = {}) {
+    // Lunch) and the elevation (meters, if given). The line has the highlight color, MARKER_HEIGHT_M and full opacity
+    // unless given.
+    function makeTrailMarker(text, base, elevation = null, day = null,
+                             { color = null, heightM = MARKER_HEIGHT_M, purpose = null, lineOpacity = 1 } = {}) {
         const line = new Line2(new LineGeometry().setPositions([0, 0, 0, 0, 1, 0]),
             new LineMaterial({ linewidth: 4, transparent: true, resolution: new THREE.Vector2(innerWidth, innerHeight) }));
         const div = document.createElement('div');
@@ -2014,7 +2016,7 @@
         label.center.set(0.5, 1);
         line.visible = label.visible = false;
         scene.add(line, label);
-        const m = { line, label, base, text, info, elevation, color, heightM, purpose };
+        const m = { line, label, base, text, info, elevation, color, heightM, purpose, lineOpacity };
         setMarkerDay(m, day);
         return m;
     }
@@ -2033,7 +2035,7 @@
         m.line.position.copy(b);
         m.line.scale.y = Math.max(growth, 1e-4) * h;
         m.line.visible = growth > 0 && opacity > 0;
-        m.line.material.opacity = opacity;
+        m.line.material.opacity = opacity * m.lineOpacity;
         m.line.material.resolution.set(innerWidth, innerHeight);
         m.line.material.color.set(m.color ?? document.getElementById('clr-highlight').value);
         m.label.position.set(b.x, b.y + h, b.z);
@@ -2552,7 +2554,7 @@
         const { lat, lon } = at, { ele } = PEAKS[name], { bb } = D;
         if (lat < bb.minLat || lat > bb.maxLat || lon < bb.minLon || lon > bb.maxLon) return null;
         const base = terrainPoint(lat, lon);
-        return makeTrailMarker(name, () => base, ele, null, { color: '#000000', heightM: lineM });
+        return makeTrailMarker(name, () => base, ele, null, { color: '#000000', heightM: lineM, lineOpacity: 0.5 });
     }
 
     // Scene position of a lat/lon on the terrain surface
@@ -2784,9 +2786,9 @@
     function planStops(stops) {
         const pauseMs = Math.min(FLY_PAUSE_MS, fly.flightMs / 2 / Math.max(stops.length, 1));  // keep time to move
         Object.assign(fly, { stops, pauseMs, movingMs: fly.flightMs - pauseMs * stops.length });
+        const labelHalf = FLY_GROW_MS + Math.max(pauseMs - FLY_GROW_MS, 0) / 2;
         for (const st of stops) {
             st.start = flightTimeAt(st.s);  // flight time the stop begins
-        const labelHalf = FLY_GROW_MS + Math.max(pauseMs - FLY_GROW_MS, 0) / 2;
             st.switchAt = st.start + (st.event ? labelHalf : pauseMs / 2);
             if (st.event) Object.assign(st.event, { growStart: st.start, switchAt: st.switchAt });
         }
