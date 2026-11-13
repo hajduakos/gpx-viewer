@@ -1916,8 +1916,9 @@
     }
 
     // dCur: the pulse's distance along this track; it may lie off the track, then only the overlapping part shows.
-    // fill (0..1) blends the whole track toward the highlight color once the pulse has arrived.
-    function updatePulseOn(st, dCur, active, fill = 0, radius = PULSE_RADIUS_M) {
+    // fill (0..1) blends the whole track toward the highlight color once the pulse has arrived. strength (0..1) fades
+    // the pulse itself.
+    function updatePulseOn(st, dCur, active, fill = 0, radius = PULSE_RADIUS_M, strength = 1) {
         const p = st.track.userData.positions, cum = st.cum, n = cum.length;
         const base = new THREE.Color(document.getElementById('clr-track').value);
         const peak = new THREE.Color(document.getElementById('clr-highlight').value);
@@ -1941,7 +1942,7 @@
             }
             const c = new THREE.Color();
             for (let k = first; k < end; k++) {
-                const t = active ? Math.max(0, 1 - Math.abs(cum[k] - dCur) / radius) : 0;
+                const t = active ? strength * Math.max(0, 1 - Math.abs(cum[k] - dCur) / radius) : 0;
                 c.copy(base).lerp(peak, t + (1 - t) * fill);
                 setTrackPoint(st, k, [p[k*3], p[k*3+1] + PULSE_LIFT * t, p[k*3+2]], [c.r, c.g, c.b]);
             }
@@ -2949,7 +2950,9 @@
             if (!zoomLabels.length) makeZoomLabels();
             setZoomLabelOpacity(clamp01((t - (zoomEnd - FLY_LABELS_IN_MS)) / FLY_LABELS_IN_MS));
         }
-        for (const leg of fly.legs) updatePulseOn(leg.st, s - leg.offset, t >= descentEnd, 0, FLY_PULSE_RADIUS_M);
+        // The pulse fades out at the end, as the last place's line fades to the track color
+        const pulseStrength = 1 - clamp01((t - flightEnd) / MARKER_LEFT_FADE_MS);
+        for (const leg of fly.legs) updatePulseOn(leg.st, s - leg.offset, t >= descentEnd, 0, FLY_PULSE_RADIUS_M, pulseStrength);
         updateFlyStats(s, t - descentEnd, clamp01((t - (descentEnd - FLY_STATS_FADE_MS)) / FLY_STATS_FADE_MS));
         if (t > flightEnd) fadeOutFlyColumns(t - flightEnd);
         if (document.getElementById('sel-sky').value === 'night-to-day') applyNightToDay(s / fly.total);
